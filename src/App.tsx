@@ -4,7 +4,7 @@ import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, CompassIcon, HecateMark, LocateIcon, MapIcon, RouteIcon, UserIcon } from './components/Icons'
 import { BARCELONA_DEMO_ROUTE, routeDistanceKm, shouldRecordPoint } from './geo'
-import { createLocationTracker, type LocationTracker } from './location'
+import { createLocationTracker, isNativeApp, type LocationTracker } from './location'
 import { loadLocalPoints, loadSyncedPoints, saveLocalPoints, syncPoints } from './storage'
 import type { Coordinate, MapMode, TrackingState } from './types'
 
@@ -32,6 +32,7 @@ export default function App() {
   const lastPointRef = useRef<Coordinate | undefined>(points.at(-1))
   const distance = useMemo(() => routeDistanceKm(points), [points])
   const isCityScale = zoom >= 6
+  const nativeApp = isNativeApp()
 
   useEffect(() => {
     loadSyncedPoints().then(remote => {
@@ -46,7 +47,7 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [points])
 
-  useEffect(() => () => trackerRef.current?.stop(), [])
+  useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), [])
 
@@ -65,7 +66,7 @@ export default function App() {
 
   const toggleTracking = async () => {
     if (tracking === 'tracking') {
-      trackerRef.current?.stop()
+      await trackerRef.current?.stop()
       trackerRef.current = null
       setTracking('idle')
       return
@@ -75,7 +76,7 @@ export default function App() {
     trackerRef.current = tracker
     try {
       await tracker.start(addPoint, error => {
-        setTracking(error.code === error.PERMISSION_DENIED ? 'denied' : 'unavailable')
+        setTracking(error.code === 'permission-denied' ? 'denied' : 'unavailable')
       })
       setTracking('tracking')
       setShowIntro(false)
@@ -137,11 +138,11 @@ export default function App() {
       <div className="journey-card__bottom">
         <button className={`track-button ${tracking === 'tracking' ? 'track-button--stop' : ''}`} onClick={toggleTracking} disabled={tracking === 'requesting'}>
           <span className="track-button__icon">{tracking === 'tracking' ? <span className="stop-square" /> : <LocateIcon size={21} />}</span>
-          <span><strong>{tracking === 'tracking' ? 'Finish walk' : tracking === 'requesting' ? 'Finding you…' : 'Start walking'}</strong><small>{tracking === 'tracking' ? 'Keep this open on the web' : 'Reveal about 60 m around you'}</small></span>
+          <span><strong>{tracking === 'tracking' ? 'Finish walk' : tracking === 'requesting' ? 'Finding you…' : 'Start walking'}</strong><small>{tracking === 'tracking' ? (nativeApp ? 'Safe to lock your phone' : 'Keep this open on the web') : 'Reveal about 60 m around you'}</small></span>
         </button>
         {points.length === 0 && <button className="demo-button" onClick={loadDemo}>Preview a walk</button>}
       </div>
-      {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow access in Safari Settings, or preview the sample walk.</p>}
+      {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow Hecate to use your location in Settings, or preview the sample walk.</p>}
     </section>}
 
     <div className="attribution-note">Open map · Your paths stay yours</div>

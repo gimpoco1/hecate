@@ -1,14 +1,21 @@
+import { Capacitor, registerPlugin } from '@capacitor/core'
+import type { BackgroundGeolocationPlugin, CallbackError } from '@capacitor-community/background-geolocation'
 import type { Coordinate } from './types'
 
+export interface LocationTrackerError {
+  code: 'permission-denied' | 'unavailable'
+  message: string
+}
+
 export interface LocationTracker {
-  start(onPoint: (point: Coordinate) => void, onError: (error: GeolocationPositionError) => void): Promise<void>
-  stop(): void
+  start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void): Promise<void>
+  stop(): void | Promise<void>
 }
 
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null
 
-  async start(onPoint: (point: Coordinate) => void, onError: (error: GeolocationPositionError) => void) {
+  async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
     if (!navigator.geolocation) throw new Error('Geolocation is unavailable')
     this.watchId = navigator.geolocation.watchPosition(
       ({ coords, timestamp }) => onPoint({
@@ -17,7 +24,10 @@ class WebLocationTracker implements LocationTracker {
         recordedAt: timestamp,
         accuracy: coords.accuracy,
       }),
-      onError,
+      error => onError({
+        code: error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'unavailable',
+        message: error.message,
+      }),
       { enableHighAccuracy: true, maximumAge: 3_000, timeout: 15_000 },
     )
   }
@@ -28,8 +38,52 @@ class WebLocationTracker implements LocationTracker {
   }
 }
 
-// Capacitor can replace this factory with a native background-location adapter.
-// The rest of the app only depends on the LocationTracker contract above.
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation')
+
+function nativeError(error: CallbackError): LocationTrackerError {
+  return {
+    code: error.code === 'NOT_AUTHORIZED' ? 'permission-denied' : 'unavailable',
+    message: error.message,
+  }
+}
+
+class NativeLocationTracker implements LocationTracker {
+  private watcherId: string | null = null
+
+  async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
+    this.watcherId = await BackgroundGeolocation.addWatcher({
+      backgroundTitle: 'Hecate is revealing your path',
+      backgroundMessage: 'Your walk is being recorded in the background.',
+      requestPermissions: true,
+      stale: false,
+      distanceFilter: 8,
+    }, (location, error) => {
+      if (error) {
+        onError(nativeError(error))
+        return
+      }
+      if (!location) return
+      onPoint({
+        lng: location.longitude,
+        lat: location.latitude,
+        recordedAt: location.time ?? Date.now(),
+        accuracy: location.accuracy,
+      })
+    })
+  }
+
+  async stop() {
+    if (!this.watcherId) return
+    const id = this.watcherId
+    this.watcherId = null
+    await BackgroundGeolocation.removeWatcher({ id })
+  }
+}
+
+export function isNativeApp() {
+  return Capacitor.isNativePlatform()
+}
+
 export function createLocationTracker(): LocationTracker {
-  return new WebLocationTracker()
+  return isNativeApp() ? new NativeLocationTracker() : new WebLocationTracker()
 }

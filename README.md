@@ -21,9 +21,19 @@ Without Supabase configuration, discoveries remain functional and are stored loc
 
 ## iOS and background tracking
 
-The web version is installable from Safari with **Share → Add to Home Screen**. iOS can suspend Safari and installed web apps after the screen locks, so uninterrupted background tracking is intentionally isolated behind `LocationTracker` in `src/location.ts`.
+The web version is installable from Safari with **Share → Add to Home Screen**. iOS can suspend Safari and installed web apps after the screen locks, so uninterrupted tracking requires the native Capacitor package in `ios/`.
 
-For the App Store version, package the same app with Capacitor and replace `WebLocationTracker` with a native iOS background-location implementation. The native project will also need the appropriate location usage descriptions, Background Modes → Location updates, and an App Review explanation of the user benefit.
+The native build uses `@capacitor-community/background-geolocation` while a walk is active. Its iOS target includes the required location usage descriptions and `location` background mode.
+
+```bash
+# Rebuild the web app and synchronize it into Xcode
+npm run ios:sync
+
+# Synchronize and open the Xcode workspace
+npm run ios:open
+```
+
+The bundle identifier is currently `com.gimpoco.hecate`. See `docs/APP_STORE.md` for signing, TestFlight, and App Store submission steps.
 
 ## Production notes
 
