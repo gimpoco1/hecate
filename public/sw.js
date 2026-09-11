@@ -1,9 +1,29 @@
-const CACHE = 'hecate-shell-v1'
+const CACHE = 'hecate-shell-v2'
+const SHELL = ['/', '/manifest.webmanifest', '/icon.svg']
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['/', '/manifest.webmanifest', '/icon.svg'])))
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => cache.addAll(SHELL))
+      .then(() => self.skipWaiting()),
+  )
 })
-self.addEventListener('activate', event => event.waitUntil(self.clients.claim()))
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim()),
+  )
+})
+
 self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return
+  const requestUrl = new URL(event.request.url)
+
+  // MapLibre's styles, tiles, glyphs, and sprites are hosted by OpenFreeMap.
+  // Let the browser fetch every cross-origin request directly so opaque
+  // responses and privacy controls cannot be altered by this service worker.
+  if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin) return
+
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)))
 })

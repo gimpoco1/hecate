@@ -6,5 +6,22 @@ import './styles.css'
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'))
+  window.addEventListener('load', async () => {
+    const hadController = Boolean(navigator.serviceWorker.controller)
+    let refreshing = false
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hadController && !refreshing) {
+        refreshing = true
+        window.location.reload()
+      }
+    })
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      await registration.update()
+    } catch (error) {
+      console.error('Service worker registration failed', error)
+    }
+  })
 }
