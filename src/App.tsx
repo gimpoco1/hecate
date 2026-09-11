@@ -3,10 +3,10 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, CompassIcon, HecateMark, LocateIcon, MapIcon, RouteIcon, UserIcon } from './components/Icons'
-import { BARCELONA_DEMO_ROUTE, routeDistanceKm, shouldRecordPoint } from './geo'
+import { BARCELONA_DEMO_ROUTE, discoveryCellsFromPoints, mergeDiscoveryCells, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { createLocationTracker, isNativeApp, type LocationTracker } from './location'
-import { loadLocalPoints, loadSyncedPoints, saveLocalPoints, syncPoints } from './storage'
-import type { Coordinate, MapMode, TrackingState } from './types'
+import { clearActiveWalk, flushWalkOutbox, loadActiveWalk, loadLocalCells, loadLocalPoints, loadSyncedDiscovery, queueCompletedWalk, saveActiveWalk, saveLocalCells, saveLocalPoints, syncDiscoveryCells } from './storage'
+import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`
@@ -19,33 +19,64 @@ function mergePoints(local: Coordinate[], remote: Coordinate[]) {
   return [...unique.values()].sort((a, b) => a.recordedAt - b.recordedAt)
 }
 
+function createWalkId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 export default function App() {
   const [mode, setMode] = useState<MapMode>('discover')
   const [points, setPoints] = useState<Coordinate[]>(() => loadLocalPoints())
+  const [cells, setCells] = useState<DiscoveryCell[]>(() => loadLocalCells())
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>(() => loadLocalPoints().at(-1))
   const [tracking, setTracking] = useState<TrackingState>('idle')
   const [zoom, setZoom] = useState(1.35)
   const [syncOpen, setSyncOpen] = useState(false)
   const [showIntro, setShowIntro] = useState(true)
+  const [demoMode, setDemoMode] = useState(false)
   const mapRef = useRef<MapLibreMap | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(points.at(-1))
-  const distance = useMemo(() => routeDistanceKm(points), [points])
+  const activeWalkRef = useRef(loadActiveWalk())
+  const displayedPoints = demoMode ? BARCELONA_DEMO_ROUTE : points
+  const displayedCells = demoMode ? discoveryCellsFromPoints(BARCELONA_DEMO_ROUTE) : cells
+  const distance = useMemo(() => routeDistanceKm(displayedPoints), [displayedPoints])
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
 
   useEffect(() => {
-    loadSyncedPoints().then(remote => {
-      if (!remote.length) return
-      setPoints(current => mergePoints(current, remote))
+    const interrupted = activeWalkRef.current
+    if (interrupted) {
+      if (interrupted.points.length) {
+        queueCompletedWalk({
+          ...interrupted,
+          finishedAt: interrupted.points.at(-1)?.recordedAt ?? Date.now(),
+        })
+      }
+      clearActiveWalk()
+      activeWalkRef.current = null
+    }
+    void flushWalkOutbox()
+
+    loadSyncedDiscovery().then(remote => {
+      if (remote.points.length) setPoints(current => mergePoints(current, remote.points))
+      if (remote.cells.length) setCells(current => mergeDiscoveryCells(current, remote.cells))
     }).catch(() => undefined)
   }, [])
 
   useEffect(() => {
     saveLocalPoints(points)
-    const timer = window.setTimeout(() => syncPoints(points).catch(() => undefined), 1200)
-    return () => window.clearTimeout(timer)
   }, [points])
+
+  useEffect(() => {
+    saveLocalCells(cells)
+    const timer = window.setTimeout(() => syncDiscoveryCells(cells).catch(() => undefined), 1200)
+    return () => window.clearTimeout(timer)
+  }, [cells])
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
@@ -59,36 +90,68 @@ export default function App() {
   const addPoint = (point: Coordinate) => {
     setCurrentPoint(point)
     if (!shouldRecordPoint(lastPointRef.current, point)) return
-    lastPointRef.current = point
-    setPoints(current => [...current, point])
-    mapRef.current?.easeTo({ center: [point.lng, point.lat], duration: 850, essential: true })
+    const recordedPoint = { ...point, walkId: activeWalkRef.current?.id }
+    lastPointRef.current = recordedPoint
+    if (activeWalkRef.current) {
+      activeWalkRef.current = { ...activeWalkRef.current, points: [...activeWalkRef.current.points, recordedPoint] }
+      saveActiveWalk(activeWalkRef.current)
+    }
+    setPoints(current => [...current, recordedPoint])
+    setCells(current => mergeDiscoveryCells(current, [pointToDiscoveryCell(recordedPoint)]))
+    mapRef.current?.easeTo({ center: [recordedPoint.lng, recordedPoint.lat], duration: 850, essential: true })
+  }
+
+  const finishActiveWalk = async () => {
+    const active = activeWalkRef.current
+    activeWalkRef.current = null
+    clearActiveWalk()
+    if (active && active.points.length >= 2) {
+      const completed: PendingWalk = { ...active, finishedAt: active.points.at(-1)?.recordedAt ?? Date.now() }
+      queueCompletedWalk(completed)
+      await flushWalkOutbox()
+    }
   }
 
   const toggleTracking = async () => {
     if (tracking === 'tracking') {
-      await trackerRef.current?.stop()
+      const tracker = trackerRef.current
       trackerRef.current = null
+      try { await tracker?.stop() } catch { /* The local walk must still be finalized. */ }
+      await finishActiveWalk()
       setTracking('idle')
       return
     }
+    setDemoMode(false)
     setTracking('requesting')
+    const walkId = createWalkId()
+    lastPointRef.current = undefined
+    activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] }
+    saveActiveWalk(activeWalkRef.current)
     const tracker = createLocationTracker()
     trackerRef.current = tracker
+    let trackerFailed = false
     try {
       await tracker.start(addPoint, error => {
+        trackerFailed = true
+        void Promise.resolve(tracker.stop()).catch(() => undefined)
+        trackerRef.current = null
+        void finishActiveWalk()
         setTracking(error.code === 'permission-denied' ? 'denied' : 'unavailable')
       })
-      setTracking('tracking')
-      setShowIntro(false)
+      if (!trackerFailed) {
+        setTracking('tracking')
+        setShowIntro(false)
+      }
     } catch {
+      activeWalkRef.current = null
+      clearActiveWalk()
       setTracking('unavailable')
     }
   }
 
   const loadDemo = () => {
-    setPoints(BARCELONA_DEMO_ROUTE)
+    setDemoMode(true)
     setCurrentPoint(BARCELONA_DEMO_ROUTE.at(-1))
-    lastPointRef.current = BARCELONA_DEMO_ROUTE.at(-1)
     setShowIntro(false)
     mapRef.current?.flyTo({ center: [2.161, 41.382], zoom: 14.1, duration: 2800, essential: true })
   }
@@ -99,7 +162,7 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <DiscoveryMap mode={mode} points={points} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
+    <DiscoveryMap mode={mode} points={displayedPoints} cells={displayedCells} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
 
     <header className="topbar">
       <button className="brand" onClick={() => mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, duration: 2200 })} aria-label="View the globe">

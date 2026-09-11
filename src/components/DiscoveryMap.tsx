@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { splitRoute } from '../geo'
-import type { Coordinate, MapMode } from '../types'
+import { discoveryCellCenter, splitRoute } from '../geo'
+import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
 type Props = {
   mode: MapMode
   points: Coordinate[]
+  cells: DiscoveryCell[]
   currentPoint?: Coordinate
   onZoomChange: (zoom: number) => void
   mapRef: React.MutableRefObject<MapLibreMap | null>
@@ -27,7 +28,7 @@ function routeData(points: Coordinate[]): GeoJSON.FeatureCollection {
   }
 }
 
-function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], mode: MapMode) {
+function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
   const rect = canvas.getBoundingClientRect()
   const ratio = Math.min(window.devicePixelRatio || 1, 2)
   const width = Math.round(rect.width * ratio)
@@ -48,7 +49,7 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.fillStyle = `rgba(239, 240, 234, ${0.9 * zoomFade})`
   context.fillRect(0, 0, rect.width, rect.height)
 
-  if (points.length === 0) {
+  if (points.length === 0 && cells.length === 0) {
     context.fillStyle = `rgba(35, 58, 49, ${0.12 * zoomFade})`
     context.font = '600 13px system-ui'
     context.textAlign = 'center'
@@ -57,6 +58,9 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   }
 
   const projectedSegments = splitRoute(points).map(segment => segment.map(point => map.project([point.lng, point.lat])))
+  const projectedCells = cells
+    .map(cell => map.project(discoveryCellCenter(cell)))
+    .filter(point => point.x > -200 && point.x < rect.width + 200 && point.y > -200 && point.y < rect.height + 200)
   const path = () => {
     context.beginPath()
     projectedSegments.forEach(projected => projected.forEach((point, index) => {
@@ -65,6 +69,10 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
         if (projected.length === 1) context.lineTo(point.x + 0.01, point.y)
       } else context.lineTo(point.x, point.y)
     }))
+    projectedCells.forEach(point => {
+      context.moveTo(point.x, point.y)
+      context.lineTo(point.x + 0.01, point.y)
+    })
   }
 
   context.lineCap = 'round'
@@ -95,13 +103,13 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.globalCompositeOperation = 'source-over'
 }
 
-export function DiscoveryMap({ mode, points, currentPoint, onZoomChange, mapRef }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, mapRef }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const markerRef = useRef<maplibregl.Marker | null>(null)
-  const stateRef = useRef({ mode, points })
+  const stateRef = useRef({ mode, points, cells })
 
-  useEffect(() => { stateRef.current = { mode, points } }, [mode, points])
+  useEffect(() => { stateRef.current = { mode, points, cells } }, [mode, points, cells])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -136,7 +144,7 @@ export function DiscoveryMap({ mode, points, currentPoint, onZoomChange, mapRef 
     })
 
     const redraw = () => {
-      if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.mode)
+      if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
     map.on('render', redraw)
     map.on('zoom', () => onZoomChange(map.getZoom()))
@@ -151,11 +159,11 @@ export function DiscoveryMap({ mode, points, currentPoint, onZoomChange, mapRef 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    stateRef.current = { mode, points }
+    stateRef.current = { mode, points, cells }
     const source = map.getSource('journey') as maplibregl.GeoJSONSource | undefined
     source?.setData(routeData(points))
     map.triggerRepaint()
-  }, [mapRef, mode, points])
+  }, [mapRef, mode, points, cells])
 
   useEffect(() => {
     const map = mapRef.current

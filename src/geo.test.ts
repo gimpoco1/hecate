@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { distanceKm, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
+import { discoveryCellCenter, discoveryCellsFromPoints, distanceKm, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
 
 describe('discovery route geometry', () => {
   const a = { lng: 2.17, lat: 41.38, recordedAt: 1_000, accuracy: 5 }
@@ -23,5 +23,18 @@ describe('discovery route geometry', () => {
     const farAway = { lng: -0.12, lat: 51.5, recordedAt: 20_000, accuracy: 5 }
     expect(splitRoute([a, b, farAway])).toHaveLength(2)
     expect(routeDistanceKm([a, b, farAway])).toBeCloseTo(distanceKm(a, b))
+  })
+
+  it('does not connect separate explicit walk sessions', () => {
+    expect(splitRoute([{ ...a, walkId: 'one' }, { ...b, walkId: 'two' }])).toHaveLength(2)
+  })
+
+  it('deduplicates repeated visits to the same discovery cell', () => {
+    const nearby = { ...a, recordedAt: 2_000, lng: a.lng + 0.000001 }
+    const cells = discoveryCellsFromPoints([a, nearby])
+    expect(cells).toHaveLength(1)
+    const [lng, lat] = discoveryCellCenter(pointToDiscoveryCell(a))
+    expect(Math.abs(lng - a.lng)).toBeLessThan(0.0001)
+    expect(Math.abs(lat - a.lat)).toBeLessThan(0.0001)
   })
 })

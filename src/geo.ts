@@ -1,6 +1,7 @@
-import type { Coordinate } from './types'
+import type { Coordinate, DiscoveryCell } from './types'
 
 const EARTH_RADIUS_KM = 6371
+export const DISCOVERY_CELL_ZOOM = 20
 
 export function distanceKm(a: Coordinate, b: Coordinate) {
   const toRadians = (value: number) => (value * Math.PI) / 180
@@ -23,12 +24,47 @@ export function splitRoute(points: Coordinate[]) {
     const segment = segments.at(-1)
     const previous = segment?.at(-1)
     const isNewJourney = previous && (
+      Boolean(previous.walkId && point.walkId && previous.walkId !== point.walkId) ||
       point.recordedAt - previous.recordedAt > 2 * 60 * 60 * 1000 || distanceKm(previous, point) > 5
     )
     if (!segment || isNewJourney) segments.push([point])
     else segment.push(point)
     return segments
   }, [])
+}
+
+export function pointToDiscoveryCell(point: Coordinate, z = DISCOVERY_CELL_ZOOM): DiscoveryCell {
+  const scale = 2 ** z
+  const latitude = Math.max(-85.05112878, Math.min(85.05112878, point.lat))
+  const latitudeRadians = latitude * Math.PI / 180
+  return {
+    z,
+    x: Math.floor(((point.lng + 180) / 360) * scale),
+    y: Math.floor((1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * scale),
+    discoveredAt: point.recordedAt,
+  }
+}
+
+export function discoveryCellCenter(cell: DiscoveryCell): [number, number] {
+  const scale = 2 ** cell.z
+  const lng = (cell.x + 0.5) / scale * 360 - 180
+  const mercatorY = Math.PI * (1 - 2 * (cell.y + 0.5) / scale)
+  const lat = Math.atan(Math.sinh(mercatorY)) * 180 / Math.PI
+  return [lng, lat]
+}
+
+export function mergeDiscoveryCells(...collections: DiscoveryCell[][]) {
+  const unique = new Map<string, DiscoveryCell>()
+  collections.flat().forEach(cell => {
+    const key = `${cell.z}/${cell.x}/${cell.y}`
+    const existing = unique.get(key)
+    if (!existing || cell.discoveredAt < existing.discoveredAt) unique.set(key, cell)
+  })
+  return [...unique.values()]
+}
+
+export function discoveryCellsFromPoints(points: Coordinate[]) {
+  return mergeDiscoveryCells(points.map(point => pointToDiscoveryCell(point)))
 }
 
 export function shouldRecordPoint(previous: Coordinate | undefined, next: Coordinate) {

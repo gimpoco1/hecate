@@ -13,11 +13,13 @@ The app uses MapLibre GL JS and OpenFreeMap's OpenStreetMap-derived vector tiles
 
 ## Cross-device sync
 
-1. Create a Supabase project and run `supabase.sql` in its SQL editor.
+1. Create a Supabase project and run `supabase.sql` in its SQL editor. Existing projects can safely run the updated script to migrate their old point rows.
 2. Copy `.env.example` to `.env.local` and add the project URL and anonymous key.
 3. Enable email OTP authentication in Supabase.
 
 Without Supabase configuration, discoveries remain functional and are stored locally on the device.
+
+Completed walks are stored as simplified PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. The legacy `discovery_points` table is retained after migration for verification and can be removed in a later release. See `docs/STORAGE.md` for the model and tradeoffs.
 
 ## iOS and background tracking
 
