@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Map as MapLibreMap } from 'maplibre-gl'
-import { discoveredCityPercentage, fetchCityBoundary, isPointInCity, loadCachedCityBoundary, type CityBoundary } from './city'
+import { discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
-import { ChevronIcon, CompassIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon } from './components/Icons'
-import { BARCELONA_DEMO_ROUTE, discoveryCellsFromPoints, mergeDiscoveryCells, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
+import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
+import { discoveryCellCenter, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { createLocationTracker, isNativeApp, type LocationTracker } from './location'
-import { clearActiveWalk, flushWalkOutbox, loadActiveWalk, loadLocalCells, loadLocalPoints, loadSyncedDiscovery, queueCompletedWalk, saveActiveWalk, saveLocalCells, saveLocalPoints, syncDiscoveryCells } from './storage'
+import { isSyncConfigured, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
+
+type ActiveWalk = Omit<PendingWalk, 'finishedAt'>
 
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`
@@ -22,12 +24,6 @@ function formatDiscoveryPercentage(percentage: number | null, loading: boolean) 
   return `${Math.round(percentage)}%`
 }
 
-function mergePoints(local: Coordinate[], remote: Coordinate[]) {
-  const unique = new Map<string, Coordinate>()
-  ;[...local, ...remote].forEach(point => unique.set(`${point.recordedAt}:${point.lat.toFixed(5)}:${point.lng.toFixed(5)}`, point))
-  return [...unique.values()].sort((a, b) => a.recordedAt - b.recordedAt)
-}
-
 function createWalkId() {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -39,63 +35,93 @@ function createWalkId() {
 
 export default function App() {
   const [mode, setMode] = useState<MapMode>('discover')
-  const [points, setPoints] = useState<Coordinate[]>(() => loadLocalPoints())
-  const [cells, setCells] = useState<DiscoveryCell[]>(() => loadLocalCells())
-  const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>(() => loadLocalPoints().at(-1))
+  const [points, setPoints] = useState<Coordinate[]>([])
+  const [cells, setCells] = useState<DiscoveryCell[]>([])
+  const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>()
+  const [accountUserId, setAccountUserId] = useState<string | null>(null)
+  const [authReady, setAuthReady] = useState(!isSyncConfigured)
   const [tracking, setTracking] = useState<TrackingState>('idle')
   const [zoom, setZoom] = useState(1.35)
   const [syncOpen, setSyncOpen] = useState(false)
+  const [coverageInfoOpen, setCoverageInfoOpen] = useState(false)
   const [showIntro, setShowIntro] = useState(true)
-  const [demoMode, setDemoMode] = useState(false)
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
   const [perspectiveView, setPerspectiveView] = useState(false)
-  const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(() => loadCachedCityBoundary())
+  const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null)
   const [cityLoading, setCityLoading] = useState(false)
   const mapRef = useRef<MapLibreMap | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
-  const lastPointRef = useRef<Coordinate | undefined>(points.at(-1))
-  const activeWalkRef = useRef(loadActiveWalk())
-  const demoCells = useMemo(() => discoveryCellsFromPoints(BARCELONA_DEMO_ROUTE), [])
-  const displayedPoints = demoMode ? BARCELONA_DEMO_ROUTE : points
-  const displayedCells = demoMode ? demoCells : cells
-  const distance = useMemo(() => routeDistanceKm(displayedPoints), [displayedPoints])
+  const lastPointRef = useRef<Coordinate | undefined>(undefined)
+  const activeWalkRef = useRef<ActiveWalk | null>(null)
+  const trackingUserRef = useRef<string | null>(null)
+  const pendingWalksRef = useRef<PendingWalk[]>([])
+  const distance = useMemo(() => routeDistanceKm(points), [points])
   const activeCity = currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary) ? cityBoundary : null
   const discoveryPercentage = useMemo(
-    () => activeCity ? discoveredCityPercentage(displayedCells, activeCity) : null,
-    [activeCity, displayedCells],
+    () => activeCity ? discoveredCityPercentage(cells, activeCity) : null,
+    [activeCity, cells],
   )
-  const discoveryLabel = formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity)
+  const discoveryLabel = accountUserId ? formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity) : '—'
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
 
   useEffect(() => {
-    const interrupted = activeWalkRef.current
-    if (interrupted) {
-      if (interrupted.points.length) {
-        queueCompletedWalk({
-          ...interrupted,
-          finishedAt: interrupted.points.at(-1)?.recordedAt ?? Date.now(),
-        })
-      }
-      clearActiveWalk()
-      activeWalkRef.current = null
+    purgeLegacyDiscoveryCache()
+    if (!supabase) return
+    let active = true
+    const client = supabase
+    void client.auth.getSession().then(({ data }) => {
+      if (!active) return
+      setAccountUserId(data.session?.user.id ?? null)
+      setAuthReady(true)
+    })
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      if (!active) return
+      setAccountUserId(session?.user.id ?? null)
+      setAuthReady(true)
+    })
+    return () => {
+      active = false
+      subscription.unsubscribe()
     }
-    void flushWalkOutbox()
-
-    loadSyncedDiscovery().then(remote => {
-      if (remote.points.length) setPoints(current => mergePoints(current, remote.points))
-      if (remote.cells.length) setCells(current => mergeDiscoveryCells(current, remote.cells))
-    }).catch(() => undefined)
   }, [])
 
   useEffect(() => {
-    saveLocalPoints(points)
-  }, [points])
+    let active = true
+    setPoints([])
+    setCells([])
+    setDiscoveryLoading(Boolean(accountUserId))
+    lastPointRef.current = undefined
+    pendingWalksRef.current = []
+    if (!accountUserId) return
+
+    loadSyncedDiscovery(accountUserId).then(remote => {
+      if (!active) return
+      setPoints(mergeRoutePoints(remote.points))
+      setCells(remote.cells)
+      lastPointRef.current = remote.points.at(-1)
+    }).catch(() => undefined).finally(() => {
+      if (active) setDiscoveryLoading(false)
+    })
+    return () => { active = false }
+  }, [accountUserId])
 
   useEffect(() => {
-    saveLocalCells(cells)
-    const timer = window.setTimeout(() => syncDiscoveryCells(cells).catch(() => undefined), 1200)
+    if (!accountUserId || cells.length === 0) return
+    const timer = window.setTimeout(() => syncDiscoveryCells(cells, accountUserId).catch(() => undefined), 1200)
     return () => window.clearTimeout(timer)
-  }, [cells])
+  }, [accountUserId, cells])
+
+  useEffect(() => {
+    if (!trackingUserRef.current || trackingUserRef.current === accountUserId) return
+    const tracker = trackerRef.current
+    trackerRef.current = null
+    void Promise.resolve(tracker?.stop()).catch(() => undefined)
+    activeWalkRef.current = null
+    trackingUserRef.current = null
+    pendingWalksRef.current = []
+    setTracking('idle')
+  }, [accountUserId])
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
@@ -116,19 +142,39 @@ export default function App() {
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), [])
 
-  const revealBarcelona = () => {
+  const openDiscoveries = () => {
+    if (!accountUserId) {
+      setSyncOpen(true)
+      return
+    }
+    if (discoveryLoading) return
+
+    const latestPoint = points.at(-1)
+    const latestCell = cells.reduce<DiscoveryCell | undefined>((latest, cell) => (
+      !latest || cell.discoveredAt > latest.discoveredAt ? cell : latest
+    ), undefined)
+    const focus = latestPoint ?? (latestCell ? (() => {
+      const [lng, lat] = discoveryCellCenter(latestCell)
+      return { lng, lat, recordedAt: latestCell.discoveredAt }
+    })() : undefined)
+
     setShowIntro(false)
-    mapRef.current?.flyTo({ center: [2.165, 41.382], zoom: 13.3, duration: 3500, essential: true })
+    if (focus) {
+      setCurrentPoint(focus)
+      mapRef.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 14.3, duration: 2600, essential: true })
+    } else {
+      void toggleTracking()
+    }
   }
 
   const addPoint = (point: Coordinate) => {
+    if (!isUsableGpsPoint(point)) return
     setCurrentPoint(point)
     if (!shouldRecordPoint(lastPointRef.current, point)) return
     const recordedPoint = { ...point, walkId: activeWalkRef.current?.id }
     lastPointRef.current = recordedPoint
     if (activeWalkRef.current) {
       activeWalkRef.current = { ...activeWalkRef.current, points: [...activeWalkRef.current.points, recordedPoint] }
-      saveActiveWalk(activeWalkRef.current)
     }
     setPoints(current => [...current, recordedPoint])
     setCells(current => mergeDiscoveryCells(current, [pointToDiscoveryCell(recordedPoint)]))
@@ -137,12 +183,18 @@ export default function App() {
 
   const finishActiveWalk = async () => {
     const active = activeWalkRef.current
+    const walkOwner = trackingUserRef.current
     activeWalkRef.current = null
-    clearActiveWalk()
-    if (active && active.points.length >= 2) {
+    trackingUserRef.current = null
+    if (active && walkOwner && active.points.length >= 2) {
       const completed: PendingWalk = { ...active, finishedAt: active.points.at(-1)?.recordedAt ?? Date.now() }
-      queueCompletedWalk(completed)
-      await flushWalkOutbox()
+      pendingWalksRef.current.push(completed)
+      const pending = pendingWalksRef.current
+      pendingWalksRef.current = []
+      for (const walk of pending) {
+        try { await saveCompletedWalk(walk, walkOwner) }
+        catch { pendingWalksRef.current.push(walk) }
+      }
     }
   }
 
@@ -150,17 +202,20 @@ export default function App() {
     if (tracking === 'tracking') {
       const tracker = trackerRef.current
       trackerRef.current = null
-      try { await tracker?.stop() } catch { /* The local walk must still be finalized. */ }
+      try { await tracker?.stop() } catch { /* The in-memory walk must still be finalized. */ }
       await finishActiveWalk()
       setTracking('idle')
       return
     }
-    setDemoMode(false)
+    if (!accountUserId) {
+      setSyncOpen(true)
+      return
+    }
     setTracking('requesting')
     const walkId = createWalkId()
     lastPointRef.current = undefined
     activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] }
-    saveActiveWalk(activeWalkRef.current)
+    trackingUserRef.current = accountUserId
     const tracker = createLocationTracker()
     trackerRef.current = tracker
     let trackerFailed = false
@@ -178,16 +233,9 @@ export default function App() {
       }
     } catch {
       activeWalkRef.current = null
-      clearActiveWalk()
+      trackingUserRef.current = null
       setTracking('unavailable')
     }
-  }
-
-  const loadDemo = () => {
-    setDemoMode(true)
-    setCurrentPoint(BARCELONA_DEMO_ROUTE.at(-1))
-    setShowIntro(false)
-    mapRef.current?.flyTo({ center: [2.161, 41.382], zoom: 14.1, duration: 2800, essential: true })
   }
 
   const locate = () => {
@@ -216,57 +264,78 @@ export default function App() {
   const introVisible = showIntro && zoom < 4
 
   return <main className={`app-shell ${introVisible ? 'app-shell--intro' : ''}`}>
-    <DiscoveryMap mode={mode} points={displayedPoints} cells={displayedCells} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
+    <DiscoveryMap mode={mode} points={points} cells={cells} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
 
     <header className="topbar">
       <button className="brand" onClick={showGlobe} aria-label="View the globe">
         <span className="brand__mark"><HecateMark /></span>
-        <span>hecate</span>
+        <span>Hecate</span>
       </button>
-      <div className="mode-switch" role="group" aria-label="Map mode">
-        <button className={mode === 'discover' ? 'active' : ''} onClick={() => setMode('discover')} aria-pressed={mode === 'discover'} title={activeCity ? `${activeCity.name} discovered` : 'Find your location to calculate city progress'}><CompassIcon size={17} /> Discovered <span className="mode-switch__value">{discoveryLabel}</span></button>
-        <button className={mode === 'map' ? 'active' : ''} onClick={() => setMode('map')} aria-pressed={mode === 'map'}><MapIcon size={17} /> Map</button>
-      </div>
       <button className="avatar-button" onClick={() => setSyncOpen(true)} aria-label="Account and sync"><UserIcon size={19} /></button>
     </header>
 
     {introVisible && <section className="globe-intro">
-      <div className="globe-intro__signal"><span /> Made to be explored</div>
-      <h1>Light up the world you’ve lived.</h1>
-      <p>Every walk reveals more of the map—and leaves the rest waiting in the mist.</p>
-      <button onClick={revealBarcelona}>
-        <span><small>See the reveal</small>Explore Barcelona</span>
+      <div className="globe-intro__signal"><span /> {accountUserId ? points.length || cells.length ? 'Your map is ready' : 'A world to uncover' : 'Discover your world'}</div>
+      <h1>{accountUserId && (points.length || cells.length) ? 'Continue where you left off.' : 'Move through the world. Make it yours.'}</h1>
+      <p>{accountUserId && (points.length || cells.length)
+        ? 'Return to your discoveries and uncover whatever comes next.'
+        : 'Every journey reveals new places and turns movement into a map that is uniquely yours.'}</p>
+      <button onClick={openDiscoveries} disabled={discoveryLoading}>
+        <span><small>{discoveryLoading ? 'Syncing your account' : accountUserId ? 'Your private map' : 'Account required'}</small>{discoveryLoading ? 'Loading discoveries…' : accountUserId ? points.length || cells.length ? 'Open my discoveries' : 'Start discovering' : 'Sign in to discover'}</span>
         <span className="globe-intro__arrow"><ChevronIcon size={19} /></span>
       </button>
-      <div className="globe-intro__note"><span /> Private by default. Yours across devices.</div>
+      <div className="globe-intro__note"><span /> {accountUserId ? points.length || cells.length ? `${formatDistance(distance)} travelled so far` : 'Nothing revealed yet' : 'Your discoveries stay with your account'}</div>
     </section>}
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
     <nav className="map-actions" aria-label="Map controls">
       <button onClick={locate} aria-label="Go to my location"><LocateIcon size={21} /></button>
+      <button
+        className={mode === 'map' ? 'active' : ''}
+        onClick={() => setMode(currentMode => currentMode === 'discover' ? 'map' : 'discover')}
+        aria-label={mode === 'map' ? 'Show my uncovered map' : 'Reveal the full map'}
+        aria-pressed={mode === 'map'}
+        title={mode === 'map' ? 'Show uncovered map' : 'Reveal full map'}
+      ><MapIcon size={21} /></button>
       <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Tilt and rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
     </nav>
 
     {isCityScale && <section className="journey-card">
-      <div className="journey-card__top">
-        <div>
-          <div className="eyebrow">Your discovered path</div>
-          <div className="distance">{formatDistance(distance)}</div>
+      <div className="journey-card__summary">
+        <div className="eyebrow">Your discovery</div>
+        <div className="discovery-metrics">
+          <div className="distance">{accountUserId ? formatDistance(distance) : '—'}</div>
+          {activeCity && <button className="city-progress" onClick={() => setCoverageInfoOpen(true)} aria-label={`Explain discovery percentage for ${activeCity.name}`}>
+            <strong>{discoveryLabel}</strong>
+            <span>of {activeCity.name}</span>
+            <span className="city-progress__info">i</span>
+          </button>}
         </div>
-        <div className={`tracking-status tracking-status--${tracking}`}><span />{tracking === 'tracking' ? 'Recording' : 'Ready'}</div>
       </div>
-      <div className="journey-card__bottom">
-        <button className={`track-button ${tracking === 'tracking' ? 'track-button--stop' : ''}`} onClick={toggleTracking} disabled={tracking === 'requesting'}>
-          <span className="track-button__icon">{tracking === 'tracking' ? <span className="stop-square" /> : <LocateIcon size={21} />}</span>
-          <span><strong>{tracking === 'tracking' ? 'Finish walk' : tracking === 'requesting' ? 'Finding you…' : 'Start walking'}</strong><small>{tracking === 'tracking' ? (nativeApp ? 'Safe to lock your phone' : 'Keep this open on the web') : 'Reveal about 60 m around you'}</small></span>
-        </button>
-        {points.length === 0 && <button className="demo-button" onClick={loadDemo}>Preview a walk</button>}
-      </div>
-      {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow Hecate to use your location in Settings, or preview the sample walk.</p>}
+      <button
+        className={`discovery-control discovery-control--${tracking}`}
+        onClick={toggleTracking}
+        disabled={!authReady || tracking === 'requesting'}
+        aria-label={!accountUserId ? 'Sign in to start discovering' : tracking === 'tracking' ? 'Stop discovering' : tracking === 'requesting' ? 'Finding your location' : 'Start discovering'}
+        title={!accountUserId ? 'Sign in to discover' : tracking === 'tracking' ? 'Stop discovering' : 'Start discovering'}
+      >
+        {tracking === 'tracking' ? <span className="stop-square" /> : tracking === 'requesting' ? <span className="control-spinner" /> : <span className="play-triangle" />}
+      </button>
+      {tracking === 'tracking' && <div className="tracking-notice"><span />{nativeApp ? 'Discovering in background' : 'Keep this page open and your screen on'}</div>}
+      {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow Hecate to use your location in Settings, or preview the sample discovery.</p>}
     </section>}
 
     <div className="attribution-note">Open map · Your paths stay yours</div>
+    {coverageInfoOpen && activeCity && <div className="coverage-backdrop" onClick={() => setCoverageInfoOpen(false)}>
+      <section className="coverage-sheet" role="dialog" aria-modal="true" aria-labelledby="coverage-title" onClick={event => event.stopPropagation()}>
+        <button className="coverage-sheet__close" onClick={() => setCoverageInfoOpen(false)} aria-label="Close explanation"><XIcon size={19} /></button>
+        <div className="eyebrow">City discovery</div>
+        <h2 id="coverage-title">{discoveryLabel} of {activeCity.name}</h2>
+        <p>Based on your current location, Hecate detected {activeCity.name} as the city you’re in. This percentage shows how much of its official municipal area you’ve uncovered.</p>
+        <div className="coverage-sheet__source"><span /> Municipal boundary from OpenStreetMap</div>
+      </section>
+    </div>}
     <SyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} />
   </main>
 }

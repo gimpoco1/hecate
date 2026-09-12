@@ -20,7 +20,7 @@ The app uses MapLibre GL JS and OpenFreeMap's OpenStreetMap-derived vector tiles
 
 Magic links opened from the website return to the deployed browser app. Links requested inside the Capacitor app use the `hecate://` URL scheme to reopen Hecate and complete the Supabase session.
 
-Without Supabase configuration, discoveries remain functional and are stored locally on the device.
+Supabase configuration and a signed-in account are required to record discoveries. Walk points and discovery cells live in memory while recording and are written only to the authenticated user's Supabase rows; they are not persisted in browser storage. An unfinished walk cannot be recovered after a force-quit or page reload.
 
 The same SQL script installs the authenticated `delete_account` function used by the account dialog. It deletes the current user from Supabase Auth; foreign-key cascades then remove that user's walks, discovery cells, and legacy discovery points. Rerun `supabase.sql` on an existing project whenever this function is added or updated.
 

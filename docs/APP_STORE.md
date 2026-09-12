@@ -40,7 +40,7 @@ The binary does not need a hosted web-app URL: Capacitor embeds the built site i
 
 For a public App Store release, prepare:
 
-- a public **Privacy Policy URL** explaining location collection, local storage, optional Supabase synchronization, retention, deletion, and contact details;
+- a public **Privacy Policy URL** explaining location collection, authenticated Supabase storage, retention, deletion, and contact details;
 - a public **Support URL** with a way for users to contact you;
 - App Privacy answers matching the app's actual production configuration;
 - screenshots, description, category, age rating, and review notes.

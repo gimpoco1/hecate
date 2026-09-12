@@ -1,7 +1,7 @@
 {
-  "name": "Hecate — Light the world as you walk",
+  "name": "Hecate — Discover the world as you move",
   "short_name": "Hecate",
-  "description": "Reveal the world one walk at a time.",
+  "description": "Reveal the world as you move through it.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f0e7",

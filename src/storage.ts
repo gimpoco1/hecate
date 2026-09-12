@@ -2,77 +2,24 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from './geo'
 import type { Coordinate, DiscoveryCell, PendingWalk } from './types'
 
-const POINTS_KEY = 'hecate:discovery-points:v1'
-const CELLS_KEY = 'hecate:discovery-cells:v1'
-const ACTIVE_WALK_KEY = 'hecate:active-walk:v1'
-const WALK_OUTBOX_KEY = 'hecate:walk-outbox:v1'
-const LEGACY_POINTS_KEY = 'unfold:discovery-points:v1'
-
-type ActiveWalk = Omit<PendingWalk, 'finishedAt'>
 type SyncedDiscovery = { points: Coordinate[]; cells: DiscoveryCell[] }
 
-function readJson<T>(key: string, fallback: T): T {
+const LEGACY_DISCOVERY_KEYS = [
+  'hecate:discovery-points:v1',
+  'hecate:discovery-cells:v1',
+  'hecate:active-walk:v1',
+  'hecate:walk-outbox:v1',
+  'hecate:city-boundary:v1',
+  'unfold:discovery-points:v1',
+]
+
+// Remove discovery data written by versions that predated account-only storage.
+export function purgeLegacyDiscoveryCache() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) ?? '')
-    return parsed ?? fallback
+    LEGACY_DISCOVERY_KEYS.forEach(key => localStorage.removeItem(key))
   } catch {
-    return fallback
+    // Some privacy modes disable Web Storage; account-backed discovery still works.
   }
-}
-
-export function loadLocalPoints(): Coordinate[] {
-  const stored = localStorage.getItem(POINTS_KEY) ?? localStorage.getItem(LEGACY_POINTS_KEY)
-  if (!stored) return []
-  try {
-    const parsed = JSON.parse(stored)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-export function saveLocalPoints(points: Coordinate[]) {
-  localStorage.setItem(POINTS_KEY, JSON.stringify(points.slice(-20_000)))
-}
-
-export function loadLocalCells(points: Coordinate[] = loadLocalPoints()): DiscoveryCell[] {
-  const stored = readJson<DiscoveryCell[]>(CELLS_KEY, [])
-  return mergeDiscoveryCells(stored, discoveryCellsFromPoints(points))
-}
-
-export function saveLocalCells(cells: DiscoveryCell[]) {
-  localStorage.setItem(CELLS_KEY, JSON.stringify(cells.slice(-100_000)))
-}
-
-export function loadActiveWalk(): ActiveWalk | null {
-  return readJson<ActiveWalk | null>(ACTIVE_WALK_KEY, null)
-}
-
-export function saveActiveWalk(walk: ActiveWalk) {
-  localStorage.setItem(ACTIVE_WALK_KEY, JSON.stringify(walk))
-}
-
-export function clearActiveWalk() {
-  localStorage.removeItem(ACTIVE_WALK_KEY)
-}
-
-export function clearLocalDiscovery() {
-  localStorage.removeItem(POINTS_KEY)
-  localStorage.removeItem(CELLS_KEY)
-  localStorage.removeItem(ACTIVE_WALK_KEY)
-  localStorage.removeItem(WALK_OUTBOX_KEY)
-  localStorage.removeItem(LEGACY_POINTS_KEY)
-  uploadedCellUser = null
-  uploadedCellKeys = new Set()
-}
-
-function loadWalkOutbox() {
-  return readJson<PendingWalk[]>(WALK_OUTBOX_KEY, [])
-}
-
-export function queueCompletedWalk(walk: PendingWalk) {
-  const pending = loadWalkOutbox().filter(item => item.id !== walk.id)
-  localStorage.setItem(WALK_OUTBOX_KEY, JSON.stringify([...pending, walk]))
 }
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -92,10 +39,10 @@ async function currentUser(): Promise<User | null> {
 let uploadedCellUser: string | null = null
 let uploadedCellKeys = new Set<string>()
 
-export async function syncDiscoveryCells(cells: DiscoveryCell[]) {
+export async function syncDiscoveryCells(cells: DiscoveryCell[], expectedUserId: string) {
   if (!supabase || cells.length === 0) return
   const user = await currentUser()
-  if (!user) return
+  if (!user || user.id !== expectedUserId) return
   if (uploadedCellUser !== user.id) {
     uploadedCellUser = user.id
     uploadedCellKeys = new Set()
@@ -120,26 +67,18 @@ export async function syncDiscoveryCells(cells: DiscoveryCell[]) {
   }
 }
 
-export async function flushWalkOutbox() {
-  if (!supabase) return
+export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: string) {
+  if (!supabase || walk.points.length < 2) return
   const user = await currentUser()
-  if (!user) return
-  const pending = loadWalkOutbox()
-  const remaining: PendingWalk[] = []
-
-  for (const walk of pending) {
-    if (walk.points.length < 2) continue
-    const { error } = await supabase.rpc('save_walk', {
-      p_walk_id: walk.id,
-      p_started_at: new Date(walk.startedAt).toISOString(),
-      p_finished_at: new Date(walk.finishedAt).toISOString(),
-      p_coordinates: walk.points.map(point => [point.lng, point.lat]),
-      p_point_count: walk.points.length,
-    })
-    if (error) remaining.push(walk)
-  }
-
-  localStorage.setItem(WALK_OUTBOX_KEY, JSON.stringify(remaining))
+  if (!user || user.id !== expectedUserId) throw new Error('The signed-in account changed before the walk could be saved')
+  const { error } = await supabase.rpc('save_walk', {
+    p_walk_id: walk.id,
+    p_started_at: new Date(walk.startedAt).toISOString(),
+    p_finished_at: new Date(walk.finishedAt).toISOString(),
+    p_coordinates: walk.points.map(point => [point.lng, point.lat]),
+    p_point_count: walk.points.length,
+  })
+  if (error) throw error
 }
 
 async function loadRemoteCells(): Promise<DiscoveryCell[]> {
@@ -200,8 +139,9 @@ async function loadLegacyPoints(): Promise<Coordinate[]> {
   }))
 }
 
-export async function loadSyncedDiscovery(): Promise<SyncedDiscovery> {
-  if (!supabase || !await currentUser()) return { points: [], cells: [] }
+export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
+  const user = await currentUser()
+  if (!supabase || !user || user.id !== expectedUserId) return { points: [], cells: [] }
   const [walkPoints, legacyPoints, cells] = await Promise.all([
     loadRemoteWalkPoints(),
     loadLegacyPoints(),
@@ -209,6 +149,6 @@ export async function loadSyncedDiscovery(): Promise<SyncedDiscovery> {
   ])
   return {
     points: walkPoints.length ? walkPoints : legacyPoints,
-    cells: mergeDiscoveryCells(cells, discoveryCellsFromPoints(legacyPoints)),
+    cells: mergeDiscoveryCells(cells, discoveryCellsFromPoints(walkPoints), discoveryCellsFromPoints(legacyPoints)),
   }
 }

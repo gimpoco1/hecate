@@ -53,7 +53,7 @@ class NativeLocationTracker implements LocationTracker {
   async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
     this.watcherId = await BackgroundGeolocation.addWatcher({
       backgroundTitle: 'Hecate is revealing your path',
-      backgroundMessage: 'Your walk is being recorded in the background.',
+      backgroundMessage: 'Your discovery is continuing in the background.',
       requestPermissions: true,
       stale: false,
       distanceFilter: 8,

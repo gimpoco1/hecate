@@ -1,10 +1,8 @@
-import { discoveryCellCenter } from './geo'
+import { DISCOVERY_RADIUS_M, discoveryCellCenter } from './geo'
 import type { Coordinate, DiscoveryCell } from './types'
 
-const CITY_CACHE_KEY = 'hecate:city-boundary:v1'
 const EARTH_RADIUS_KM = 6371.0088
 const EARTH_CIRCUMFERENCE_M = 40_075_016.686
-const REVEAL_RADIUS_M = 60
 
 type CityGeometry = GeoJSON.Polygon | GeoJSON.MultiPolygon
 
@@ -91,11 +89,11 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
       || !isPointInCity({ lng: longitude, lat: latitude }, city)
     ) continue
     const cellSizeM = EARTH_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
-    const range = Math.ceil(REVEAL_RADIUS_M / cellSizeM)
+    const range = Math.ceil(DISCOVERY_RADIUS_M / cellSizeM)
 
     for (let offsetX = -range; offsetX <= range; offsetX += 1) {
       for (let offsetY = -range; offsetY <= range; offsetY += 1) {
-        if (Math.hypot(offsetX, offsetY) * cellSizeM > REVEAL_RADIUS_M + cellSizeM * .72) continue
+        if (Math.hypot(offsetX, offsetY) * cellSizeM > DISCOVERY_RADIUS_M + cellSizeM * .72) continue
         const candidate = { ...cell, x: cell.x + offsetX, y: cell.y + offsetY }
         const [, lat] = discoveryCellCenter(candidate)
         const key = `${candidate.z}/${candidate.x}/${candidate.y}`
@@ -107,15 +105,6 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
 
   const revealedArea = [...revealed.values()].reduce((sum, area) => sum + area, 0)
   return Math.min(100, revealedArea / cityArea * 100)
-}
-
-export function loadCachedCityBoundary(): CityBoundary | null {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CITY_CACHE_KEY) ?? '') as CityBoundary
-    return parsed?.geometry && (parsed.geometry.type === 'Polygon' || parsed.geometry.type === 'MultiPolygon') ? parsed : null
-  } catch {
-    return null
-  }
 }
 
 export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, signal?: AbortSignal) {
@@ -153,6 +142,5 @@ export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, 
     geometry: feature.geometry,
     fetchedAt: Date.now(),
   }
-  localStorage.setItem(CITY_CACHE_KEY, JSON.stringify(city))
   return city
 }

@@ -6,7 +6,7 @@ Hecate separates the user's route history from the accumulated area they have di
 
 ### `walks`
 
-One row represents one completed recording session. Its route is a PostGIS `LineString` simplified to roughly two-metre precision, with start/end times, original point count, and distance. The client keeps an interrupted or offline walk in a local outbox until the `save_walk` database function accepts it.
+One row represents one completed recording session. Its route is a PostGIS `LineString` simplified to roughly two-metre precision, with start/end times, original point count, and distance. The active route exists only in memory until the `save_walk` database function accepts the completed walk.
 
 ### `discovery_cells`
 
@@ -18,11 +18,10 @@ This is the legacy table. `supabase.sql` converts its contents into cells and in
 
 ## Client lifecycle
 
-1. Filter inaccurate positions and record an active walk locally.
-2. Add each accepted position's cell to the local discovered set.
+1. Require an authenticated account, filter inaccurate positions, and keep the active walk in memory.
+2. Add each accepted position's cell to the current account's in-memory discovered set.
 3. Upsert only cells not already attempted during the current signed-in session.
-4. On Finish walk, queue the route locally and upload it through `save_walk`.
-5. If the app closes or has no connection, recover the queued walk on the next launch.
+4. On Finish walk, upload the in-memory route through `save_walk`.
 
 The sample Barcelona walk is display-only and is never persisted or synchronized.
 
@@ -31,7 +30,8 @@ The sample Barcelona walk is display-only and is never persisted or synchronized
 - Route simplification intentionally discards small GPS variations. The rendered path remains faithful, but the database no longer contains every original sample.
 - Grid cells approximate the reveal boundary. At very high zoom, the underlying cell resolution can become perceptible unless the soft mist renderer hides it.
 - Changing the grid resolution later requires regenerating cell keys from retained routes.
-- The schema, migration, and retry logic are more complex than a flat point table.
+- The schema and migration logic are more complex than a flat point table.
+- Because discovery data is not persisted on the device, reloading or force-quitting before a walk is uploaded loses that unfinished walk.
 - Completed route history appears on another device after the walk is finalized; discovery cells can synchronize during the walk.
 - Unique exploration still grows the database. Repeated visits are nearly free, but global-scale usage will eventually require viewport queries or vector tiles instead of loading every cell.
 - PostGIS adds operational knowledge and makes a future move to a non-spatial database more involved.

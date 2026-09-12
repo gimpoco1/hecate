@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { authRedirectUrl } from '../auth'
-import { clearLocalDiscovery, isSyncConfigured, supabase } from '../storage'
+import { isSyncConfigured, supabase } from '../storage'
 import { XIcon } from './Icons'
 
 type Props = { open: boolean; onClose: () => void }
@@ -125,12 +125,10 @@ export function SyncSheet({ open, onClose }: Props) {
         return
       }
 
-      clearLocalDiscovery()
       await supabase.auth.signOut({ scope: 'local' })
       setUser(null)
       setConfirmingDelete(false)
       onClose()
-      window.location.reload()
     } catch {
       setMessage('Unable to delete your account right now. Check your connection and try again.')
     } finally {
@@ -149,7 +147,7 @@ export function SyncSheet({ open, onClose }: Props) {
       <h2 id="sync-title">{user ? 'Your map is with you.' : 'Carry your map everywhere.'}</h2>
       <p>{user
         ? 'Your discoveries are connected to your private Hecate account and available across your signed-in devices.'
-        : 'Your discovered paths are stored on this device first. Sign in to keep a private account copy available across your devices.'}</p>
+        : 'Sign in to start discovering. Your paths belong to your account and stay in sync across your devices.'}</p>
       {authLoading ? <div className="account-loading" role="status">Checking your account…</div>
         : user ? <div className="account-card">
           <div className="account-card__identity">
@@ -164,7 +162,7 @@ export function SyncSheet({ open, onClose }: Props) {
           {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>
             : <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">
               <strong id="delete-account-title">Delete your account?</strong>
-              <p id="delete-account-description">All your discovered paths, walks, and account data will be permanently deleted. This cannot be recovered.</p>
+              <p id="delete-account-description">All your discoveries, routes, and account data will be permanently deleted. This cannot be recovered.</p>
               <div className="delete-confirmation__actions">
                 <button type="button" onClick={() => setConfirmingDelete(false)} disabled={authPending}>Cancel</button>
                 <button className="delete-confirmation__confirm" type="button" onClick={deleteAccount} disabled={authPending}>{authPending ? 'Deleting…' : 'Delete permanently'}</button>
