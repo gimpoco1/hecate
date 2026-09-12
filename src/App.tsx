@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Map as MapLibreMap } from 'maplibre-gl'
+import { discoveredCityPercentage, fetchCityBoundary, isPointInCity, loadCachedCityBoundary, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
-import { ChevronIcon, CompassIcon, HecateMark, LocateIcon, MapIcon, RouteIcon, UserIcon } from './components/Icons'
+import { ChevronIcon, CompassIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon } from './components/Icons'
 import { BARCELONA_DEMO_ROUTE, discoveryCellsFromPoints, mergeDiscoveryCells, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { createLocationTracker, isNativeApp, type LocationTracker } from './location'
 import { clearActiveWalk, flushWalkOutbox, loadActiveWalk, loadLocalCells, loadLocalPoints, loadSyncedDiscovery, queueCompletedWalk, saveActiveWalk, saveLocalCells, saveLocalPoints, syncDiscoveryCells } from './storage'
@@ -11,6 +12,14 @@ import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } f
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`
   return `${distance.toFixed(distance >= 10 ? 1 : 2)} km`
+}
+
+function formatDiscoveryPercentage(percentage: number | null, loading: boolean) {
+  if (loading) return '…'
+  if (percentage === null) return '—'
+  if (percentage > 0 && percentage < .1) return '<0.1%'
+  if (percentage < 10) return `${percentage.toFixed(1)}%`
+  return `${Math.round(percentage)}%`
 }
 
 function mergePoints(local: Coordinate[], remote: Coordinate[]) {
@@ -38,13 +47,23 @@ export default function App() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [showIntro, setShowIntro] = useState(true)
   const [demoMode, setDemoMode] = useState(false)
+  const [perspectiveView, setPerspectiveView] = useState(false)
+  const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(() => loadCachedCityBoundary())
+  const [cityLoading, setCityLoading] = useState(false)
   const mapRef = useRef<MapLibreMap | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(points.at(-1))
   const activeWalkRef = useRef(loadActiveWalk())
+  const demoCells = useMemo(() => discoveryCellsFromPoints(BARCELONA_DEMO_ROUTE), [])
   const displayedPoints = demoMode ? BARCELONA_DEMO_ROUTE : points
-  const displayedCells = demoMode ? discoveryCellsFromPoints(BARCELONA_DEMO_ROUTE) : cells
+  const displayedCells = demoMode ? demoCells : cells
   const distance = useMemo(() => routeDistanceKm(displayedPoints), [displayedPoints])
+  const activeCity = currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary) ? cityBoundary : null
+  const discoveryPercentage = useMemo(
+    () => activeCity ? discoveredCityPercentage(displayedCells, activeCity) : null,
+    [activeCity, displayedCells],
+  )
+  const discoveryLabel = formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity)
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
 
@@ -79,6 +98,21 @@ export default function App() {
   }, [cells])
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
+
+  useEffect(() => {
+    if (!currentPoint || activeCity) return
+    const controller = new AbortController()
+    setCityLoading(true)
+    fetchCityBoundary(currentPoint, controller.signal)
+      .then(setCityBoundary)
+      .catch(error => {
+        if (!controller.signal.aborted) console.warn('City boundary lookup failed', error)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCityLoading(false)
+      })
+    return () => controller.abort()
+  }, [activeCity, currentPoint])
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), [])
 
@@ -161,33 +195,57 @@ export default function App() {
     else void toggleTracking()
   }
 
-  return <main className="app-shell">
+  const toggleMapPerspective = () => {
+    const map = mapRef.current
+    if (!map) return
+    const nextPerspective = !perspectiveView
+    setPerspectiveView(nextPerspective)
+    map.easeTo({
+      pitch: nextPerspective ? 52 : 0,
+      bearing: nextPerspective ? -24 : 0,
+      duration: 900,
+      essential: true,
+    })
+  }
+
+  const showGlobe = () => {
+    setPerspectiveView(false)
+    mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, pitch: 0, bearing: 0, duration: 2200 })
+  }
+
+  const introVisible = showIntro && zoom < 4
+
+  return <main className={`app-shell ${introVisible ? 'app-shell--intro' : ''}`}>
     <DiscoveryMap mode={mode} points={displayedPoints} cells={displayedCells} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
 
     <header className="topbar">
-      <button className="brand" onClick={() => mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, duration: 2200 })} aria-label="View the globe">
+      <button className="brand" onClick={showGlobe} aria-label="View the globe">
         <span className="brand__mark"><HecateMark /></span>
         <span>hecate</span>
       </button>
       <div className="mode-switch" role="group" aria-label="Map mode">
-        <button className={mode === 'discover' ? 'active' : ''} onClick={() => setMode('discover')} aria-pressed={mode === 'discover'}><CompassIcon size={17} /> Discover</button>
+        <button className={mode === 'discover' ? 'active' : ''} onClick={() => setMode('discover')} aria-pressed={mode === 'discover'} title={activeCity ? `${activeCity.name} discovered` : 'Find your location to calculate city progress'}><CompassIcon size={17} /> Discovered <span className="mode-switch__value">{discoveryLabel}</span></button>
         <button className={mode === 'map' ? 'active' : ''} onClick={() => setMode('map')} aria-pressed={mode === 'map'}><MapIcon size={17} /> Map</button>
       </div>
       <button className="avatar-button" onClick={() => setSyncOpen(true)} aria-label="Account and sync"><UserIcon size={19} /></button>
     </header>
 
-    {showIntro && zoom < 4 && <section className="globe-intro">
-      <div className="eyebrow">Your world, slowly revealed</div>
-      <h1>Every walk leaves<br />the world a little clearer.</h1>
-      <p>Zoom into a city to see where your story has—and hasn’t—taken you.</p>
-      <button onClick={revealBarcelona}>Explore Barcelona <ChevronIcon size={18} /></button>
+    {introVisible && <section className="globe-intro">
+      <div className="globe-intro__signal"><span /> Made to be explored</div>
+      <h1>Light up the world you’ve lived.</h1>
+      <p>Every walk reveals more of the map—and leaves the rest waiting in the mist.</p>
+      <button onClick={revealBarcelona}>
+        <span><small>See the reveal</small>Explore Barcelona</span>
+        <span className="globe-intro__arrow"><ChevronIcon size={19} /></span>
+      </button>
+      <div className="globe-intro__note"><span /> Private by default. Yours across devices.</div>
     </section>}
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
     <nav className="map-actions" aria-label="Map controls">
       <button onClick={locate} aria-label="Go to my location"><LocateIcon size={21} /></button>
-      <button onClick={() => setSyncOpen(true)} aria-label="Open journey sync"><RouteIcon size={21} /></button>
+      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Tilt and rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
     </nav>
 
     {isCityScale && <section className="journey-card">
