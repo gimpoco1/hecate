@@ -22,6 +22,8 @@ Magic links opened from the website return to the deployed browser app. Links re
 
 Without Supabase configuration, discoveries remain functional and are stored locally on the device.
 
+The same SQL script installs the authenticated `delete_account` function used by the account dialog. It deletes the current user from Supabase Auth; foreign-key cascades then remove that user's walks, discovery cells, and legacy discovery points. Rerun `supabase.sql` on an existing project whenever this function is added or updated.
+
 Completed walks are stored as simplified PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. The legacy `discovery_points` table is retained after migration for verification and can be removed in a later release. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 
 ## iOS and background tracking

@@ -117,7 +117,14 @@ button { color: inherit; }
 .account-card__status { display: flex; align-items: center; gap: 7px; margin-top: 14px; color: #61732d; font-size: 11px; font-weight: 600; }
 .account-card__status span { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); border: 1px solid #71862d; }
 .sign-out-button { width: 100%; margin-top: 14px; border: 1px solid #d7ddd7; border-radius: 12px; padding: 11px 14px; background: #f5f6f2; color: var(--forest); font-weight: 650; cursor: pointer; }
-.sign-out-button:disabled, .auth-submit:disabled { cursor: wait; opacity: .65; }
+.delete-account-button { width: 100%; margin-top: 8px; border: 0; padding: 8px 12px; background: transparent; color: #a04435; font-size: 11px; font-weight: 650; cursor: pointer; }
+.delete-confirmation { margin-top: 12px; padding: 14px; border: 1px solid rgba(160,68,53,.22); border-radius: 14px; background: #fff7f4; }
+.delete-confirmation strong { color: #792f24; font-size: 13px; }
+.delete-confirmation p { margin: 6px 0 12px; color: #795c56; font-size: 11px; line-height: 1.45; }
+.delete-confirmation__actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.delete-confirmation__actions button { border: 1px solid #ded8d4; border-radius: 10px; padding: 10px 8px; background: white; color: var(--forest); font-size: 11px; font-weight: 700; cursor: pointer; }
+.delete-confirmation__actions .delete-confirmation__confirm { border-color: #963f31; background: #963f31; color: white; }
+.sign-out-button:disabled, .delete-account-button:disabled, .delete-confirmation__actions button:disabled, .auth-submit:disabled { cursor: wait; opacity: .65; }
 .setup-note { display: flex; flex-direction: column; gap: 5px; padding: 14px; border-radius: 14px; background: #ecefe8; color: #5d6a64; font-size: 12px; line-height: 1.45; }
 .setup-note span { font-weight: 700; color: #29463a; }
 .setup-note code { font-size: 11px; }

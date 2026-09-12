@@ -154,6 +154,31 @@ revoke all on function public.get_walk_routes() from public, anon;
 grant execute on function public.save_walk(uuid, timestamptz, timestamptz, jsonb, integer) to authenticated;
 grant execute on function public.get_walk_routes() to authenticated;
 
+-- Account deletion is intentionally exposed only through this authenticated
+-- function. Removing the auth user cascades to every user-owned table above.
+create or replace function public.delete_account()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  delete from auth.users where id = v_user_id;
+  if not found then
+    raise exception 'Account not found';
+  end if;
+end;
+$$;
+
+revoke all on function public.delete_account() from public, anon;
+grant execute on function public.delete_account() to authenticated;
+
 -- Backfill each unique legacy position into a cell.
 with legacy_cells as (
   select

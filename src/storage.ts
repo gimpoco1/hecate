@@ -56,6 +56,16 @@ export function clearActiveWalk() {
   localStorage.removeItem(ACTIVE_WALK_KEY)
 }
 
+export function clearLocalDiscovery() {
+  localStorage.removeItem(POINTS_KEY)
+  localStorage.removeItem(CELLS_KEY)
+  localStorage.removeItem(ACTIVE_WALK_KEY)
+  localStorage.removeItem(WALK_OUTBOX_KEY)
+  localStorage.removeItem(LEGACY_POINTS_KEY)
+  uploadedCellUser = null
+  uploadedCellKeys = new Set()
+}
+
 function loadWalkOutbox() {
   return readJson<PendingWalk[]>(WALK_OUTBOX_KEY, [])
 }

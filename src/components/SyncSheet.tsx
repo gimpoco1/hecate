@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { authRedirectUrl } from '../auth'
-import { isSyncConfigured, supabase } from '../storage'
+import { clearLocalDiscovery, isSyncConfigured, supabase } from '../storage'
 import { XIcon } from './Icons'
 
 type Props = { open: boolean; onClose: () => void }
@@ -18,9 +18,13 @@ export function SyncSheet({ open, onClose }: Props) {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(isSyncConfigured)
   const [authPending, setAuthPending] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setConfirmingDelete(false)
+      return
+    }
     if (!supabase) {
       setAuthLoading(false)
       return
@@ -103,8 +107,35 @@ export function SyncSheet({ open, onClose }: Props) {
     setMessage('')
     const { error } = await supabase.auth.signOut()
     if (error) setMessage(error.message)
-    else setUser(null)
+    else {
+      setUser(null)
+      setConfirmingDelete(false)
+    }
     setAuthPending(false)
+  }
+
+  const deleteAccount = async () => {
+    if (!supabase) return
+    setAuthPending(true)
+    setMessage('')
+    try {
+      const { error } = await supabase.rpc('delete_account')
+      if (error) {
+        setMessage(error.message)
+        return
+      }
+
+      clearLocalDiscovery()
+      await supabase.auth.signOut({ scope: 'local' })
+      setUser(null)
+      setConfirmingDelete(false)
+      onClose()
+      window.location.reload()
+    } catch {
+      setMessage('Unable to delete your account right now. Check your connection and try again.')
+    } finally {
+      setAuthPending(false)
+    }
   }
 
   const accountName = user?.user_metadata?.full_name || user?.user_metadata?.name
@@ -130,6 +161,15 @@ export function SyncSheet({ open, onClose }: Props) {
           </div>
           <div className="account-card__status"><span /> Signed in and syncing</div>
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
+          {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>
+            : <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">
+              <strong id="delete-account-title">Delete your account?</strong>
+              <p id="delete-account-description">All your discovered paths, walks, and account data will be permanently deleted. This cannot be recovered.</p>
+              <div className="delete-confirmation__actions">
+                <button type="button" onClick={() => setConfirmingDelete(false)} disabled={authPending}>Cancel</button>
+                <button className="delete-confirmation__confirm" type="button" onClick={deleteAccount} disabled={authPending}>{authPending ? 'Deleting…' : 'Delete permanently'}</button>
+              </div>
+            </div>}
           {message && <div className="form-message" role="status">{message}</div>}
         </div>
         : isSyncConfigured ? <div className="auth-panel">
