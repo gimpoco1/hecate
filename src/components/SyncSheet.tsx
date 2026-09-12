@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
+import { authRedirectUrl } from '../auth'
 import { isSyncConfigured, supabase } from '../storage'
 import { XIcon } from './Icons'
 
 type Props = { open: boolean; onClose: () => void }
+type SignInMethod = 'password' | 'link'
+type PasswordIntent = 'signin' | 'signup'
 
 export function SyncSheet({ open, onClose }: Props) {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [signInMethod, setSignInMethod] = useState<SignInMethod>('password')
+  const [passwordIntent, setPasswordIntent] = useState<PasswordIntent>('signin')
   const [message, setMessage] = useState('')
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(isSyncConfigured)
@@ -48,12 +55,46 @@ export function SyncSheet({ open, onClose }: Props) {
     if (!supabase) return
     setAuthPending(true)
     setMessage('')
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    })
-    setMessage(error ? error.message : 'Check your inbox for a secure sign-in link.')
-    setAuthPending(false)
+    try {
+      if (signInMethod === 'password') {
+        if (passwordIntent === 'signup') {
+          if (password.length < 8) {
+            setMessage('Use at least 8 characters for your password.')
+            return
+          }
+          if (password !== confirmPassword) {
+            setMessage('The passwords do not match.')
+            return
+          }
+
+          const { data, error } = await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { emailRedirectTo: authRedirectUrl() },
+          })
+          if (error) setMessage(error.message)
+          else if (data.session && data.user) setUser(data.user)
+          else setMessage('Check your inbox to confirm your account. The link will bring you back to Hecate.')
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+          if (error) setMessage(error.message)
+          else setUser(data.user)
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: email.trim(),
+          options: {
+            emailRedirectTo: authRedirectUrl(),
+            shouldCreateUser: false,
+          },
+        })
+        setMessage(error ? error.message : 'Check your inbox for a one-time sign-in link.')
+      }
+    } catch {
+      setMessage('Unable to reach your account right now. Check your connection and try again.')
+    } finally {
+      setAuthPending(false)
+    }
   }
 
   const signOut = async () => {
@@ -91,16 +132,40 @@ export function SyncSheet({ open, onClose }: Props) {
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
           {message && <div className="form-message" role="status">{message}</div>}
         </div>
-        : isSyncConfigured ? <form onSubmit={signIn}>
-        <label htmlFor="email">Email address</label>
-        <div className="email-row">
-          <input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" required />
-          <button type="submit" disabled={authPending}>{authPending ? 'Sending…' : 'Send link'}</button>
-        </div>
-        {message && <div className="form-message" role="status">{message}</div>}
-      </form> : <div className="setup-note">
+        : isSyncConfigured ? <div className="auth-panel">
+          <div className="auth-methods" role="tablist" aria-label="Sign-in method">
+            <button type="button" role="tab" aria-selected={signInMethod === 'password'} className={signInMethod === 'password' ? 'active' : ''} onClick={() => { setSignInMethod('password'); setMessage('') }}>Password</button>
+            <button type="button" role="tab" aria-selected={signInMethod === 'link'} className={signInMethod === 'link' ? 'active' : ''} onClick={() => { setSignInMethod('link'); setMessage('') }}>Email link</button>
+          </div>
+          <form className="auth-form" onSubmit={signIn}>
+            <label htmlFor="email">Email address</label>
+            <input id="email" type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" required />
+            {signInMethod === 'password' && <>
+              <label htmlFor="password">Password</label>
+              <input id="password" type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder={passwordIntent === 'signup' ? 'At least 8 characters' : 'Your password'} autoComplete={passwordIntent === 'signup' ? 'new-password' : 'current-password'} minLength={passwordIntent === 'signup' ? 8 : undefined} required />
+              {passwordIntent === 'signup' && <>
+                <label htmlFor="confirm-password">Confirm password</label>
+                <input id="confirm-password" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} placeholder="Type your password again" autoComplete="new-password" minLength={8} required />
+              </>}
+            </>}
+            <button className="auth-submit" type="submit" disabled={authPending}>{authPending
+              ? passwordIntent === 'signup' && signInMethod === 'password' ? 'Creating account…' : signInMethod === 'password' ? 'Signing in…' : 'Sending…'
+              : signInMethod === 'link' ? 'Send one-time link' : passwordIntent === 'signup' ? 'Create account' : 'Sign in'}</button>
+            {signInMethod === 'password' && <div className="auth-switch">
+              <span>{passwordIntent === 'signin' ? 'New to Hecate?' : 'Already have an account?'}</span>
+              <button type="button" onClick={() => {
+                setPasswordIntent(passwordIntent === 'signin' ? 'signup' : 'signin')
+                setPassword('')
+                setConfirmPassword('')
+                setMessage('')
+              }}>{passwordIntent === 'signin' ? 'Create account' : 'Sign in'}</button>
+            </div>}
+            {signInMethod === 'link' && <small className="auth-hint">For existing accounts. No password required.</small>}
+            {message && <div className="form-message" role="status">{message}</div>}
+          </form>
+        </div> : <div className="setup-note">
         <span>Sync preview</span>
-        Add Supabase keys from <code>.env.example</code> to enable passwordless account sync.
+        Add Supabase keys from <code>.env.example</code> to enable private account sync.
       </div>}
       <div className="privacy-row"><span className="privacy-dot" /> Location history is never sold or shared.</div>
     </section>

@@ -1,18 +1,23 @@
 PODS:
   - Capacitor (7.6.9):
     - CapacitorCordova
+  - CapacitorApp (7.1.2):
+    - Capacitor
   - CapacitorCommunityBackgroundGeolocation (1.2.26):
     - Capacitor
   - CapacitorCordova (7.6.9)
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
   - "CapacitorCommunityBackgroundGeolocation (from `../../node_modules/@capacitor-community/background-geolocation`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
 
 EXTERNAL SOURCES:
   Capacitor:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
   CapacitorCommunityBackgroundGeolocation:
     :path: "../../node_modules/@capacitor-community/background-geolocation"
   CapacitorCordova:
@@ -20,9 +25,10 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Capacitor: 46067d1c8df89760dbed78780d436327d588c726
+  CapacitorApp: f01a913211780e0718dae9750442c3e23f96e106
   CapacitorCommunityBackgroundGeolocation: 750523ec6dd1cc94cf4e2bf7787605106753f73c
   CapacitorCordova: 2080fc0d6bfbc9dcc0e6d88e77fa624190d343ca
 
-PODFILE CHECKSUM: 8e917af51fae690450284def2f8b4d4e8c1c2c98
+PODFILE CHECKSUM: c4c44f2a2507d79e6f4d444478532aebf891afbe
 
 COCOAPODS: 1.17.0
