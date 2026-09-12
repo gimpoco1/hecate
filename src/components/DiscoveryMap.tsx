@@ -5,6 +5,15 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { discoveryCellCenter, splitRoute } from '../geo'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
+const OPENFREEMAP_ORIGIN = 'https://tiles.openfreemap.org'
+
+function mapResourceUrl(url: string) {
+  const isWeb = window.location.protocol === 'http:' || window.location.protocol === 'https:'
+  return isWeb && url.startsWith(OPENFREEMAP_ORIGIN)
+    ? url.replace(OPENFREEMAP_ORIGIN, `${window.location.origin}/map`)
+    : url
+}
+
 type Props = {
   mode: MapMode
   points: Coordinate[]
@@ -115,7 +124,8 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
     if (!containerRef.current || mapRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
+      style: mapResourceUrl(`${OPENFREEMAP_ORIGIN}/styles/liberty`),
+      transformRequest: url => ({ url: mapResourceUrl(url) }),
       center: [7, 24],
       zoom: 1.35,
       pitch: 0,
@@ -125,12 +135,23 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
       renderWorldCopies: false,
     })
     mapRef.current = map
+    let projectionReady = false
+    let projection: 'globe' | 'mercator' = 'mercator'
+    const updateProjection = () => {
+      if (!projectionReady) return
+      const nextProjection = map.getZoom() < 5.5 ? 'globe' : 'mercator'
+      if (nextProjection === projection) return
+      projection = nextProjection
+      map.setProjection({ type: nextProjection })
+    }
+
     if (import.meta.env.DEV) (window as Window & { __hecateMap?: MapLibreMap }).__hecateMap = map
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
     map.on('error', event => console.error('Map rendering error', event.error))
 
     map.on('style.load', () => {
-      map.setProjection({ type: 'globe' })
+      projectionReady = true
+      updateProjection()
       map.addSource('journey', { type: 'geojson', data: routeData(stateRef.current.points) })
       map.addLayer({
         id: 'journey-halo', type: 'line', source: 'journey',
@@ -147,7 +168,10 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
       if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
     map.on('render', redraw)
-    map.on('zoom', () => onZoomChange(map.getZoom()))
+    map.on('zoom', () => {
+      updateProjection()
+      onZoomChange(map.getZoom())
+    })
     map.on('resize', redraw)
     return () => {
       markerRef.current?.remove()
