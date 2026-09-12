@@ -1,8 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/map/:path*",
-      "destination": "https://tiles.openfreemap.org/:path*"
-    }
-  ]
-}

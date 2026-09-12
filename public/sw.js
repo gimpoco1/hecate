@@ -20,14 +20,8 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const requestUrl = new URL(event.request.url)
 
-  // Map requests are streamed through Hecate's same-origin /map proxy. Keep
-  // both those and any native-app cross-origin requests outside the app shell
-  // cache so the service worker cannot strand MapLibre in a pending state.
-  if (
-    event.request.method !== 'GET'
-    || requestUrl.origin !== self.location.origin
-    || requestUrl.pathname.startsWith('/map/')
-  ) return
+  // Let the browser fetch map styles, tiles, glyphs, and sprites directly.
+  if (event.request.method !== 'GET' || requestUrl.origin !== self.location.origin) return
 
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)))
 })
