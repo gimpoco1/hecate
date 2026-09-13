@@ -7,6 +7,7 @@ import { XIcon } from './Icons'
 type Props = { open: boolean; onClose: () => void }
 type SignInMethod = 'password' | 'link'
 type PasswordIntent = 'signin' | 'signup'
+type MessageTone = 'success' | 'error'
 
 export function SyncSheet({ open, onClose }: Props) {
   const [email, setEmail] = useState('')
@@ -15,6 +16,7 @@ export function SyncSheet({ open, onClose }: Props) {
   const [signInMethod, setSignInMethod] = useState<SignInMethod>('password')
   const [passwordIntent, setPasswordIntent] = useState<PasswordIntent>('signin')
   const [message, setMessage] = useState('')
+  const [messageTone, setMessageTone] = useState<MessageTone>('success')
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(isSyncConfigured)
   const [authPending, setAuthPending] = useState(false)
@@ -36,6 +38,7 @@ export function SyncSheet({ open, onClose }: Props) {
       if (!active) return
       setUser(data.session?.user ?? null)
       setMessage(error?.message ?? '')
+      setMessageTone(error ? 'error' : 'success')
       setAuthLoading(false)
     })
 
@@ -59,15 +62,18 @@ export function SyncSheet({ open, onClose }: Props) {
     if (!supabase) return
     setAuthPending(true)
     setMessage('')
+    setMessageTone('success')
     try {
       if (signInMethod === 'password') {
         if (passwordIntent === 'signup') {
           if (password.length < 8) {
             setMessage('Use at least 8 characters for your password.')
+            setMessageTone('error')
             return
           }
           if (password !== confirmPassword) {
             setMessage('The passwords do not match.')
+            setMessageTone('error')
             return
           }
 
@@ -76,12 +82,21 @@ export function SyncSheet({ open, onClose }: Props) {
             password,
             options: { emailRedirectTo: authRedirectUrl() },
           })
-          if (error) setMessage(error.message)
+          if (error) {
+            setMessage(error.message)
+            setMessageTone('error')
+          }
           else if (data.session && data.user) setUser(data.user)
-          else setMessage('Check your inbox to confirm your account. The link will bring you back to Hecate.')
+          else {
+            setMessage('Check your inbox to confirm your account. The link will bring you back to Hecate.')
+            setMessageTone('success')
+          }
         } else {
           const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-          if (error) setMessage(error.message)
+          if (error) {
+            setMessage(error.message)
+            setMessageTone('error')
+          }
           else setUser(data.user)
         }
       } else {
@@ -93,9 +108,11 @@ export function SyncSheet({ open, onClose }: Props) {
           },
         })
         setMessage(error ? error.message : 'Check your inbox for a one-time sign-in link.')
+        setMessageTone(error ? 'error' : 'success')
       }
     } catch {
       setMessage('Unable to reach your account right now. Check your connection and try again.')
+      setMessageTone('error')
     } finally {
       setAuthPending(false)
     }
@@ -106,7 +123,10 @@ export function SyncSheet({ open, onClose }: Props) {
     setAuthPending(true)
     setMessage('')
     const { error } = await supabase.auth.signOut()
-    if (error) setMessage(error.message)
+    if (error) {
+      setMessage(error.message)
+      setMessageTone('error')
+    }
     else {
       setUser(null)
       setConfirmingDelete(false)
@@ -122,6 +142,7 @@ export function SyncSheet({ open, onClose }: Props) {
       const { error } = await supabase.rpc('delete_account')
       if (error) {
         setMessage(error.message)
+        setMessageTone('error')
         return
       }
 
@@ -131,6 +152,7 @@ export function SyncSheet({ open, onClose }: Props) {
       onClose()
     } catch {
       setMessage('Unable to delete your account right now. Check your connection and try again.')
+      setMessageTone('error')
     } finally {
       setAuthPending(false)
     }
@@ -139,11 +161,19 @@ export function SyncSheet({ open, onClose }: Props) {
   const accountName = user?.user_metadata?.full_name || user?.user_metadata?.name
   const accountEmail = user?.email ?? 'Signed-in account'
   const accountInitial = (accountName || accountEmail).trim().charAt(0).toUpperCase()
+  const beginAccountCreation = () => {
+    setSignInMethod('password')
+    setPasswordIntent('signup')
+    setPassword('')
+    setConfirmPassword('')
+    setMessage('')
+  }
 
   return <div className="sheet-backdrop" onClick={onClose}>
     <section className="sheet" onClick={event => event.stopPropagation()} aria-modal="true" role="dialog" aria-labelledby="sync-title">
       <button className="icon-button sheet__close" onClick={onClose} aria-label="Close"><XIcon /></button>
       <div className="eyebrow">{user ? 'Account & sync' : 'Private by design'}</div>
+      {!user && <div className="sync-privacy-subtitle"><span /> Location history is never sold or shared.</div>}
       <h2 id="sync-title">{user ? 'Your map is with you.' : 'Carry your map everywhere.'}</h2>
       <p>{user
         ? 'Your discoveries are connected to your private Hecate account and available across your signed-in devices.'
@@ -168,7 +198,7 @@ export function SyncSheet({ open, onClose }: Props) {
                 <button className="delete-confirmation__confirm" type="button" onClick={deleteAccount} disabled={authPending}>{authPending ? 'Deleting…' : 'Delete permanently'}</button>
               </div>
             </div>}
-          {message && <div className="form-message" role="status">{message}</div>}
+          {message && <div className={`form-message form-message--${messageTone}`} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}
         </div>
         : isSyncConfigured ? <div className="auth-panel">
           <div className="auth-methods" role="tablist" aria-label="Sign-in method">
@@ -188,28 +218,33 @@ export function SyncSheet({ open, onClose }: Props) {
             </>}
             <button className="auth-submit" type="submit" disabled={authPending}>{authPending
               ? passwordIntent === 'signup' && signInMethod === 'password' ? 'Creating account…' : signInMethod === 'password' ? 'Signing in…' : 'Sending…'
-              : signInMethod === 'link' ? 'Send one-time link' : passwordIntent === 'signup' ? 'Create account' : 'Sign in'}</button>
+              : signInMethod === 'link' ? 'Send sign-in link' : passwordIntent === 'signup' ? 'Create account' : 'Sign in'}</button>
             {signInMethod === 'password' && <div className="auth-switch">
               <span>{passwordIntent === 'signin' ? 'New to Hecate?' : 'Already have an account?'}</span>
               <button type="button" onClick={() => {
-                setPasswordIntent(passwordIntent === 'signin' ? 'signup' : 'signin')
-                setPassword('')
-                setConfirmPassword('')
-                setMessage('')
+                if (passwordIntent === 'signin') beginAccountCreation()
+                else {
+                  setPasswordIntent('signin')
+                  setPassword('')
+                  setConfirmPassword('')
+                  setMessage('')
+                }
               }}>{passwordIntent === 'signin' ? 'Create account' : 'Sign in'}</button>
             </div>}
-            {signInMethod === 'link' && <small className="auth-hint">For existing accounts. No password required.</small>}
-            {message && <div className="form-message" role="status">{message}</div>}
+            {signInMethod === 'link' && <div className="auth-switch">
+              <span>New to Hecate?</span>
+              <button type="button" onClick={beginAccountCreation}>Create account</button>
+            </div>}
+            {message && <div className={`form-message form-message--${messageTone}`} role={messageTone === 'error' ? 'alert' : 'status'}>{message}</div>}
           </form>
         </div> : <div className="setup-note">
         <span>Sync preview</span>
         Add Supabase keys from <code>.env.example</code> to enable private account sync.
       </div>}
-      <div className="privacy-row"><span className="privacy-dot" /> Location history is never sold or shared.</div>
       <nav className="account-legal-links" aria-label="Legal and support">
-        <a href="/privacy-policy.html" target="_blank" rel="noreferrer">Privacy Policy</a>
+        <a href="/privacy-policy.html">Privacy Policy</a>
         <span aria-hidden="true">·</span>
-        <a href="/support.html" target="_blank" rel="noreferrer">Support</a>
+        <a href="/support.html">Support</a>
       </nav>
     </section>
   </div>

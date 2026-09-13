@@ -765,11 +765,6 @@ button {
   font-weight: 650;
   cursor: pointer;
 }
-.auth-hint {
-  color: #78847e;
-  font-size: 10px;
-  text-align: center;
-}
 .auth-switch {
   display: flex;
   align-items: center;
@@ -791,8 +786,19 @@ button {
 }
 .form-message {
   margin-top: 10px;
+  border-radius: 9px;
+  padding: 8px 10px;
   font-size: 12px;
+  line-height: 1.4;
+}
+.form-message--success {
   color: #61732d;
+  background: #f0f4e1;
+}
+.form-message--error {
+  color: #9d3429;
+  background: #fff0ed;
+  border: 1px solid #f0beb5;
 }
 .account-loading {
   padding: 17px;
@@ -941,15 +947,15 @@ button {
 .setup-note code {
   font-size: 11px;
 }
-.privacy-row {
+.sync-privacy-subtitle {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
+  margin-top: 5px;
   color: #748078;
   font-size: 11px;
 }
-.privacy-dot {
+.sync-privacy-subtitle span {
   width: 8px;
   height: 8px;
   border-radius: 50%;
