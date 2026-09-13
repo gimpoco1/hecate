@@ -949,6 +949,21 @@ button {
   background: var(--lime);
   border: 2px solid #71862d;
 }
+.account-legal-links {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: #748078;
+  font-size: 11px;
+}
+.account-legal-links a {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+.account-legal-links a:hover {
+  color: var(--forest);
+}
 
 .maplibregl-ctrl-attrib {
   opacity: 0.58;

@@ -206,6 +206,11 @@ export function SyncSheet({ open, onClose }: Props) {
         Add Supabase keys from <code>.env.example</code> to enable private account sync.
       </div>}
       <div className="privacy-row"><span className="privacy-dot" /> Location history is never sold or shared.</div>
+      <nav className="account-legal-links" aria-label="Legal and support">
+        <a href="/privacy-policy.html" target="_blank" rel="noreferrer">Privacy Policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="/support.html" target="_blank" rel="noreferrer">Support</a>
+      </nav>
     </section>
   </div>
 }
