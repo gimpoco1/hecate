@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { discoveryCellCenter, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
+import { discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
 
 describe('discovery route geometry', () => {
   const a = { lng: 2.17, lat: 41.38, recordedAt: 1_000, accuracy: 5 }
@@ -8,6 +8,12 @@ describe('discovery route geometry', () => {
   it('calculates real-world path distance', () => {
     expect(distanceKm(a, b)).toBeGreaterThan(0.08)
     expect(routeDistanceKm([a, b])).toBeCloseTo(distanceKm(a, b))
+  })
+
+  it('counts distance only when a route reaches a new discovery cell', () => {
+    const returnToStart = { ...a, recordedAt: 40_000 }
+    const repeatStreet = { ...b, recordedAt: 60_000 }
+    expect(discoveredDistanceKm([a, b, returnToStart, repeatStreet])).toBeCloseTo(distanceKm(a, b))
   })
 
   it('drops noisy GPS positions', () => {

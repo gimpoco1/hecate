@@ -12,6 +12,50 @@ export interface LocationTracker {
   stop(): void | Promise<void>
 }
 
+/**
+ * Reads one location without creating a walk. The background-geolocation
+ * plugin exposes a watcher rather than a single-read API, so remove it as
+ * soon as its first usable update arrives.
+ */
+export function requestCurrentLocation(): Promise<Coordinate> {
+  return new Promise((resolve, reject) => {
+    const tracker = createLocationTracker()
+    let completed = false
+    let started = false
+    let stopAfterStart = false
+    let timeout: number | undefined
+
+    const stop = () => {
+      if (!started) {
+        stopAfterStart = true
+        return
+      }
+      void Promise.resolve(tracker.stop()).catch(() => undefined)
+    }
+    const finish = (result: { point: Coordinate } | { error: Error }) => {
+      if (completed) return
+      completed = true
+      if (timeout !== undefined) window.clearTimeout(timeout)
+      stop()
+      if ('point' in result) resolve(result.point)
+      else reject(result.error)
+    }
+    timeout = window.setTimeout(() => {
+      finish({ error: new Error('Timed out while getting your location.') })
+    }, 15_000)
+
+    void tracker.start(
+      point => finish({ point }),
+      error => finish({ error: new Error(error.message) }),
+    ).then(() => {
+      started = true
+      if (stopAfterStart) stop()
+    }).catch(error => {
+      finish({ error: error instanceof Error ? error : new Error('Location is unavailable.') })
+    })
+  })
+}
+
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null
 

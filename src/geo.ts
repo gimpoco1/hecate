@@ -23,6 +23,27 @@ export function routeDistanceKm(points: Coordinate[]) {
   ), 0)
 }
 
+/**
+ * Distance that resulted in new discoveries. Returning through a cell that
+ * has already been unlocked is still part of the route, but does not add to
+ * this metric.
+ */
+export function discoveredDistanceKm(points: Coordinate[]) {
+  const revealed = new Set<string>()
+  let total = 0
+
+  for (const segment of splitRoute(points)) {
+    for (let index = 0; index < segment.length; index += 1) {
+      const point = segment[index]
+      const footprint = discoveryFootprintCells(pointToDiscoveryCell(point))
+      const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
+      if (index > 0 && unlocksNewGround) total += distanceKm(segment[index - 1], point)
+      footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
+    }
+  }
+  return total
+}
+
 export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = []) {
   const combined = [...local, ...remote]
   const walksWithDetailedPoints = new Set(
@@ -73,6 +94,26 @@ export function discoveryCellCenter(cell: DiscoveryCell): [number, number] {
   const mercatorY = Math.PI * (1 - 2 * (cell.y + 0.5) / scale)
   const lat = Math.atan(Math.sinh(mercatorY)) * 180 / Math.PI
   return [lng, lat]
+}
+
+export function discoveryCellKey(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>) {
+  return `${cell.z}/${cell.x}/${cell.y}`
+}
+
+/** The zoom-20 cells covered by a point's fixed 35 m reveal radius. */
+export function discoveryFootprintCells(cell: DiscoveryCell) {
+  const [, latitude] = discoveryCellCenter(cell)
+  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
+  const range = Math.ceil(DISCOVERY_RADIUS_M / cellSizeM)
+  const footprint: DiscoveryCell[] = []
+
+  for (let offsetX = -range; offsetX <= range; offsetX += 1) {
+    for (let offsetY = -range; offsetY <= range; offsetY += 1) {
+      if (Math.hypot(offsetX, offsetY) * cellSizeM > DISCOVERY_RADIUS_M + cellSizeM * .72) continue
+      footprint.push({ ...cell, x: cell.x + offsetX, y: cell.y + offsetY })
+    }
+  }
+  return footprint
 }
 
 export function mergeDiscoveryCells(...collections: DiscoveryCell[][]) {

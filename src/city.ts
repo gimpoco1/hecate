@@ -1,8 +1,7 @@
-import { DISCOVERY_RADIUS_M, discoveryCellCenter } from './geo'
+import { discoveryCellCenter, discoveryCellKey, discoveryFootprintCells } from './geo'
 import type { Coordinate, DiscoveryCell } from './types'
 
 const EARTH_RADIUS_KM = 6371.0088
-const EARTH_CIRCUMFERENCE_M = 40_075_016.686
 
 type CityGeometry = GeoJSON.Polygon | GeoJSON.MultiPolygon
 
@@ -88,18 +87,14 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
       || latitude < bounds.south - .002 || latitude > bounds.north + .002
       || !isPointInCity({ lng: longitude, lat: latitude }, city)
     ) continue
-    const cellSizeM = EARTH_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
-    const range = Math.ceil(DISCOVERY_RADIUS_M / cellSizeM)
-
-    for (let offsetX = -range; offsetX <= range; offsetX += 1) {
-      for (let offsetY = -range; offsetY <= range; offsetY += 1) {
-        if (Math.hypot(offsetX, offsetY) * cellSizeM > DISCOVERY_RADIUS_M + cellSizeM * .72) continue
-        const candidate = { ...cell, x: cell.x + offsetX, y: cell.y + offsetY }
-        const [, lat] = discoveryCellCenter(candidate)
-        const key = `${candidate.z}/${candidate.x}/${candidate.y}`
-        const candidateSizeM = EARTH_CIRCUMFERENCE_M * Math.cos(lat * Math.PI / 180) / 2 ** candidate.z
-        revealed.set(key, candidateSizeM * candidateSizeM / 1_000_000)
-      }
+    for (const candidate of discoveryFootprintCells(cell)) {
+      const [lng, lat] = discoveryCellCenter(candidate)
+      // Coverage is the overlap with this municipality, not the whole
+      // circular reveal around a route point near its boundary.
+      if (!isPointInCity({ lng, lat }, city)) continue
+      const key = discoveryCellKey(candidate)
+      const candidateSizeM = 40_075_016.686 * Math.cos(lat * Math.PI / 180) / 2 ** candidate.z
+      revealed.set(key, candidateSizeM * candidateSizeM / 1_000_000)
     }
   }
 

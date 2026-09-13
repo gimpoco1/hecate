@@ -29,4 +29,11 @@ describe('city discovery', () => {
     expect(percentage).toBeGreaterThan(0)
     expect(percentage).toBeLessThan(1)
   })
+
+  it('does not increase coverage when the same place is discovered repeatedly', () => {
+    const cell = pointToDiscoveryCell({ lng: 0, lat: 0, recordedAt: 1 })
+    const repeatedVisit = { ...cell, discoveredAt: 2 }
+    expect(discoveredCityPercentage([cell, repeatedVisit], city))
+      .toBe(discoveredCityPercentage([cell], city))
+  })
 })

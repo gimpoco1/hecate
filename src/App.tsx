@@ -4,8 +4,8 @@ import { discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBo
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
-import { discoveryCellCenter, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
-import { createLocationTracker, isNativeApp, type LocationTracker } from './location'
+import { discoveredDistanceKm, discoveryCellCenter, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, shouldRecordPoint } from './geo'
+import { createLocationTracker, isNativeApp, requestCurrentLocation, type LocationTracker } from './location'
 import { isSyncConfigured, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
@@ -55,7 +55,8 @@ export default function App() {
   const activeWalkRef = useRef<ActiveWalk | null>(null)
   const trackingUserRef = useRef<string | null>(null)
   const pendingWalksRef = useRef<PendingWalk[]>([])
-  const distance = useMemo(() => routeDistanceKm(points), [points])
+  const locationRefreshInFlightRef = useRef(false)
+  const discoveryDistance = useMemo(() => discoveredDistanceKm(points), [points])
   const activeCity = currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary) ? cityBoundary : null
   const discoveryPercentage = useMemo(
     () => activeCity ? discoveredCityPercentage(cells, activeCity) : null,
@@ -125,6 +126,33 @@ export default function App() {
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
+  const refreshCurrentLocation = useCallback(async (centerMap = false) => {
+    if (locationRefreshInFlightRef.current) return
+    locationRefreshInFlightRef.current = true
+    try {
+      const point = await requestCurrentLocation()
+      if (!isUsableGpsPoint(point)) return
+      setCurrentPoint(point)
+      if (centerMap) {
+        mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1400, essential: true })
+      }
+    } catch {
+      // Keep the most recent known position when a fresh read is unavailable.
+    } finally {
+      locationRefreshInFlightRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const refreshAfterReturningToApp = () => {
+      if (document.visibilityState === 'visible' && tracking !== 'tracking' && currentPoint) {
+        void refreshCurrentLocation()
+      }
+    }
+    document.addEventListener('visibilitychange', refreshAfterReturningToApp)
+    return () => document.removeEventListener('visibilitychange', refreshAfterReturningToApp)
+  }, [currentPoint, refreshCurrentLocation, tracking])
+
   useEffect(() => {
     if (!currentPoint || activeCity) return
     const controller = new AbortController()
@@ -162,6 +190,7 @@ export default function App() {
     if (focus) {
       setCurrentPoint(focus)
       mapRef.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 14.3, duration: 2600, essential: true })
+      void refreshCurrentLocation(true)
     } else {
       void toggleTracking()
     }
@@ -239,8 +268,11 @@ export default function App() {
   }
 
   const locate = () => {
-    if (currentPoint) mapRef.current?.flyTo({ center: [currentPoint.lng, currentPoint.lat], zoom: 15, duration: 1400, essential: true })
-    else void toggleTracking()
+    if (tracking === 'tracking' && currentPoint) {
+      mapRef.current?.flyTo({ center: [currentPoint.lng, currentPoint.lat], zoom: 15, duration: 1400, essential: true })
+      return
+    }
+    void refreshCurrentLocation(true)
   }
 
   const toggleMapPerspective = () => {
@@ -284,7 +316,7 @@ export default function App() {
         <span><small>{discoveryLoading ? 'Syncing your account' : accountUserId ? 'Your private map' : 'Account required'}</small>{discoveryLoading ? 'Loading discoveries…' : accountUserId ? points.length || cells.length ? 'Open my discoveries' : 'Start discovering' : 'Sign in to discover'}</span>
         <span className="globe-intro__arrow"><ChevronIcon size={19} /></span>
       </button>
-      <div className="globe-intro__note"><span /> {accountUserId ? points.length || cells.length ? `${formatDistance(distance)} travelled so far` : 'Nothing revealed yet' : 'Your discoveries stay with your account'}</div>
+      <div className="globe-intro__note"><span /> {accountUserId ? points.length || cells.length ? `${formatDistance(discoveryDistance)} of new ground uncovered` : 'Nothing revealed yet' : 'Your discoveries stay with your account'}</div>
     </section>}
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
@@ -305,7 +337,7 @@ export default function App() {
       <div className="journey-card__summary">
         <div className="eyebrow">Your discovery</div>
         <div className="discovery-metrics">
-          <div className="distance">{accountUserId ? formatDistance(distance) : '—'}</div>
+          <div className="distance">{accountUserId ? formatDistance(discoveryDistance) : '—'}</div>
           {activeCity && <button className="city-progress" onClick={() => setCoverageInfoOpen(true)} aria-label={`Explain discovery percentage for ${activeCity.name}`}>
             <strong>{discoveryLabel}</strong>
             <span>of {activeCity.name}</span>
