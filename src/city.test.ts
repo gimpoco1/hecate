@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cityAreaKm2, discoveredCityPercentage, isPointInCity, type CityBoundary } from './city'
+import { cityAreaKm2, discoveredCityDistanceKm, discoveredCityPercentage, isPointInCity, type CityBoundary } from './city'
 import { pointToDiscoveryCell } from './geo'
 
 const city: CityBoundary = {
@@ -35,5 +35,13 @@ describe('city discovery', () => {
     const repeatedVisit = { ...cell, discoveredAt: 2 }
     expect(discoveredCityPercentage([cell, repeatedVisit], city))
       .toBe(discoveredCityPercentage([cell], city))
+  })
+
+  it('counts only new discovery distance within a city', () => {
+    const start = { lng: 0, lat: 0, recordedAt: 1 }
+    const newGround = { lng: .001, lat: 0, recordedAt: 2 }
+    const repeatStreet = { ...start, recordedAt: 3 }
+    expect(discoveredCityDistanceKm([start, newGround, repeatStreet], city))
+      .toBeCloseTo(.111, 2)
   })
 })

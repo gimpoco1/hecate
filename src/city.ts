@@ -1,4 +1,4 @@
-import { discoveryCellCenter, discoveryCellKey, discoveryFootprintCells } from './geo'
+import { discoveryCellCenter, discoveryCellKey, discoveryFootprintCells, distanceKm, pointToDiscoveryCell, splitRoute } from './geo'
 import type { Coordinate, DiscoveryCell } from './types'
 
 const EARTH_RADIUS_KM = 6371.0088
@@ -100,6 +100,30 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
 
   const revealedArea = [...revealed.values()].reduce((sum, area) => sum + area, 0)
   return Math.min(100, revealedArea / cityArea * 100)
+}
+
+/** Distance that unlocked new reveal cells within one municipality. */
+export function discoveredCityDistanceKm(points: Coordinate[], city: CityBoundary) {
+  const revealed = new Set<string>()
+  let total = 0
+
+  for (const segment of splitRoute(points)) {
+    for (let index = 0; index < segment.length; index += 1) {
+      const point = segment[index]
+      if (!isPointInCity(point, city)) continue
+      const footprint = discoveryFootprintCells(pointToDiscoveryCell(point)).filter(cell => {
+        const [lng, lat] = discoveryCellCenter(cell)
+        return isPointInCity({ lng, lat }, city)
+      })
+      const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
+      const previous = segment[index - 1]
+      if (index > 0 && previous && isPointInCity(previous, city) && unlocksNewGround) {
+        total += distanceKm(previous, point)
+      }
+      footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
+    }
+  }
+  return total
 }
 
 export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, signal?: AbortSignal) {

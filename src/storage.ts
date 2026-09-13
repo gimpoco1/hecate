@@ -1,8 +1,45 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from './geo'
+import type { CityBoundary } from './city'
 import type { Coordinate, DiscoveryCell, PendingWalk } from './types'
 
 type SyncedDiscovery = { points: Coordinate[]; cells: DiscoveryCell[] }
+
+export async function loadDiscoveredCities(expectedUserId: string): Promise<CityBoundary[]> {
+  const user = await currentUser()
+  if (!supabase || !user || user.id !== expectedUserId) return []
+  const { data, error } = await supabase
+    .from('discovered_cities')
+    .select('city_id,name,geometry,last_discovered_at')
+    .order('last_discovered_at', { ascending: false })
+  if (error) return []
+  return (data ?? []).flatMap(row => {
+    const geometry = row.geometry
+    if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return []
+    return [{
+      id: row.city_id,
+      name: row.name,
+      geometry,
+      fetchedAt: new Date(row.last_discovered_at).getTime(),
+    } as CityBoundary]
+  })
+}
+
+export async function syncDiscoveredCity(city: CityBoundary, expectedUserId: string) {
+  if (!supabase) return
+  const user = await currentUser()
+  if (!user || user.id !== expectedUserId) return
+  const now = new Date().toISOString()
+  const { error } = await supabase.from('discovered_cities').upsert({
+    user_id: user.id,
+    city_id: city.id,
+    name: city.name,
+    geometry: city.geometry,
+    first_discovered_at: now,
+    last_discovered_at: now,
+  }, { onConflict: 'user_id,city_id' })
+  if (error) throw error
+}
 
 const LEGACY_DISCOVERY_KEYS = [
   'hecate:discovery-points:v1',

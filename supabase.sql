@@ -40,9 +40,23 @@ create table if not exists public.discovery_cells (
   primary key (user_id, cell_z, cell_x, cell_y)
 );
 
+-- A compact index of municipalities where the user has made discoveries.
+-- Keeping the boundary lets every signed-in device calculate city coverage
+-- without repeatedly reverse-geocoding the user's historical routes.
+create table if not exists public.discovered_cities (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  city_id text not null,
+  name text not null,
+  geometry jsonb not null,
+  first_discovered_at timestamptz not null,
+  last_discovered_at timestamptz not null,
+  primary key (user_id, city_id)
+);
+
 alter table public.discovery_points enable row level security;
 alter table public.walks enable row level security;
 alter table public.discovery_cells enable row level security;
+alter table public.discovered_cities enable row level security;
 
 drop policy if exists "Users read their own discovery points" on public.discovery_points;
 drop policy if exists "Users insert their own discovery points" on public.discovery_points;
@@ -62,8 +76,13 @@ drop policy if exists "Users manage their own discovery cells" on public.discove
 create policy "Users manage their own discovery cells" on public.discovery_cells
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "Users manage their own discovered cities" on public.discovered_cities;
+create policy "Users manage their own discovered cities" on public.discovered_cities
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 grant select, insert, update, delete on public.walks to authenticated;
 grant select, insert, update, delete on public.discovery_cells to authenticated;
+grant select, insert, update, delete on public.discovered_cities to authenticated;
 
 create or replace function public.save_walk(
   p_walk_id uuid,
