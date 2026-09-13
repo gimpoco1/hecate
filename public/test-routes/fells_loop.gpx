@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MergeTool" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Blue Ridge Ridge-line Hike</name>
+    <desc>A recorded track for testing elevation parsing and velocity calculation.</desc>
+    <time>2024-03-27T10:00:00Z</time>
+  </metadata>
+  <trk>
+    <name>Main Ridge Trail</name>
+    <trkseg>
+      <trkpt lat="35.5951" lon="-82.5515"><ele>640.2</ele><time>2024-03-27T10:00:00Z</time></trkpt>
+      <trkpt lat="35.5955" lon="-82.5520"><ele>645.5</ele><time>2024-03-27T10:01:00Z</time></trkpt>
+      <trkpt lat="35.5960" lon="-82.5525"><ele>652.1</ele><time>2024-03-27T10:02:00Z</time></trkpt>
+      <trkpt lat="35.5964" lon="-82.5532"><ele>658.9</ele><time>2024-03-27T10:03:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

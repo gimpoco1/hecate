@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
+import { discoveredAreaKm2, discoveredCellDistanceKm, discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
 
 describe('discovery route geometry', () => {
   const a = { lng: 2.17, lat: 41.38, recordedAt: 1_000, accuracy: 5 }
@@ -13,7 +13,20 @@ describe('discovery route geometry', () => {
   it('counts distance only when a route reaches a new discovery cell', () => {
     const returnToStart = { ...a, recordedAt: 40_000 }
     const repeatStreet = { ...b, recordedAt: 60_000 }
-    expect(discoveredDistanceKm([a, b, returnToStart, repeatStreet])).toBeCloseTo(distanceKm(a, b))
+    const distance = discoveredDistanceKm([a, b, returnToStart, repeatStreet])
+    expect(distance).toBeGreaterThan(.05)
+    expect(distance).toBeLessThanOrEqual(distanceKm(a, b))
+  })
+
+  it('calculates new-ground distance from the persistent cell history', () => {
+    const cells = discoveryCellsFromPoints([a, b])
+    expect(discoveredCellDistanceKm(cells)).toBeGreaterThan(.05)
+  })
+
+  it('does not add new-way distance for a repeated discovery cell', () => {
+    const cell = pointToDiscoveryCell(a)
+    expect(discoveredCellDistanceKm([cell, { ...cell, discoveredAt: 2_000 }]))
+      .toBe(discoveredCellDistanceKm([cell]))
   })
 
   it('drops noisy GPS positions', () => {
@@ -45,6 +58,12 @@ describe('discovery route geometry', () => {
     const [lng, lat] = discoveryCellCenter(pointToDiscoveryCell(a))
     expect(Math.abs(lng - a.lng)).toBeLessThan(0.0001)
     expect(Math.abs(lat - a.lat)).toBeLessThan(0.0001)
+  })
+
+  it('does not add revealed area for a repeated discovery cell', () => {
+    const cell = pointToDiscoveryCell(a)
+    expect(discoveredAreaKm2([cell, { ...cell, discoveredAt: 2_000 }]))
+      .toBe(discoveredAreaKm2([cell]))
   })
 
   it('does not merge a local walk with its simplified server copy', () => {

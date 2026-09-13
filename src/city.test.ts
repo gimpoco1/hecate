@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cityAreaKm2, discoveredCityDistanceKm, discoveredCityPercentage, isPointInCity, type CityBoundary } from './city'
+import { cityAreaKm2, discoveredCityAreaKm2, discoveredCityCellDistanceKm, discoveredCityDistanceKm, discoveredCityPercentage, isPointInCity, type CityBoundary } from './city'
 import { pointToDiscoveryCell } from './geo'
 
 const city: CityBoundary = {
@@ -35,13 +35,29 @@ describe('city discovery', () => {
     const repeatedVisit = { ...cell, discoveredAt: 2 }
     expect(discoveredCityPercentage([cell, repeatedVisit], city))
       .toBe(discoveredCityPercentage([cell], city))
+    expect(discoveredCityAreaKm2([cell, repeatedVisit], city))
+      .toBe(discoveredCityAreaKm2([cell], city))
   })
 
   it('counts only new discovery distance within a city', () => {
     const start = { lng: 0, lat: 0, recordedAt: 1 }
     const newGround = { lng: .001, lat: 0, recordedAt: 2 }
     const repeatStreet = { ...start, recordedAt: 3 }
-    expect(discoveredCityDistanceKm([start, newGround, repeatStreet], city))
-      .toBeCloseTo(.111, 2)
+    const distance = discoveredCityDistanceKm([start, newGround, repeatStreet], city)
+    expect(distance).toBeGreaterThan(.05)
+    expect(distance).toBeLessThanOrEqual(.111)
+  })
+
+  it('derives a meaningful city distance from synced discovery cells', () => {
+    const start = { lng: 0, lat: 0, recordedAt: 1 }
+    const newGround = { lng: .001, lat: 0, recordedAt: 2 }
+    const cells = [pointToDiscoveryCell(start), pointToDiscoveryCell(newGround)]
+    expect(discoveredCityCellDistanceKm(cells, city)).toBeGreaterThan(.05)
+  })
+
+  it('does not add city distance for a repeated synced cell', () => {
+    const cell = pointToDiscoveryCell({ lng: 0, lat: 0, recordedAt: 1 })
+    expect(discoveredCityCellDistanceKm([cell, { ...cell, discoveredAt: 2 }], city))
+      .toBe(discoveredCityCellDistanceKm([cell], city))
   })
 })

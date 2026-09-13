@@ -15,6 +15,8 @@ type Props = {
   currentPoint?: Coordinate
   onZoomChange: (zoom: number) => void
   mapRef: React.MutableRefObject<MapLibreMap | null>
+  initialCenter?: [number, number]
+  initialZoom?: number
 }
 
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
@@ -123,7 +125,7 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.stroke()
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, mapRef }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const markerRef = useRef<maplibregl.Marker | null>(null)
@@ -138,8 +140,8 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: [7, 24],
-      zoom: 1.35,
+      center: initialCenter,
+      zoom: initialZoom,
       pitch: 0,
       bearing: 0,
       attributionControl: false,

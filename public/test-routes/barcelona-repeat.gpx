@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Hecate test routes" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Barcelona repeat</name><trkseg>
+    <trkpt lat="41.38510" lon="2.17340"><time>2026-01-01T12:00:00Z</time></trkpt>
+    <trkpt lat="41.38532" lon="2.17372"><time>2026-01-01T12:00:20Z</time></trkpt>
+    <trkpt lat="41.38555" lon="2.17404"><time>2026-01-01T12:00:40Z</time></trkpt>
+    <trkpt lat="41.38576" lon="2.17436"><time>2026-01-01T12:01:00Z</time></trkpt>
+    <trkpt lat="41.38596" lon="2.17468"><time>2026-01-01T12:01:20Z</time></trkpt>
+    <trkpt lat="41.38617" lon="2.17500"><time>2026-01-01T12:01:40Z</time></trkpt>
+  </trkseg></trk>
+</gpx>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Hecate test routes" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>San Francisco exploration</name><trkseg>
+    <trkpt lat="37.77490" lon="-122.41940"><time>2026-01-01T11:00:00Z</time></trkpt>
+    <trkpt lat="37.77512" lon="-122.41908"><time>2026-01-01T11:00:20Z</time></trkpt>
+    <trkpt lat="37.77534" lon="-122.41876"><time>2026-01-01T11:00:40Z</time></trkpt>
+    <trkpt lat="37.77556" lon="-122.41844"><time>2026-01-01T11:01:00Z</time></trkpt>
+    <trkpt lat="37.77578" lon="-122.41812"><time>2026-01-01T11:01:20Z</time></trkpt>
+    <trkpt lat="37.77600" lon="-122.41780"><time>2026-01-01T11:01:40Z</time></trkpt>
+  </trkseg></trk>
+</gpx>

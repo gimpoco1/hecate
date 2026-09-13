@@ -1,4 +1,4 @@
-import { discoveryCellCenter, discoveryCellKey, discoveryFootprintCells, distanceKm, pointToDiscoveryCell, splitRoute } from './geo'
+import { discoveredDistanceForFootprints, discoveryCellAreaKm2, discoveryCellCenter, discoveryCellKey, discoveryFootprintCells, discoveryPointsFromCells, pointToDiscoveryCell } from './geo'
 import type { Coordinate, DiscoveryCell } from './types'
 
 const EARTH_RADIUS_KM = 6371.0088
@@ -74,10 +74,8 @@ function cityBounds(city: CityBoundary) {
   return { west, south, east, north }
 }
 
-export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBoundary) {
-  const cityArea = cityAreaKm2(city)
-  if (!cityArea || cells.length === 0) return 0
-
+export function discoveredCityAreaKm2(cells: DiscoveryCell[], city: CityBoundary) {
+  if (cells.length === 0) return 0
   const bounds = cityBounds(city)
   const revealed = new Map<string, number>()
   for (const cell of cells) {
@@ -93,37 +91,39 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
       // circular reveal around a route point near its boundary.
       if (!isPointInCity({ lng, lat }, city)) continue
       const key = discoveryCellKey(candidate)
-      const candidateSizeM = 40_075_016.686 * Math.cos(lat * Math.PI / 180) / 2 ** candidate.z
-      revealed.set(key, candidateSizeM * candidateSizeM / 1_000_000)
+      revealed.set(key, discoveryCellAreaKm2(candidate))
     }
   }
 
-  const revealedArea = [...revealed.values()].reduce((sum, area) => sum + area, 0)
+  return [...revealed.values()].reduce((sum, area) => sum + area, 0)
+}
+
+export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBoundary) {
+  const cityArea = cityAreaKm2(city)
+  if (!cityArea || cells.length === 0) return 0
+
+  const revealedArea = discoveredCityAreaKm2(cells, city)
   return Math.min(100, revealedArea / cityArea * 100)
 }
 
 /** Distance that unlocked new reveal cells within one municipality. */
 export function discoveredCityDistanceKm(points: Coordinate[], city: CityBoundary) {
-  const revealed = new Set<string>()
-  let total = 0
+  return discoveredDistanceForFootprints(points, point => {
+    if (!isPointInCity(point, city)) return []
+    return discoveryFootprintCells(pointToDiscoveryCell(point)).filter(cell => {
+      const [lng, lat] = discoveryCellCenter(cell)
+      return isPointInCity({ lng, lat }, city)
+    })
+  })
+}
 
-  for (const segment of splitRoute(points)) {
-    for (let index = 0; index < segment.length; index += 1) {
-      const point = segment[index]
-      if (!isPointInCity(point, city)) continue
-      const footprint = discoveryFootprintCells(pointToDiscoveryCell(point)).filter(cell => {
-        const [lng, lat] = discoveryCellCenter(cell)
-        return isPointInCity({ lng, lat }, city)
-      })
-      const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
-      const previous = segment[index - 1]
-      if (index > 0 && previous && isPointInCity(previous, city) && unlocksNewGround) {
-        total += distanceKm(previous, point)
-      }
-      footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
-    }
-  }
-  return total
+/**
+ * City distance based on the persisted discovery-cell history. This is the
+ * value shown in the app, so the map and its kilometre total stay in sync on
+ * every device.
+ */
+export function discoveredCityCellDistanceKm(cells: DiscoveryCell[], city: CityBoundary) {
+  return discoveredCityDistanceKm(discoveryPointsFromCells(cells), city)
 }
 
 export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, signal?: AbortSignal) {

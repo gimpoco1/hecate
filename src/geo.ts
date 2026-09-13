@@ -6,6 +6,7 @@ const MAP_TILE_SIZE = 512
 const MAX_GPS_ACCURACY_M = 35
 export const DISCOVERY_CELL_ZOOM = 20
 export const DISCOVERY_RADIUS_M = 35
+const DISCOVERY_DISTANCE_SAMPLE_M = DISCOVERY_RADIUS_M
 
 export function distanceKm(a: Coordinate, b: Coordinate) {
   const toRadians = (value: number) => (value * Math.PI) / 180
@@ -29,19 +30,83 @@ export function routeDistanceKm(points: Coordinate[]) {
  * this metric.
  */
 export function discoveredDistanceKm(points: Coordinate[]) {
+  return discoveredDistanceForFootprints(points, point => discoveryFootprintCells(pointToDiscoveryCell(point)))
+}
+
+/**
+ * Credits a route only for portions that add new discovery cells. Sampling at
+ * the same 35 m interval as the reveal radius prevents sub-cell GPS noise
+ * from inflating the distance while avoiding a sparse update crediting an
+ * entire already-known street.
+ */
+export function discoveredDistanceForFootprints(
+  points: Coordinate[],
+  footprintForPoint: (point: Coordinate) => DiscoveryCell[],
+) {
   const revealed = new Set<string>()
   let total = 0
 
   for (const segment of splitRoute(points)) {
-    for (let index = 0; index < segment.length; index += 1) {
+    const firstPoint = segment[0]
+    if (!firstPoint) continue
+    footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)))
+    let distanceSinceLastUnlockKm = 0
+
+    for (let index = 1; index < segment.length; index += 1) {
+      const previous = segment[index - 1]
       const point = segment[index]
-      const footprint = discoveryFootprintCells(pointToDiscoveryCell(point))
-      const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
-      if (index > 0 && unlocksNewGround) total += distanceKm(segment[index - 1], point)
-      footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
+      const segmentDistance = distanceKm(previous, point)
+      const steps = Math.max(1, Math.ceil(segmentDistance * 1_000 / DISCOVERY_DISTANCE_SAMPLE_M))
+      const stepDistance = segmentDistance / steps
+
+      for (let step = 1; step <= steps; step += 1) {
+        const progress = step / steps
+        const sample: Coordinate = {
+          lng: previous.lng + (point.lng - previous.lng) * progress,
+          lat: previous.lat + (point.lat - previous.lat) * progress,
+          recordedAt: previous.recordedAt + (point.recordedAt - previous.recordedAt) * progress,
+        }
+        const footprint = footprintForPoint(sample)
+        const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
+        distanceSinceLastUnlockKm += stepDistance
+        if (unlocksNewGround) {
+          // A cell unlock represents the last small stretch of newly revealed
+          // ground. Cap the credit at the reveal radius so a sparse GPS jump
+          // cannot claim a long, already-known street before its endpoint.
+          total += Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
+          distanceSinceLastUnlockKm = 0
+        }
+        footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
+      }
     }
   }
   return total
+}
+
+/**
+ * Converts the persistent discovery history into an ordered, approximate path.
+ * Discovery cells are the cross-device source of truth, unlike a route geometry
+ * which may be absent on an older device or have been simplified by a server.
+ */
+export function discoveryPointsFromCells(cells: DiscoveryCell[]): Coordinate[] {
+  return [...cells]
+    .sort((a, b) => a.discoveredAt - b.discoveredAt)
+    .map(cell => {
+      const [lng, lat] = discoveryCellCenter(cell)
+      return { lng, lat, recordedAt: cell.discoveredAt }
+    })
+}
+
+/**
+ * Distance of the newly discovered way, reconstructed from the ordered
+ * `discovery_cells` history. The cells are the persisted cross-device source
+ * of truth; the sampler credits only movement that unlocks a fresh cell.
+ */
+export function discoveredCellDistanceKm(cells: DiscoveryCell[]) {
+  return discoveredDistanceForFootprints(
+    discoveryPointsFromCells(cells),
+    point => discoveryFootprintCells(pointToDiscoveryCell(point)),
+  )
 }
 
 export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = []) {
@@ -88,7 +153,7 @@ export function pointToDiscoveryCell(point: Coordinate, z = DISCOVERY_CELL_ZOOM)
   }
 }
 
-export function discoveryCellCenter(cell: DiscoveryCell): [number, number] {
+export function discoveryCellCenter(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>): [number, number] {
   const scale = 2 ** cell.z
   const lng = (cell.x + 0.5) / scale * 360 - 180
   const mercatorY = Math.PI * (1 - 2 * (cell.y + 0.5) / scale)
@@ -114,6 +179,23 @@ export function discoveryFootprintCells(cell: DiscoveryCell) {
     }
   }
   return footprint
+}
+
+export function discoveryCellAreaKm2(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>) {
+  const [, latitude] = discoveryCellCenter(cell)
+  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
+  return cellSizeM * cellSizeM / 1_000_000
+}
+
+/** The de-duplicated physical area revealed by all discovery footprints. */
+export function discoveredAreaKm2(cells: DiscoveryCell[]) {
+  const revealed = new Map<string, DiscoveryCell>()
+  for (const cell of cells) {
+    for (const candidate of discoveryFootprintCells(cell)) {
+      revealed.set(discoveryCellKey(candidate), candidate)
+    }
+  }
+  return [...revealed.values()].reduce((total, cell) => total + discoveryCellAreaKm2(cell), 0)
 }
 
 export function mergeDiscoveryCells(...collections: DiscoveryCell[][]) {

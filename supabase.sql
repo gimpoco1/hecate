@@ -76,9 +76,21 @@ drop policy if exists "Users manage their own discovery cells" on public.discove
 create policy "Users manage their own discovery cells" on public.discovery_cells
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Upserts need both a SELECT policy to inspect a conflicting row and explicit
+-- INSERT/UPDATE policies for the write path used by the Supabase REST API.
 drop policy if exists "Users manage their own discovered cities" on public.discovered_cities;
-create policy "Users manage their own discovered cities" on public.discovered_cities
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users read their own discovered cities" on public.discovered_cities;
+drop policy if exists "Users insert their own discovered cities" on public.discovered_cities;
+drop policy if exists "Users update their own discovered cities" on public.discovered_cities;
+drop policy if exists "Users delete their own discovered cities" on public.discovered_cities;
+create policy "Users read their own discovered cities" on public.discovered_cities
+  for select using (auth.uid() = user_id);
+create policy "Users insert their own discovered cities" on public.discovered_cities
+  for insert with check (auth.uid() = user_id);
+create policy "Users update their own discovered cities" on public.discovered_cities
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users delete their own discovered cities" on public.discovered_cities
+  for delete using (auth.uid() = user_id);
 
 grant select, insert, update, delete on public.walks to authenticated;
 grant select, insert, update, delete on public.discovery_cells to authenticated;
@@ -121,9 +133,9 @@ begin
   into v_route
   from jsonb_array_elements(p_coordinates) with ordinality as points(coordinate, ordinal);
 
-  -- Roughly 2 m in latitude; enough to remove redundant GPS samples without
-  -- visibly changing a pedestrian route.
-  v_route := extensions.st_simplify(v_route, 0.00002);
+  -- Keep every client-accepted sample. Hecate's new-ground kilometres depend
+  -- on the order in which cells are unlocked, so simplifying a line here would
+  -- make the total change after an app restart.
 
   insert into public.walks (
     id, user_id, started_at, finished_at, point_count, distance_m, route
@@ -259,7 +271,7 @@ with point_geometries as (
     min(recorded_at) as started_at,
     max(recorded_at) as finished_at,
     count(*)::integer as point_count,
-    extensions.st_simplify(extensions.st_makeline(point order by recorded_at), 0.00002) as route
+    extensions.st_makeline(point order by recorded_at) as route
   from grouped
   group by user_id, walk_number
   having count(*) >= 2
