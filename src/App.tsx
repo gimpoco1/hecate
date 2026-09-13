@@ -131,7 +131,10 @@ export default function App() {
     locationRefreshInFlightRef.current = true
     try {
       const point = await requestCurrentLocation()
-      if (!isUsableGpsPoint(point)) return
+      // A locator may initially receive an approximate fix. That is still
+      // useful for moving the marker; the stricter accuracy filter remains
+      // in addPoint so approximate fixes never reveal new map area.
+      if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) return
       setCurrentPoint(point)
       if (centerMap) {
         mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1400, essential: true })
@@ -268,11 +271,12 @@ export default function App() {
   }
 
   const locate = () => {
-    if (tracking === 'tracking' && currentPoint) {
+    // Recenter immediately on the last known point. This keeps the control
+    // responsive while iOS obtains a newer fix, including for signed-out users.
+    if (currentPoint) {
       mapRef.current?.flyTo({ center: [currentPoint.lng, currentPoint.lat], zoom: 15, duration: 1400, essential: true })
-      return
     }
-    void refreshCurrentLocation(true)
+    if (tracking !== 'tracking') void refreshCurrentLocation(true)
   }
 
   const toggleMapPerspective = () => {
@@ -337,12 +341,14 @@ export default function App() {
       <div className="journey-card__summary">
         <div className="eyebrow">Your discovery</div>
         <div className="discovery-metrics">
-          <div className="distance">{accountUserId ? formatDistance(discoveryDistance) : '—'}</div>
-          {activeCity && <button className="city-progress" onClick={() => setCoverageInfoOpen(true)} aria-label={`Explain discovery percentage for ${activeCity.name}`}>
-            <strong>{discoveryLabel}</strong>
-            <span>of {activeCity.name}</span>
-            <span className="city-progress__info">i</span>
-          </button>}
+          {accountUserId ? <>
+            <div className="distance">{formatDistance(discoveryDistance)}</div>
+            {activeCity && <button className="city-progress" onClick={() => setCoverageInfoOpen(true)} aria-label={`Explain discovery percentage for ${activeCity.name}`}>
+              <strong>{discoveryLabel}</strong>
+              <span>of {activeCity.name}</span>
+              <span className="city-progress__info">i</span>
+            </button>}
+          </> : <p className="discovery-sign-in">Sign in to start tracking</p>}
         </div>
       </div>
       <button
