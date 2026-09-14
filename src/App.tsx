@@ -4,7 +4,7 @@ import { discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, 
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
-import { discoveredDistanceKm, discoveryCellCenter, distanceKm, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
+import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap } from './journeyUi'
 import { createLocationTracker, isNativeApp, requestCurrentLocation, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
@@ -64,6 +64,7 @@ export default function App() {
   const [points, setPoints] = useState<Coordinate[]>([])
   const [cells, setCells] = useState<DiscoveryCell[]>([])
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>()
+  const [hasFreshLocationFix, setHasFreshLocationFix] = useState(false)
   const [accountUserId, setAccountUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(!isSyncConfigured)
   const [tracking, setTracking] = useState<TrackingState>('idle')
@@ -101,7 +102,9 @@ export default function App() {
   const journeyAnimationRef = useRef<Animation | null>(null)
   const previewMapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
+  const cellKeysRef = useRef<Set<string>>(new Set())
   const pointsRef = useRef<Coordinate[]>([])
+  const deferredLocationUiRef = useRef(false)
   const explorationStartRef = useRef<{
     cells: Set<string>
     points: Coordinate[]
@@ -127,6 +130,7 @@ export default function App() {
   useEffect(() => { cellsRef.current = cells }, [cells])
   useEffect(() => { pointsRef.current = points }, [points])
   const cityProgresses = useMemo(() => {
+    if (!citiesExpanded) return []
     const unique = new Map(discoveredCities.map(city => [city.id, city]))
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary)
     return [...unique.values()]
@@ -136,7 +140,7 @@ export default function App() {
         distance: discoveredCityDistanceKm(points, city),
       }))
       .sort((a, b) => b.percentage - a.percentage || a.city.name.localeCompare(b.city.name))
-  }, [cityBoundary, discoveredCities, points])
+  }, [citiesExpanded, cityBoundary, discoveredCities, points])
   const totalCityDistance = useMemo(
     () => cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
@@ -173,17 +177,21 @@ export default function App() {
     setCityBackfillLoading(false)
     setCoverageInfoOpen(false)
     setExplorationSummary(null)
+    setHasFreshLocationFix(false)
     setDiscoveryLoading(Boolean(accountUserId))
     lastPointRef.current = undefined
     cellsRef.current = []
+    cellKeysRef.current = new Set()
     pointsRef.current = []
     pendingWalksRef.current = []
+    deferredLocationUiRef.current = false
     if (!accountUserId) return
 
     loadSyncedDiscovery(accountUserId).then(remote => {
       if (!active) return
       setPoints(mergeRoutePoints(remote.points))
       setCells(remote.cells)
+      cellKeysRef.current = new Set(remote.cells.map(discoveryCellKey))
       lastPointRef.current = remote.points.at(-1)
     }).catch(() => undefined).finally(() => {
       if (active) setDiscoveryLoading(false)
@@ -221,9 +229,22 @@ export default function App() {
     trackingUserRef.current = null
     pendingWalksRef.current = []
     setTracking('idle')
+    setHasFreshLocationFix(false)
   }, [accountUserId])
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
+
+  useEffect(() => {
+    const flushBackgroundLocations = () => {
+      if (document.visibilityState !== 'visible' || !deferredLocationUiRef.current) return
+      deferredLocationUiRef.current = false
+      setPoints([...pointsRef.current])
+      setCells([...cellsRef.current])
+      if (lastPointRef.current) setCurrentPoint(lastPointRef.current)
+    }
+    document.addEventListener('visibilitychange', flushBackgroundLocations)
+    return () => document.removeEventListener('visibilitychange', flushBackgroundLocations)
+  }, [])
 
   const refreshCurrentLocation = useCallback(async (centerMap = false) => {
     if (locationRefreshInFlightRef.current) return
@@ -235,6 +256,7 @@ export default function App() {
       // in addPoint so approximate fixes never reveal new map area.
       if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) return
       setCurrentPoint(point)
+      setHasFreshLocationFix(true)
       if (centerMap) {
         mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1400, essential: true })
       }
@@ -244,16 +266,6 @@ export default function App() {
       locationRefreshInFlightRef.current = false
     }
   }, [])
-
-  useEffect(() => {
-    const refreshAfterReturningToApp = () => {
-      if (document.visibilityState === 'visible' && tracking !== 'tracking' && currentPoint) {
-        void refreshCurrentLocation()
-      }
-    }
-    document.addEventListener('visibilitychange', refreshAfterReturningToApp)
-    return () => document.removeEventListener('visibilitychange', refreshAfterReturningToApp)
-  }, [currentPoint, refreshCurrentLocation, tracking])
 
   useEffect(() => {
     if (!currentPoint || activeCity) return
@@ -344,9 +356,9 @@ export default function App() {
 
     setShowIntro(false)
     if (focus) {
+      setHasFreshLocationFix(false)
       setCurrentPoint(focus)
       mapRef.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 14.3, duration: 2600, essential: true })
-      void refreshCurrentLocation(true)
     } else {
       void toggleTracking()
     }
@@ -354,27 +366,40 @@ export default function App() {
 
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) return
-    setCurrentPoint(point)
+    const appVisible = document.visibilityState === 'visible'
+    if (appVisible) setCurrentPoint(point)
     if (!shouldRecordPoint(lastPointRef.current, point)) return
     const recordedPoint = { ...point, walkId: activeWalkRef.current?.id }
     lastPointRef.current = recordedPoint
-    if (activeWalkRef.current) {
-      activeWalkRef.current = { ...activeWalkRef.current, points: [...activeWalkRef.current.points, recordedPoint] }
+    activeWalkRef.current?.points.push(recordedPoint)
+    pointsRef.current.push(recordedPoint)
+    const nextCell = pointToDiscoveryCell(recordedPoint)
+    const key = discoveryCellKey(nextCell)
+    let discoveredNewCell = false
+    if (!cellKeysRef.current.has(key)) {
+      cellKeysRef.current.add(key)
+      cellsRef.current.push(nextCell)
+      discoveredNewCell = true
     }
-    setPoints(current => {
-      const next = [...current, recordedPoint]
-      pointsRef.current = next
-      return next
-    })
-    setCells(current => {
-      const next = mergeDiscoveryCells(current, [pointToDiscoveryCell(recordedPoint)])
-      cellsRef.current = next
-      return next
-    })
-    mapRef.current?.easeTo({ center: [recordedPoint.lng, recordedPoint.lat], duration: 850, essential: true })
+
+    if (appVisible) {
+      setPoints([...pointsRef.current])
+      if (discoveredNewCell) setCells([...cellsRef.current])
+      mapRef.current?.easeTo({ center: [recordedPoint.lng, recordedPoint.lat], duration: 850, essential: true })
+    } else {
+      // Native callbacks still record and persist the route in the background,
+      // but React and MapLibre do not need to redraw for every GPS update.
+      deferredLocationUiRef.current = true
+    }
   }
 
   const finishActiveWalk = async () => {
+    if (document.visibilityState === 'visible' && deferredLocationUiRef.current) {
+      deferredLocationUiRef.current = false
+      setPoints([...pointsRef.current])
+      setCells([...cellsRef.current])
+      if (lastPointRef.current) setCurrentPoint(lastPointRef.current)
+    }
     const active = activeWalkRef.current
     const walkOwner = trackingUserRef.current
     activeWalkRef.current = null
@@ -442,6 +467,7 @@ export default function App() {
           // history before the recap is dismissed, so no test path can sync.
           pointsRef.current = started.points
           cellsRef.current = previousCells
+          cellKeysRef.current = new Set(previousCells.map(discoveryCellKey))
           lastPointRef.current = started.points.at(-1)
           setPoints(started.points)
           setCells(previousCells)
@@ -459,6 +485,7 @@ export default function App() {
     if (tracking !== 'idle' || testRouteRunning) return
     setTestRouteRunning(true)
     setExplorationSummary(null)
+    setHasFreshLocationFix(false)
     try {
       const response = await fetch(`/test-routes/${routeFile}`)
       if (!response.ok) throw new Error('Unable to load test route')
@@ -473,10 +500,13 @@ export default function App() {
       if (route.length < 2) throw new Error('Test route needs at least two points')
 
       lastPointRef.current = undefined
+      const startingPoints = pointsRef.current
+      pointsRef.current = [...startingPoints]
+      cellsRef.current = [...cellsRef.current]
       explorationStartRef.current = {
-        cells: new Set(cellsRef.current.map(cell => `${cell.z}/${cell.x}/${cell.y}`)),
-        points: pointsRef.current,
-        discoveryDistance: discoveredDistanceKm(pointsRef.current),
+        cells: new Set(cellKeysRef.current),
+        points: startingPoints,
+        discoveryDistance: discoveredDistanceKm(startingPoints),
       }
       activeWalkRef.current = { id: createWalkId(), startedAt: route[0].recordedAt, points: [], isTest: true }
       trackingUserRef.current = accountUserId
@@ -488,12 +518,14 @@ export default function App() {
       }
       await finishActiveWalk()
       setTracking('idle')
+      setHasFreshLocationFix(false)
     } catch (error) {
       console.error('Test route failed', error)
       activeWalkRef.current = null
       trackingUserRef.current = null
       explorationStartRef.current = null
       setTracking('idle')
+      setHasFreshLocationFix(false)
     } finally {
       setTestRouteRunning(false)
     }
@@ -506,6 +538,7 @@ export default function App() {
       try { await tracker?.stop() } catch { /* The in-memory walk must still be finalized. */ }
       await finishActiveWalk()
       setTracking('idle')
+      setHasFreshLocationFix(false)
       return
     }
     if (!accountUserId) {
@@ -513,12 +546,16 @@ export default function App() {
       return
     }
     setTracking('requesting')
+    setHasFreshLocationFix(false)
     const walkId = createWalkId()
     lastPointRef.current = undefined
+    const startingPoints = pointsRef.current
+    pointsRef.current = [...startingPoints]
+    cellsRef.current = [...cellsRef.current]
     explorationStartRef.current = {
-      cells: new Set(cellsRef.current.map(cell => `${cell.z}/${cell.x}/${cell.y}`)),
-      points: pointsRef.current,
-      discoveryDistance: discoveredDistanceKm(pointsRef.current),
+      cells: new Set(cellKeysRef.current),
+      points: startingPoints,
+      discoveryDistance: discoveredDistanceKm(startingPoints),
     }
     activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] }
     trackingUserRef.current = accountUserId
@@ -531,6 +568,7 @@ export default function App() {
         void Promise.resolve(tracker.stop()).catch(() => undefined)
         trackerRef.current = null
         void finishActiveWalk()
+        setHasFreshLocationFix(false)
         setTracking(error.code === 'permission-denied' ? 'denied' : 'unavailable')
       })
       if (!trackerFailed) {
@@ -540,6 +578,7 @@ export default function App() {
     } catch {
       activeWalkRef.current = null
       trackingUserRef.current = null
+      setHasFreshLocationFix(false)
       setTracking('unavailable')
     }
   }
@@ -735,7 +774,15 @@ export default function App() {
   const introVisible = showIntro && zoom < 4
 
   return <main className={`app-shell ${introVisible ? 'app-shell--intro' : ''}`}>
-    <DiscoveryMap mode={mode} points={points} cells={cells} currentPoint={currentPoint} onZoomChange={onZoomChange} mapRef={mapRef} />
+    <DiscoveryMap
+      mode={mode}
+      points={points}
+      cells={cells}
+      currentPoint={currentPoint}
+      locationState={tracking === 'tracking' ? 'tracking' : hasFreshLocationFix ? 'located' : 'idle'}
+      onZoomChange={onZoomChange}
+      mapRef={mapRef}
+    />
     {import.meta.env.DEV && <aside className="test-route-controls" aria-label="Development test routes">
       <strong>Test routes</strong>
       <button type="button" onClick={() => void runTestRoute('barcelona-exploration.gpx')} disabled={testRouteRunning}>Barcelona</button>
