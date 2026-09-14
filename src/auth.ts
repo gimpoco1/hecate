@@ -39,10 +39,18 @@ export async function handleAuthCallback(url: string) {
 export async function initializeNativeAuthLinks() {
   if (!Capacitor.isNativePlatform() || !supabase) return
 
+  const handledUrls = new Set<string>()
   const openCallback = (url: string) => {
-    void handleAuthCallback(url).catch(error => console.error('Authentication callback failed', error))
+    if (handledUrls.has(url)) return
+    handledUrls.add(url)
+    void handleAuthCallback(url).catch(error => {
+      handledUrls.delete(url)
+      console.error('Authentication callback failed', error)
+    })
   }
+  // Subscribe before reading the launch URL so a callback arriving during app
+  // startup cannot fall into the gap between those two operations.
+  await CapacitorApp.addListener('appUrlOpen', event => openCallback(event.url))
   const launch = await CapacitorApp.getLaunchUrl()
   if (launch?.url) openCallback(launch.url)
-  await CapacitorApp.addListener('appUrlOpen', event => openCallback(event.url))
 }

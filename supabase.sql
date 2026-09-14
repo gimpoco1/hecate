@@ -53,6 +53,24 @@ create table if not exists public.discovered_cities (
   primary key (user_id, city_id)
 );
 
+-- A later visit updates the boundary and last-seen time without rewriting the
+-- date on which the city was first discovered.
+create or replace function public.preserve_discovered_city_first_seen()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.first_discovered_at := old.first_discovered_at;
+  return new;
+end;
+$$;
+
+drop trigger if exists preserve_discovered_city_first_seen on public.discovered_cities;
+create trigger preserve_discovered_city_first_seen
+before update on public.discovered_cities
+for each row execute function public.preserve_discovered_city_first_seen();
+
 alter table public.discovery_points enable row level security;
 alter table public.walks enable row level security;
 alter table public.discovery_cells enable row level security;
@@ -62,19 +80,19 @@ drop policy if exists "Users read their own discovery points" on public.discover
 drop policy if exists "Users insert their own discovery points" on public.discovery_points;
 drop policy if exists "Users update their own discovery points" on public.discovery_points;
 create policy "Users read their own discovery points" on public.discovery_points
-  for select using (auth.uid() = user_id);
+  for select using ((select auth.uid()) = user_id);
 create policy "Users insert their own discovery points" on public.discovery_points
-  for insert with check (auth.uid() = user_id);
+  for insert with check ((select auth.uid()) = user_id);
 create policy "Users update their own discovery points" on public.discovery_points
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for update using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
 drop policy if exists "Users manage their own walks" on public.walks;
 create policy "Users manage their own walks" on public.walks
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
 drop policy if exists "Users manage their own discovery cells" on public.discovery_cells;
 create policy "Users manage their own discovery cells" on public.discovery_cells
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for all using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
 -- Upserts need both a SELECT policy to inspect a conflicting row and explicit
 -- INSERT/UPDATE policies for the write path used by the Supabase REST API.
@@ -84,13 +102,13 @@ drop policy if exists "Users insert their own discovered cities" on public.disco
 drop policy if exists "Users update their own discovered cities" on public.discovered_cities;
 drop policy if exists "Users delete their own discovered cities" on public.discovered_cities;
 create policy "Users read their own discovered cities" on public.discovered_cities
-  for select using (auth.uid() = user_id);
+  for select using ((select auth.uid()) = user_id);
 create policy "Users insert their own discovered cities" on public.discovered_cities
-  for insert with check (auth.uid() = user_id);
+  for insert with check ((select auth.uid()) = user_id);
 create policy "Users update their own discovered cities" on public.discovered_cities
-  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for update using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users delete their own discovered cities" on public.discovered_cities
-  for delete using (auth.uid() = user_id);
+  for delete using ((select auth.uid()) = user_id);
 
 grant select, insert, update, delete on public.walks to authenticated;
 grant select, insert, update, delete on public.discovery_cells to authenticated;

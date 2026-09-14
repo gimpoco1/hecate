@@ -5,12 +5,14 @@ import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
 import { discoveredDistanceKm, discoveryCellCenter, distanceKm, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
+import { shouldExpandJourneySheet, shouldShowExplorationRecap } from './journeyUi'
 import { createLocationTracker, isNativeApp, requestCurrentLocation, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
 type ActiveWalk = Omit<PendingWalk, 'finishedAt'> & { isTest?: boolean }
 type ExplorationSummary = {
+  walkId: string
   points: Coordinate[]
   cells: DiscoveryCell[]
   startedAt: number
@@ -74,6 +76,7 @@ export default function App() {
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null)
   const [cityLoading, setCityLoading] = useState(false)
   const [discoveredCities, setDiscoveredCities] = useState<CityBoundary[]>([])
+  const [citiesLoadedUserId, setCitiesLoadedUserId] = useState<string | null>(null)
   const [citiesExpanded, setCitiesExpanded] = useState(false)
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false)
   const [explorationSummary, setExplorationSummary] = useState<ExplorationSummary | null>(null)
@@ -91,13 +94,11 @@ export default function App() {
     startY: number
     startHeight: number
     currentHeight: number
-    lastY: number
-    lastTime: number
     moved: boolean
+    startedExpanded: boolean
   } | null>(null)
   const journeyDragFrameRef = useRef<number | null>(null)
   const journeyAnimationRef = useRef<Animation | null>(null)
-  const suppressJourneyTapRef = useRef(false)
   const previewMapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
   const pointsRef = useRef<Coordinate[]>([])
@@ -167,6 +168,11 @@ export default function App() {
     setPoints([])
     setCells([])
     setDiscoveredCities([])
+    setCitiesLoadedUserId(null)
+    setCitiesExpanded(false)
+    setCityBackfillLoading(false)
+    setCoverageInfoOpen(false)
+    setExplorationSummary(null)
     setDiscoveryLoading(Boolean(accountUserId))
     lastPointRef.current = undefined
     cellsRef.current = []
@@ -182,11 +188,23 @@ export default function App() {
     }).catch(() => undefined).finally(() => {
       if (active) setDiscoveryLoading(false)
     })
-    void loadDiscoveredCities(accountUserId).then(cities => {
-      if (active) setDiscoveredCities(cities)
-    })
     return () => { active = false }
   }, [accountUserId])
+
+  useEffect(() => {
+    if (!citiesExpanded || !accountUserId || citiesLoadedUserId === accountUserId) return
+    let active = true
+    void loadDiscoveredCities(accountUserId).then(cities => {
+      if (!active) return
+      setDiscoveredCities(current => {
+        const merged = new Map(current.map(city => [city.id, city]))
+        cities.forEach(city => merged.set(city.id, city))
+        return [...merged.values()]
+      })
+      setCitiesLoadedUserId(accountUserId)
+    })
+    return () => { active = false }
+  }, [accountUserId, citiesExpanded, citiesLoadedUserId])
 
   useEffect(() => {
     if (!accountUserId || cells.length === 0 || testRouteRunning || activeWalkRef.current?.isTest) return
@@ -266,7 +284,7 @@ export default function App() {
   }, [accountUserId, cells, cityBoundary])
 
   useEffect(() => {
-    if (!citiesExpanded || !accountUserId || points.length === 0) return
+    if (!citiesExpanded || !accountUserId || citiesLoadedUserId !== accountUserId || points.length === 0) return
     let cancelled = false
     const knownCityIds = new Set(discoveredCities.map(city => city.id))
     const candidates: Coordinate[] = []
@@ -304,7 +322,7 @@ export default function App() {
       if (!cancelled) setCityBackfillLoading(false)
     })()
     return () => { cancelled = true }
-  }, [accountUserId, cells, citiesExpanded, discoveredCities, points])
+  }, [accountUserId, cells, citiesExpanded, citiesLoadedUserId, points])
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), [])
 
@@ -382,14 +400,16 @@ export default function App() {
         const newCells = completedCells.filter(cell => !started.cells.has(`${cell.z}/${cell.x}/${cell.y}`))
         const previousCells = completedCells.filter(cell => started.cells.has(`${cell.z}/${cell.x}/${cell.y}`))
         const newGroundKm = Math.max(0, discoveredDistanceKm(pointsRef.current) - started.discoveryDistance)
-        setExplorationSummary({
+        const summary: ExplorationSummary = {
+          walkId: active.id,
           points: active.points,
           cells: newCells,
           startedAt: active.startedAt,
           finishedAt: completed.finishedAt,
           newGroundKm,
           travelledKm: routeDistanceKm(active.points),
-        })
+        }
+        setExplorationSummary(shouldShowExplorationRecap(newGroundKm) ? summary : null)
 
         // React state can still describe the city where tracking began. Look
         // up the final recorded position instead, then compare its coverage
@@ -406,11 +426,11 @@ export default function App() {
               setDiscoveredCities(current => current.some(saved => saved.id === city.id) ? current : [...current, city])
               void syncDiscoveredCity(city, walkOwner).catch(() => undefined)
             }
-            setExplorationSummary(current => current && {
+            setExplorationSummary(current => current?.walkId === active.id ? {
               ...current,
               cityName: city.name,
               cityPercentageAdded: percentageAdded,
-            })
+            } : current)
           }).catch(() => {
             // A recap without a city is preferable to labelling it with a
             // stale one when reverse geocoding is temporarily unavailable.
@@ -580,7 +600,7 @@ export default function App() {
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
-    if ((event.target as HTMLElement).closest('.discovery-control')) return
+    if (!(event.target as HTMLElement).closest('.journey-card__handle')) return
     const card = journeyCardRef.current
     if (!card) return
     journeyAnimationRef.current?.cancel()
@@ -593,9 +613,8 @@ export default function App() {
       startY: event.clientY,
       startHeight,
       currentHeight: startHeight,
-      lastY: event.clientY,
-      lastTime: event.timeStamp,
       moved: false,
+      startedExpanded: citiesExpanded,
     }
   }
 
@@ -612,8 +631,6 @@ export default function App() {
         : rawHeight
     drag.currentHeight = height
     drag.moved ||= Math.abs(event.clientY - drag.startY) > 6
-    drag.lastY = event.clientY
-    drag.lastTime = event.timeStamp
 
     if (journeyDragFrameRef.current !== null) return
     journeyDragFrameRef.current = requestAnimationFrame(() => {
@@ -648,26 +665,27 @@ export default function App() {
       : rawEndHeight > expandedHeight
         ? expandedHeight + (rawEndHeight - expandedHeight) * .22
         : rawEndHeight
-    const velocity = (event.clientY - drag.lastY) / Math.max(1, event.timeStamp - drag.lastTime)
     const totalDrag = event.clientY - drag.startY
-    const openingThreshold = collapsed + (expandedHeight - collapsed) * .28
-    const shouldExpand = totalDrag < -32 || velocity < -.35
-      ? true
-      : totalDrag > 32 || velocity > .35
-        ? false
-        : drag.currentHeight > openingThreshold
-    suppressJourneyTapRef.current = drag.moved
+    const shouldExpand = shouldExpandJourneySheet(drag.startedExpanded, totalDrag)
     card.classList.remove('journey-card--dragging')
     settleJourneySheet(shouldExpand, drag.currentHeight)
     journeyDragRef.current = null
   }
 
-  const toggleJourneySheet = () => {
-    if (suppressJourneyTapRef.current) {
-      suppressJourneyTapRef.current = false
-      return
+  const cancelJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = journeyDragRef.current
+    const card = journeyCardRef.current
+    if (!drag || !card || drag.pointerId !== event.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
     }
-    settleJourneySheet(!citiesExpanded)
+    if (journeyDragFrameRef.current !== null) {
+      cancelAnimationFrame(journeyDragFrameRef.current)
+      journeyDragFrameRef.current = null
+    }
+    card.classList.remove('journey-card--dragging')
+    card.style.height = ''
+    journeyDragRef.current = null
   }
 
   const focusDiscoveredCity = (city: CityBoundary) => {
@@ -767,16 +785,9 @@ export default function App() {
       onPointerDown={beginJourneyDrag}
       onPointerMove={moveJourneyDrag}
       onPointerUp={endJourneyDrag}
-      onPointerCancel={endJourneyDrag}
+      onPointerCancel={cancelJourneyDrag}
     >
-      <div
-        className="journey-card__handle"
-        role="button"
-        tabIndex={0}
-        aria-label={citiesExpanded ? 'Collapse discovered cities' : 'Show discovered cities'}
-        onClick={toggleJourneySheet}
-        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleJourneySheet() } }}
-      ><span /></div>
+      <div className="journey-card__handle" aria-hidden="true"><span /></div>
       <div className="journey-card__summary">
         <div className="eyebrow">Your discovery</div>
         <div className="discovery-metrics">
@@ -803,7 +814,7 @@ export default function App() {
       {tracking === 'tracking' && <div className="tracking-notice"><span />{nativeApp ? 'Discovering in background' : 'Keep this page open and your screen on'}</div>}
       {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow Hecate to use your location in Settings, or preview the sample discovery.</p>}
       {citiesExpanded && <div className="discovered-cities" aria-label="Discovered cities">
-        <div className="discovered-cities__heading"><span>Your cities</span><small>{cityBackfillLoading ? 'Finding past cities…' : `${cityProgresses.length} ${cityProgresses.length === 1 ? 'city' : 'cities'} · ${formatDistance(totalCityDistance)} new ground`}</small></div>
+        <div className="discovered-cities__heading"><span>Your cities</span><small>{citiesLoadedUserId !== accountUserId || cityBackfillLoading ? 'Finding past cities…' : `${cityProgresses.length} ${cityProgresses.length === 1 ? 'city' : 'cities'} · ${formatDistance(totalCityDistance)} new ground`}</small></div>
         {accountUserId ? cityProgresses.length ? <ul>
           {cityProgresses.map(({ city, percentage, distance }) => <li key={city.id}>
             <button type="button" onClick={() => focusDiscoveredCity(city)}>
