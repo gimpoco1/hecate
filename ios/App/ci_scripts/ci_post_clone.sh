@@ -5,6 +5,20 @@
 set -eu
 
 cd "$CI_PRIMARY_REPOSITORY_PATH"
+
+# Xcode Cloud includes Homebrew, but Node.js and CocoaPods aren't guaranteed to
+# be present in every selected macOS/Xcode image.
+if ! command -v npm >/dev/null 2>&1; then
+  brew install node
+fi
+
+if ! command -v pod >/dev/null 2>&1; then
+  brew install cocoapods
+fi
+
+echo "npm: $(command -v npm)"
+echo "pod: $(command -v pod)"
+
 npm ci
 npm run build
 
