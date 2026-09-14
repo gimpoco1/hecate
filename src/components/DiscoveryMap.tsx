@@ -14,6 +14,7 @@ type Props = {
   cells: DiscoveryCell[]
   currentPoint?: Coordinate
   locationState?: 'idle' | 'located' | 'tracking'
+  onMapClick?: () => void
   onZoomChange: (zoom: number) => void
   mapRef: React.MutableRefObject<MapLibreMap | null>
   initialCenter?: [number, number]
@@ -130,16 +131,18 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.stroke()
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const markerRef = useRef<maplibregl.Marker | null>(null)
   const currentPointRef = useRef(currentPoint)
   const locationStateRef = useRef(locationState)
+  const onMapClickRef = useRef(onMapClick)
   const stateRef = useRef({ mode, points, cells })
 
   useEffect(() => { stateRef.current = { mode, points, cells } }, [mode, points, cells])
   useEffect(() => { currentPointRef.current = currentPoint }, [currentPoint])
+  useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
   useEffect(() => {
     locationStateRef.current = locationState
     const element = markerRef.current?.getElement()
@@ -182,6 +185,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
     map.on('render', redraw)
+    map.on('click', () => onMapClickRef.current?.())
     map.on('zoom', () => onZoomChange(map.getZoom()))
     map.on('resize', redraw)
     return () => {

@@ -358,7 +358,14 @@ button {
   cursor: pointer;
 }
 .location-status:disabled {
+  opacity: 1;
+}
+.location-status--refreshing:disabled {
   cursor: wait;
+}
+.location-status--updated:disabled,
+.location-status--denied:disabled {
+  cursor: default;
 }
 .location-status span {
   width: 7px;
@@ -374,6 +381,17 @@ button {
   background: transparent;
   box-shadow: none;
   animation: spin 750ms linear infinite;
+}
+.location-status--updated span {
+  background: #8fb533;
+  box-shadow: 0 0 0 4px rgba(143, 181, 51, 0.15);
+}
+.location-status--denied {
+  color: #8f4d3d;
+}
+.location-status--denied span {
+  background: #b75b49;
+  box-shadow: 0 0 0 4px rgba(183, 91, 73, 0.14);
 }
 
 .map-actions {

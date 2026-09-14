@@ -7,6 +7,13 @@ export interface LocationTrackerError {
   message: string
 }
 
+export class LocationRequestError extends Error {
+  constructor(public code: LocationTrackerError['code'], message: string) {
+    super(message)
+    this.name = 'LocationRequestError'
+  }
+}
+
 export interface LocationTracker {
   start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void): Promise<void>
   stop(): void | Promise<void>
@@ -22,7 +29,7 @@ export async function requestCurrentLocation(): Promise<Coordinate> {
     return new Promise((resolve, reject) => {
       let watcherId: string | null = null
       let completed = false
-      const timeout = globalThis.setTimeout(() => finish({ error: new Error('Timed out while getting your location.') }), 10_000)
+      const timeout = globalThis.setTimeout(() => finish({ error: new LocationRequestError('unavailable', 'Timed out while getting your location.') }), 10_000)
 
       const stop = () => {
         if (watcherId) void BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => undefined)
@@ -44,7 +51,8 @@ export async function requestCurrentLocation(): Promise<Coordinate> {
         distanceFilter: 20,
       }, (location, error) => {
         if (error) {
-          finish({ error: new Error(error.message) })
+          const normalized = nativeError(error)
+          finish({ error: new LocationRequestError(normalized.code, normalized.message) })
           return
         }
         if (!location) return
@@ -61,15 +69,16 @@ export async function requestCurrentLocation(): Promise<Coordinate> {
       }).then(id => {
         watcherId = id
         if (completed) stop()
-      }).catch(error => finish({
-        error: error instanceof Error ? error : new Error('Location is unavailable.'),
-      }))
+      }).catch(error => {
+        const normalized = nativeError(error)
+        finish({ error: new LocationRequestError(normalized.code, normalized.message || 'Location is unavailable.') })
+      })
     })
   }
 
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error('Geolocation is unavailable.'))
+      reject(new LocationRequestError('unavailable', 'Geolocation is unavailable.'))
       return
     }
     navigator.geolocation.getCurrentPosition(
@@ -79,7 +88,10 @@ export async function requestCurrentLocation(): Promise<Coordinate> {
         recordedAt: timestamp,
         accuracy: coords.accuracy,
       }),
-      error => reject(new Error(error.message)),
+      error => reject(new LocationRequestError(
+        error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'unavailable',
+        error.message,
+      )),
       { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 },
     )
   })
@@ -113,10 +125,11 @@ class WebLocationTracker implements LocationTracker {
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation')
 
-function nativeError(error: CallbackError): LocationTrackerError {
+function nativeError(error: CallbackError | unknown): LocationTrackerError {
+  const candidate = error && typeof error === 'object' ? error as Partial<CallbackError> : null
   return {
-    code: error.code === 'NOT_AUTHORIZED' ? 'permission-denied' : 'unavailable',
-    message: error.message,
+    code: candidate?.code === 'NOT_AUTHORIZED' ? 'permission-denied' : 'unavailable',
+    message: candidate?.message || 'Location is unavailable.',
   }
 }
 
@@ -170,4 +183,9 @@ export function isNativeApp() {
 
 export function createLocationTracker(): LocationTracker {
   return isNativeApp() ? new NativeLocationTracker() : new WebLocationTracker()
+}
+
+export async function openLocationSettings() {
+  if (!isNativeApp()) return
+  await BackgroundGeolocation.openSettings()
 }

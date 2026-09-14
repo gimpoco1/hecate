@@ -6,7 +6,7 @@ import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
-import { createLocationTracker, isNativeApp, requestCurrentLocation, type LocationTracker } from './location'
+import { createLocationTracker, isNativeApp, LocationRequestError, openLocationSettings, requestCurrentLocation, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
@@ -22,6 +22,7 @@ type ExplorationSummary = {
   cityName?: string
   cityPercentageAdded?: number
 }
+type PassiveLocationStatus = 'idle' | 'refreshing' | 'updated' | 'current' | 'denied'
 
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`
@@ -64,8 +65,7 @@ export default function App() {
   const [points, setPoints] = useState<Coordinate[]>([])
   const [cells, setCells] = useState<DiscoveryCell[]>([])
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>()
-  const [hasFreshLocationFix, setHasFreshLocationFix] = useState(false)
-  const [locationRefreshing, setLocationRefreshing] = useState(false)
+  const [passiveLocationStatus, setPassiveLocationStatus] = useState<PassiveLocationStatus>('idle')
   const [accountUserId, setAccountUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(!isSyncConfigured)
   const [tracking, setTracking] = useState<TrackingState>('idle')
@@ -90,6 +90,7 @@ export default function App() {
   const trackingUserRef = useRef<string | null>(null)
   const pendingWalksRef = useRef<PendingWalk[]>([])
   const locationRefreshInFlightRef = useRef(false)
+  const locationUpdatedTimerRef = useRef<number | null>(null)
   const journeyCardRef = useRef<HTMLElement | null>(null)
   const journeyDragRef = useRef<{
     pointerId: number
@@ -179,7 +180,7 @@ export default function App() {
     setCityBackfillLoading(false)
     setCoverageInfoOpen(false)
     setExplorationSummary(null)
-    setHasFreshLocationFix(false)
+    setPassiveLocationStatus('idle')
     setDiscoveryLoading(Boolean(accountUserId))
     lastPointRef.current = undefined
     cellsRef.current = []
@@ -231,18 +232,32 @@ export default function App() {
     trackingUserRef.current = null
     pendingWalksRef.current = []
     setTracking('idle')
-    setHasFreshLocationFix(false)
+    setPassiveLocationStatus('idle')
   }, [accountUserId])
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
+  useEffect(() => () => {
+    if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
+  }, [])
+
   useEffect(() => {
     const flushBackgroundLocations = () => {
-      if (document.visibilityState !== 'visible' || !deferredLocationUiRef.current) return
-      deferredLocationUiRef.current = false
-      setPoints([...pointsRef.current])
-      setCells([...cellsRef.current])
-      if (lastPointRef.current) setCurrentPoint(lastPointRef.current)
+      if (document.visibilityState !== 'visible') return
+      if (deferredLocationUiRef.current) {
+        deferredLocationUiRef.current = false
+        setPoints([...pointsRef.current])
+        setCells([...cellsRef.current])
+        if (lastPointRef.current) setCurrentPoint(lastPointRef.current)
+      }
+      // Returning to the foreground makes a one-shot fix stale, but does not
+      // start a watcher or request location by itself.
+      if (!trackerRef.current) {
+        if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
+        locationUpdatedTimerRef.current = null
+        setPassiveLocationStatus('idle')
+        setTracking(current => current === 'denied' || current === 'unavailable' ? 'idle' : current)
+      }
     }
     document.addEventListener('visibilitychange', flushBackgroundLocations)
     return () => document.removeEventListener('visibilitychange', flushBackgroundLocations)
@@ -251,23 +266,33 @@ export default function App() {
   const refreshCurrentLocation = useCallback(async (centerMap = false) => {
     if (locationRefreshInFlightRef.current) return
     locationRefreshInFlightRef.current = true
-    setLocationRefreshing(true)
+    setPassiveLocationStatus('refreshing')
+    setTracking(current => current === 'denied' || current === 'unavailable' ? 'idle' : current)
     try {
       const point = await requestCurrentLocation()
       // A locator may initially receive an approximate fix. That is still
       // useful for moving the marker; the stricter accuracy filter remains
       // in addPoint so approximate fixes never reveal new map area.
-      if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) return
+      if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) {
+        setPassiveLocationStatus('idle')
+        return
+      }
       setCurrentPoint(point)
-      setHasFreshLocationFix(true)
+      setPassiveLocationStatus('updated')
+      if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
+      locationUpdatedTimerRef.current = window.setTimeout(() => {
+        setPassiveLocationStatus(current => current === 'updated' ? 'current' : current)
+        locationUpdatedTimerRef.current = null
+      }, 1_600)
       if (centerMap) {
         mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1400, essential: true })
       }
-    } catch {
-      // Keep the most recent known position when a fresh read is unavailable.
+    } catch (error) {
+      // Keep the most recent known position when a fresh read is unavailable,
+      // while distinguishing a permission decision from a temporary failure.
+      setPassiveLocationStatus(error instanceof LocationRequestError && error.code === 'permission-denied' ? 'denied' : 'idle')
     } finally {
       locationRefreshInFlightRef.current = false
-      setLocationRefreshing(false)
     }
   }, [])
 
@@ -360,7 +385,7 @@ export default function App() {
 
     setShowIntro(false)
     if (focus) {
-      setHasFreshLocationFix(false)
+      setPassiveLocationStatus('idle')
       setCurrentPoint(focus)
       mapRef.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 14.3, duration: 2600, essential: true })
     } else {
@@ -489,7 +514,7 @@ export default function App() {
     if (tracking !== 'idle' || testRouteRunning) return
     setTestRouteRunning(true)
     setExplorationSummary(null)
-    setHasFreshLocationFix(false)
+    setPassiveLocationStatus('idle')
     try {
       const response = await fetch(`/test-routes/${routeFile}`)
       if (!response.ok) throw new Error('Unable to load test route')
@@ -522,14 +547,14 @@ export default function App() {
       }
       await finishActiveWalk()
       setTracking('idle')
-      setHasFreshLocationFix(false)
+      setPassiveLocationStatus('idle')
     } catch (error) {
       console.error('Test route failed', error)
       activeWalkRef.current = null
       trackingUserRef.current = null
       explorationStartRef.current = null
       setTracking('idle')
-      setHasFreshLocationFix(false)
+      setPassiveLocationStatus('idle')
     } finally {
       setTestRouteRunning(false)
     }
@@ -542,7 +567,7 @@ export default function App() {
       try { await tracker?.stop() } catch { /* The in-memory walk must still be finalized. */ }
       await finishActiveWalk()
       setTracking('idle')
-      setHasFreshLocationFix(false)
+      setPassiveLocationStatus('idle')
       return
     }
     if (!accountUserId) {
@@ -550,7 +575,7 @@ export default function App() {
       return
     }
     setTracking('requesting')
-    setHasFreshLocationFix(false)
+    setPassiveLocationStatus('idle')
     const walkId = createWalkId()
     lastPointRef.current = undefined
     const startingPoints = pointsRef.current
@@ -572,7 +597,7 @@ export default function App() {
         void Promise.resolve(tracker.stop()).catch(() => undefined)
         trackerRef.current = null
         void finishActiveWalk()
-        setHasFreshLocationFix(false)
+        setPassiveLocationStatus(error.code === 'permission-denied' ? 'denied' : 'idle')
         setTracking(error.code === 'permission-denied' ? 'denied' : 'unavailable')
       })
       if (!trackerFailed) {
@@ -582,7 +607,7 @@ export default function App() {
     } catch {
       activeWalkRef.current = null
       trackingUserRef.current = null
-      setHasFreshLocationFix(false)
+      setPassiveLocationStatus('idle')
       setTracking('unavailable')
     }
   }
@@ -791,6 +816,25 @@ export default function App() {
   }
 
   const introVisible = showIntro && zoom < 4
+  const locationIsCurrent = tracking === 'tracking' || passiveLocationStatus === 'updated' || passiveLocationStatus === 'current'
+  const locationDisplayStatus: PassiveLocationStatus = tracking === 'denied' ? 'denied' : passiveLocationStatus
+  const locationStatusText = locationDisplayStatus === 'refreshing'
+    ? 'Updating location…'
+    : locationDisplayStatus === 'updated'
+      ? 'Location updated'
+      : locationDisplayStatus === 'denied'
+        ? nativeApp ? 'Location access disabled · Open Settings' : 'Location access disabled · Check browser settings'
+        : 'Location idle · Tap to update'
+  const locationStatusDisabled = locationDisplayStatus === 'refreshing'
+    || locationDisplayStatus === 'updated'
+    || (locationDisplayStatus === 'denied' && !nativeApp)
+  const activateLocationStatus = () => {
+    if (locationDisplayStatus === 'denied' && nativeApp) {
+      void openLocationSettings().catch(() => undefined)
+      return
+    }
+    locate()
+  }
 
   return <main className={`app-shell ${introVisible ? 'app-shell--intro' : ''}`}>
     <DiscoveryMap
@@ -798,7 +842,10 @@ export default function App() {
       points={points}
       cells={cells}
       currentPoint={currentPoint}
-      locationState={tracking === 'tracking' ? 'tracking' : hasFreshLocationFix ? 'located' : 'idle'}
+      locationState={tracking === 'tracking' ? 'tracking' : locationIsCurrent ? 'located' : 'idle'}
+      onMapClick={() => {
+        if (citiesExpanded) settleJourneySheet(false)
+      }}
       onZoomChange={onZoomChange}
       mapRef={mapRef}
     />
@@ -833,25 +880,26 @@ export default function App() {
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
-    {!introVisible && tracking === 'idle' && !hasFreshLocationFix && <button
+    {!introVisible && tracking !== 'tracking' && tracking !== 'requesting' && locationDisplayStatus !== 'current' && <button
       type="button"
-      className={`location-status ${locationRefreshing ? 'location-status--refreshing' : ''}`}
-      onClick={locate}
-      disabled={locationRefreshing}
-      aria-label={locationRefreshing ? 'Updating location' : 'Location idle. Tap to update'}
+      className={`location-status location-status--${locationDisplayStatus}`}
+      onClick={activateLocationStatus}
+      disabled={locationStatusDisabled}
+      aria-live="polite"
+      aria-label={locationStatusText}
     >
-      <span />{locationRefreshing ? 'Updating location…' : 'Location idle · Tap to update'}
+      <span />{locationStatusText}
     </button>}
 
     <nav className="map-actions" aria-label="Map controls">
       <button
         className="location-control"
         onClick={locate}
-        disabled={locationRefreshing}
-        aria-busy={locationRefreshing}
-        aria-label={tracking === 'tracking' || hasFreshLocationFix ? 'Center on current location' : 'Location is not current. Tap to update'}
-        title={tracking === 'tracking' || hasFreshLocationFix ? 'Current location' : 'Update my current location'}
-      >{tracking === 'tracking' || hasFreshLocationFix ? <LocateIcon size={21} /> : <LocationOffIcon size={21} />}</button>
+        disabled={locationDisplayStatus === 'refreshing'}
+        aria-busy={locationDisplayStatus === 'refreshing'}
+        aria-label={locationIsCurrent ? 'Center on current location' : 'Location is not current. Tap to update'}
+        title={locationIsCurrent ? 'Current location' : 'Update my current location'}
+      >{locationIsCurrent ? <LocateIcon size={21} /> : <LocationOffIcon size={21} />}</button>
       <button
         className={mode === 'map' ? 'active' : ''}
         onClick={() => setMode(currentMode => currentMode === 'discover' ? 'map' : 'discover')}
@@ -896,7 +944,10 @@ export default function App() {
         {tracking === 'tracking' ? <span className="stop-square" /> : tracking === 'requesting' ? <span className="control-spinner" /> : <span className="play-triangle" />}
       </button>
       {tracking === 'tracking' && <div className="tracking-notice"><span />{nativeApp ? 'Discovering in background' : 'Keep this page open and your screen on'}</div>}
-      {(tracking === 'denied' || tracking === 'unavailable') && <p className="location-error">Location is unavailable. Allow Hecate to use your location in Settings, or preview the sample discovery.</p>}
+      {tracking === 'denied' && <p className="location-error">{nativeApp
+        ? 'Location access is disabled. Open Settings above to allow Hecate to use your location.'
+        : 'Location access is disabled. Allow Hecate to use your location in the browser settings.'}</p>}
+      {tracking === 'unavailable' && <p className="location-error">Location is temporarily unavailable. Try again, or preview the sample discovery.</p>}
       {citiesExpanded && <div className="discovered-cities" aria-label="Discovered cities">
         <div className="discovered-cities__heading"><span>Your cities</span><small>{citiesLoadedUserId !== accountUserId || cityBackfillLoading ? 'Finding past cities…' : `${cityProgresses.length} ${cityProgresses.length === 1 ? 'city' : 'cities'} · ${formatDistance(totalCityDistance)} new ground`}</small></div>
         {accountUserId ? cityProgresses.length ? <ul>

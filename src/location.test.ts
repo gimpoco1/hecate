@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const native = vi.hoisted(() => ({
   addWatcher: vi.fn(),
   removeWatcher: vi.fn(),
+  openSettings: vi.fn(),
 }))
 
 vi.mock('@capacitor/core', () => ({
@@ -10,10 +11,11 @@ vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({
     addWatcher: native.addWatcher,
     removeWatcher: native.removeWatcher,
+    openSettings: native.openSettings,
   }),
 }))
 
-import { createLocationTracker, requestCurrentLocation } from './location'
+import { createLocationTracker, openLocationSettings, requestCurrentLocation } from './location'
 
 describe('native location lifecycle', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -49,6 +51,21 @@ describe('native location lifecycle', () => {
     await starting
 
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'late-watcher' })
+  })
+
+  it('classifies denied passive location requests and opens native settings', async () => {
+    native.addWatcher.mockImplementation(async (_options, callback) => {
+      callback(undefined, { code: 'NOT_AUTHORIZED', message: 'Location permission denied' })
+      return 'denied-watcher'
+    })
+    native.removeWatcher.mockResolvedValue(undefined)
+    native.openSettings.mockResolvedValue(undefined)
+
+    await expect(requestCurrentLocation()).rejects.toMatchObject({ code: 'permission-denied' })
+    await openLocationSettings()
+
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'denied-watcher' })
+    expect(native.openSettings).toHaveBeenCalledOnce()
   })
 
   it('uses an 8 metre filter for responsive active tracking', async () => {
