@@ -333,6 +333,67 @@ button {
   border-radius: 50%;
 }
 
+.location-status {
+  position: absolute;
+  z-index: 4;
+  top: max(76px, calc(env(safe-area-inset-top) + 58px));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 110px);
+  transform: translateX(-50%);
+  padding: 7px 11px;
+  border: 1px solid rgba(26, 57, 46, 0.1);
+  border-radius: 999px;
+  background: rgba(250, 248, 242, 0.92);
+  color: #66746d;
+  box-shadow: 0 8px 24px rgba(27, 51, 42, 0.1);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.location-status:disabled {
+  opacity: 1;
+}
+.location-status--refreshing:disabled {
+  cursor: wait;
+}
+.location-status--updated:disabled,
+.location-status--denied:disabled {
+  cursor: default;
+}
+.location-status span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #7d8983;
+  box-shadow: 0 0 0 4px rgba(109, 124, 116, 0.15);
+}
+.location-status--refreshing span {
+  border: 1.5px solid rgba(109, 124, 116, 0.3);
+  border-top-color: #66746d;
+  background: transparent;
+  box-shadow: none;
+  animation: spin 750ms linear infinite;
+}
+.location-status--updated span {
+  background: #8fb533;
+  box-shadow: 0 0 0 4px rgba(143, 181, 51, 0.15);
+}
+.location-status--denied {
+  color: #8f4d3d;
+}
+.location-status--denied span {
+  background: #b75b49;
+  box-shadow: 0 0 0 4px rgba(183, 91, 73, 0.14);
+}
+
 .map-actions {
   position: absolute;
   z-index: 4;
@@ -385,12 +446,15 @@ button {
   backdrop-filter: blur(15px);
   cursor: pointer;
 }
+.map-actions button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
 .map-actions button.active {
   color: var(--lime);
   background: var(--forest);
   transform: rotate(-4deg);
 }
-
 .journey-card {
   position: absolute;
   z-index: 4;
@@ -416,15 +480,19 @@ button {
   will-change: height;
   overflow: hidden;
   touch-action: none;
+  cursor: grab;
 }
 .journey-card--dragging {
   transition: none;
+  cursor: grabbing;
 }
 .journey-card--expanded {
   height: 70dvh;
   grid-template-rows: auto 1fr;
   align-items: start;
   padding-top: 27px;
+  touch-action: pan-y;
+  cursor: default;
 }
 .journey-card__handle {
   position: absolute;
@@ -532,6 +600,7 @@ button {
   background: var(--lime);
   box-shadow: 0 8px 20px rgba(45, 66, 25, 0.19);
   cursor: pointer;
+  touch-action: manipulation;
   transition:
     transform 180ms ease,
     background 180ms ease;
@@ -858,15 +927,27 @@ button {
   padding: 4px;
   box-shadow:
     0 3px 15px rgba(20, 54, 42, 0.35),
-    0 0 0 5px rgba(217, 242, 106, 0.28);
+    0 0 0 5px rgba(109, 124, 116, 0.24);
 }
 .user-marker span {
   display: block;
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: var(--forest);
-  border: 3px solid var(--lime);
+  background: #7d8983;
+  border: 3px solid #d7ddd9;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+.user-marker--located,
+.user-marker--tracking {
+  box-shadow:
+    0 3px 15px rgba(20, 54, 42, 0.35),
+    0 0 0 5px rgba(10, 132, 255, 0.2);
+}
+.user-marker--located span,
+.user-marker--tracking span {
+  background: #0a84ff;
+  border-color: #d9efff;
 }
 
 .sheet-backdrop {

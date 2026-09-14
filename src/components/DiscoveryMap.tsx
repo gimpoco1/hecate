@@ -13,10 +13,16 @@ type Props = {
   points: Coordinate[]
   cells: DiscoveryCell[]
   currentPoint?: Coordinate
+  locationState?: 'idle' | 'located' | 'tracking'
+  onMapClick?: () => void
   onZoomChange: (zoom: number) => void
   mapRef: React.MutableRefObject<MapLibreMap | null>
   initialCenter?: [number, number]
   initialZoom?: number
+}
+
+function userMarkerClassName(locationState: NonNullable<Props['locationState']>) {
+  return `user-marker user-marker--${locationState}`
 }
 
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
@@ -125,15 +131,23 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.stroke()
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const markerRef = useRef<maplibregl.Marker | null>(null)
   const currentPointRef = useRef(currentPoint)
+  const locationStateRef = useRef(locationState)
+  const onMapClickRef = useRef(onMapClick)
   const stateRef = useRef({ mode, points, cells })
 
   useEffect(() => { stateRef.current = { mode, points, cells } }, [mode, points, cells])
   useEffect(() => { currentPointRef.current = currentPoint }, [currentPoint])
+  useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
+  useEffect(() => {
+    locationStateRef.current = locationState
+    const element = markerRef.current?.getElement()
+    if (element) element.className = userMarkerClassName(locationState)
+  }, [locationState])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -159,7 +173,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
       const point = currentPointRef.current
       if (point && !markerRef.current) {
         const element = document.createElement('div')
-        element.className = 'user-marker'
+        element.className = userMarkerClassName(locationStateRef.current)
         element.innerHTML = '<span></span>'
         markerRef.current = new maplibregl.Marker({ element, anchor: 'center' })
           .setLngLat([point.lng, point.lat])
@@ -171,6 +185,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
       if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
     map.on('render', redraw)
+    map.on('click', () => onMapClickRef.current?.())
     map.on('zoom', () => onZoomChange(map.getZoom()))
     map.on('resize', redraw)
     return () => {
@@ -192,7 +207,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, onZoomChange, 
     if (!map || !currentPoint) return
     if (!markerRef.current) {
       const element = document.createElement('div')
-      element.className = 'user-marker'
+      element.className = userMarkerClassName(locationStateRef.current)
       element.innerHTML = '<span></span>'
       markerRef.current = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([currentPoint.lng, currentPoint.lat]).addTo(map)
     } else {
