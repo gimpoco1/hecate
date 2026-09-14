@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldExpandJourneySheet, shouldShowExplorationRecap } from './journeyUi'
+import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 
 describe('exploration recap visibility', () => {
   it('hides journeys whose displayed new-ground distance is zero', () => {
@@ -13,6 +13,16 @@ describe('exploration recap visibility', () => {
 })
 
 describe('journey drawer gesture', () => {
+  it('uses the full collapsed drawer except the start/stop control', () => {
+    expect(shouldStartJourneyDrag(false, false, false)).toBe(true)
+    expect(shouldStartJourneyDrag(false, false, true)).toBe(false)
+  })
+
+  it('keeps expanded drawer gestures on the handle', () => {
+    expect(shouldStartJourneyDrag(true, true, false)).toBe(true)
+    expect(shouldStartJourneyDrag(true, false, false)).toBe(false)
+  })
+
   it('opens a collapsed drawer only for a deliberate upward drag', () => {
     expect(shouldExpandJourneySheet(false, -40)).toBe(true)
     expect(shouldExpandJourneySheet(false, -10)).toBe(false)

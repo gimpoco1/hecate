@@ -3,9 +3,9 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import { discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
-import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
+import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
-import { shouldExpandJourneySheet, shouldShowExplorationRecap } from './journeyUi'
+import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 import { createLocationTracker, isNativeApp, requestCurrentLocation, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
@@ -65,6 +65,7 @@ export default function App() {
   const [cells, setCells] = useState<DiscoveryCell[]>([])
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>()
   const [hasFreshLocationFix, setHasFreshLocationFix] = useState(false)
+  const [locationRefreshing, setLocationRefreshing] = useState(false)
   const [accountUserId, setAccountUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(!isSyncConfigured)
   const [tracking, setTracking] = useState<TrackingState>('idle')
@@ -100,6 +101,7 @@ export default function App() {
   } | null>(null)
   const journeyDragFrameRef = useRef<number | null>(null)
   const journeyAnimationRef = useRef<Animation | null>(null)
+  const suppressJourneyClickRef = useRef(false)
   const previewMapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
   const cellKeysRef = useRef<Set<string>>(new Set())
@@ -249,6 +251,7 @@ export default function App() {
   const refreshCurrentLocation = useCallback(async (centerMap = false) => {
     if (locationRefreshInFlightRef.current) return
     locationRefreshInFlightRef.current = true
+    setLocationRefreshing(true)
     try {
       const point = await requestCurrentLocation()
       // A locator may initially receive an approximate fix. That is still
@@ -264,6 +267,7 @@ export default function App() {
       // Keep the most recent known position when a fresh read is unavailable.
     } finally {
       locationRefreshInFlightRef.current = false
+      setLocationRefreshing(false)
     }
   }, [])
 
@@ -639,7 +643,12 @@ export default function App() {
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
-    if (!(event.target as HTMLElement).closest('.journey-card__handle')) return
+    const target = event.target as HTMLElement
+    if (!shouldStartJourneyDrag(
+      citiesExpanded,
+      Boolean(target.closest('.journey-card__handle')),
+      Boolean(target.closest('.discovery-control')),
+    )) return
     const card = journeyCardRef.current
     if (!card) return
     journeyAnimationRef.current?.cancel()
@@ -695,6 +704,9 @@ export default function App() {
       journeyDragRef.current = null
       return
     }
+    event.preventDefault()
+    suppressJourneyClickRef.current = true
+    window.setTimeout(() => { suppressJourneyClickRef.current = false }, 0)
     const { collapsed, expanded: expandedHeight } = journeyBounds(card)
     // Pointer-up can arrive before the final pointer-move frame. Apply that
     // last position so a single, deliberate swipe is never ignored.
@@ -725,6 +737,13 @@ export default function App() {
     card.classList.remove('journey-card--dragging')
     card.style.height = ''
     journeyDragRef.current = null
+  }
+
+  const suppressClickAfterJourneyDrag = (event: React.MouseEvent<HTMLElement>) => {
+    if (!suppressJourneyClickRef.current) return
+    suppressJourneyClickRef.current = false
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   const focusDiscoveredCity = (city: CityBoundary) => {
@@ -814,8 +833,25 @@ export default function App() {
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
+    {!introVisible && tracking === 'idle' && !hasFreshLocationFix && <button
+      type="button"
+      className={`location-status ${locationRefreshing ? 'location-status--refreshing' : ''}`}
+      onClick={locate}
+      disabled={locationRefreshing}
+      aria-label={locationRefreshing ? 'Updating location' : 'Location idle. Tap to update'}
+    >
+      <span />{locationRefreshing ? 'Updating location…' : 'Location idle · Tap to update'}
+    </button>}
+
     <nav className="map-actions" aria-label="Map controls">
-      <button onClick={locate} aria-label="Go to my location"><LocateIcon size={21} /></button>
+      <button
+        className="location-control"
+        onClick={locate}
+        disabled={locationRefreshing}
+        aria-busy={locationRefreshing}
+        aria-label={tracking === 'tracking' || hasFreshLocationFix ? 'Center on current location' : 'Location is not current. Tap to update'}
+        title={tracking === 'tracking' || hasFreshLocationFix ? 'Current location' : 'Update my current location'}
+      >{tracking === 'tracking' || hasFreshLocationFix ? <LocateIcon size={21} /> : <LocationOffIcon size={21} />}</button>
       <button
         className={mode === 'map' ? 'active' : ''}
         onClick={() => setMode(currentMode => currentMode === 'discover' ? 'map' : 'discover')}
@@ -833,6 +869,7 @@ export default function App() {
       onPointerMove={moveJourneyDrag}
       onPointerUp={endJourneyDrag}
       onPointerCancel={cancelJourneyDrag}
+      onClickCapture={suppressClickAfterJourneyDrag}
     >
       <div className="journey-card__handle" aria-hidden="true"><span /></div>
       <div className="journey-card__summary">

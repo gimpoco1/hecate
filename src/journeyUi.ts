@@ -14,3 +14,11 @@ export function shouldExpandJourneySheet(wasExpanded: boolean, verticalDragPx: n
     ? verticalDragPx <= JOURNEY_DRAG_THRESHOLD_PX
     : verticalDragPx <= -JOURNEY_DRAG_THRESHOLD_PX
 }
+
+/**
+ * The whole collapsed summary is a drag surface. Once expanded, keep dragging
+ * on the handle so the city list remains independently scrollable.
+ */
+export function shouldStartJourneyDrag(wasExpanded: boolean, isHandle: boolean, isDiscoveryControl: boolean) {
+  return !isDiscoveryControl && (!wasExpanded || isHandle)
+}
