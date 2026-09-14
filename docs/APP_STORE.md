@@ -26,10 +26,11 @@
 
 ## Xcode Cloud: build and upload on every `main` change
 
-The repository contains `ci_scripts/ci_post_clone.sh`. Xcode Cloud runs it after
-cloning the project; it installs the exact JavaScript dependencies, rebuilds the
-web app, and syncs the generated bundle into Capacitor before Xcode archives the
-native app.
+The repository contains `ios/App/ci_scripts/ci_post_clone.sh`, alongside the
+Xcode workspace. Xcode Cloud runs it after cloning the project; it installs the
+exact JavaScript dependencies, rebuilds the web app, copies the generated bundle
+into Capacitor, and installs the locked CocoaPods dependencies before Xcode
+archives the native app.
 
 Set up the workflow once in Xcode (use `ios/App/App.xcworkspace`, not the
 `.xcodeproj`):
