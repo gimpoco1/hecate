@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "ios:add": "npm run build && npx cap add ios",
     "ios:sync": "npm run build && npx cap sync ios",
-    "ios:open": "npm run ios:sync && npx cap open ios"
+    "ios:open": "npm run ios:sync && npx cap open ios",
+    "ios:version": "node scripts/bump-ios-version.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
