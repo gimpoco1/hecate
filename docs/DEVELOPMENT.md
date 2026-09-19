@@ -7,7 +7,12 @@ npm install
 npm run dev
 ```
 
-The app uses MapLibre GL JS and OpenFreeMap's OpenStreetMap-derived vector tiles. No map API key is required.
+The app uses Apple MapKit JS through Apple's official loader. Before running it, create a Maps identifier and private key in the Apple Developer portal, then either:
+
+- generate a Maps token and set `VITE_MAPKIT_TOKEN` in `.env.local`; or
+- configure the server-side token endpoint with `APPLE_MAPS_TEAM_ID`, `APPLE_MAPS_KEY_ID`, and `APPLE_MAPS_PRIVATE_KEY`.
+
+The private `.p8` key must never use a `VITE_` prefix or be committed. Paste its complete contents into `APPLE_MAPS_PRIVATE_KEY`. The native Capacitor build fetches its token from `https://hecate-eta.vercel.app/api/mapkit-token` by default; override that URL with `VITE_MAPKIT_TOKEN_ENDPOINT` if the production host changes. Set `APPLE_MAPS_ALLOWED_ORIGINS` to a comma-separated allowlist when adding another web or Capacitor origin.
 
 ## Cross-device sync
 
@@ -44,4 +49,4 @@ The bundle identifier is currently `com.gimpoco.hecate`. See [APP_STORE.md](APP_
 
 ## Production notes
 
-OpenFreeMap's public tiles are free and require attribution, which MapLibre displays automatically. It does not offer an SLA; a larger production deployment should budget for hosted vector tiles or self-hosting while keeping the same MapLibre UI.
+MapKit JS displays Apple's required attribution and logo itself. Apple currently includes 250,000 map views and 25,000 service calls per day with an Apple Developer Program membership; use the MapKit JS dashboard to monitor usage.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Map as MapLibreMap } from 'maplibre-gl'
+import type { AppleMapHandle } from './appleMap'
 import { discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
@@ -83,7 +83,7 @@ export default function App() {
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false)
   const [explorationSummary, setExplorationSummary] = useState<ExplorationSummary | null>(null)
   const [testRouteRunning, setTestRouteRunning] = useState(false)
-  const mapRef = useRef<MapLibreMap | null>(null)
+  const mapRef = useRef<AppleMapHandle | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(undefined)
   const activeWalkRef = useRef<ActiveWalk | null>(null)
@@ -103,7 +103,7 @@ export default function App() {
   const journeyDragFrameRef = useRef<number | null>(null)
   const journeyAnimationRef = useRef<Animation | null>(null)
   const suppressJourneyClickRef = useRef(false)
-  const previewMapRef = useRef<MapLibreMap | null>(null)
+  const previewMapRef = useRef<AppleMapHandle | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
   const cellKeysRef = useRef<Set<string>>(new Set())
   const pointsRef = useRef<Coordinate[]>([])
@@ -417,7 +417,7 @@ export default function App() {
       mapRef.current?.easeTo({ center: [recordedPoint.lng, recordedPoint.lat], duration: 850, essential: true })
     } else {
       // Native callbacks still record and persist the route in the background,
-      // but React and MapLibre do not need to redraw for every GPS update.
+      // but React and Apple Maps do not need to redraw for every GPS update.
       deferredLocationUiRef.current = true
     }
   }
@@ -858,7 +858,7 @@ export default function App() {
     </aside>}
 
     <header className="topbar">
-      <button className="brand" onClick={showGlobe} aria-label="View the globe">
+      <button className="brand" onClick={showGlobe} aria-label="View the world">
         <span className="brand__mark"><HecateMark /></span>
         <span>Hecate</span>
       </button>
@@ -907,7 +907,7 @@ export default function App() {
         aria-pressed={mode === 'map'}
         title={mode === 'map' ? 'Show uncovered map' : 'Reveal full map'}
       ><MapIcon size={21} /></button>
-      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Tilt and rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
+      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
     </nav>
 
     {isCityScale && <section
