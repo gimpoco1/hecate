@@ -150,6 +150,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     const container = containerRef.current
     let disposed = false
     let createdMap: AppleMapHandle | null = null
+    const initialization = new AbortController()
     const redraw = () => {
       if (canvasRef.current && createdMap) drawMist(canvasRef.current, createdMap, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
@@ -160,6 +161,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       container,
       initialCenter,
       initialZoom,
+      signal: initialization.signal,
       onMapClick: () => onMapClickRef.current?.(),
       onZoomChange: zoom => onZoomChangeRef.current(zoom),
       onRender: redraw,
@@ -174,12 +176,14 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       if (import.meta.env.DEV) window.__hecateMap = map
       redraw()
     }).catch(error => {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Apple Maps failed to load', error)
       if (!disposed) setMapError(error instanceof Error ? error.message : 'Apple Maps failed to load')
     })
 
     return () => {
       disposed = true
+      initialization.abort()
       resizeObserver.disconnect()
       createdMap?.remove()
       if (mapRef.current === createdMap) mapRef.current = null
