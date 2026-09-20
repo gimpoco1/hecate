@@ -43,9 +43,52 @@ type CreateAppleMapOptions = {
   container: HTMLElement
   initialCenter: [number, number]
   initialZoom: number
+  signal?: AbortSignal
   onMapClick?: () => void
   onZoomChange: (zoom: number) => void
   onRender: () => void
+}
+
+function abortError() {
+  return new DOMException('Apple Maps initialization was cancelled', 'AbortError')
+}
+
+function nextAnimationFrame(signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError())
+      return
+    }
+
+    const frame = requestAnimationFrame(() => {
+      signal?.removeEventListener('abort', cancel)
+      resolve()
+    })
+    const cancel = () => {
+      cancelAnimationFrame(frame)
+      reject(abortError())
+    }
+    signal?.addEventListener('abort', cancel, { once: true })
+  })
+}
+
+async function waitForContainer(container: HTMLElement, signal?: AbortSignal) {
+  while (!container.isConnected || container.clientWidth === 0 || container.clientHeight === 0) {
+    await nextAnimationFrame(signal)
+  }
+}
+
+async function waitForMapView(map: AppleMap, container: HTMLElement, signal?: AbortSignal) {
+  for (let frame = 0; frame < 120; frame += 1) {
+    await nextAnimationFrame(signal)
+    if (!container.isConnected || container.clientWidth === 0 || container.clientHeight === 0) continue
+
+    // MapKit installs its backing map view asynchronously. Calling camera or
+    // projection APIs before this is non-null makes its renderer dereference a
+    // null visibleMapRect.
+    if (map.visibleMapRect) return
+  }
+  throw new Error('Apple Maps could not initialize its map view')
 }
 
 let mapKitPromise: Promise<MapKit> | null = null
@@ -114,10 +157,12 @@ function userLocationElement(className: string) {
   return element
 }
 
-export async function createAppleMap({ container, initialCenter, initialZoom, onMapClick, onZoomChange, onRender }: CreateAppleMapOptions): Promise<AppleMapHandle> {
+export async function createAppleMap({ container, initialCenter, initialZoom, signal, onMapClick, onZoomChange, onRender }: CreateAppleMapOptions): Promise<AppleMapHandle> {
   const mapkit = await loadAppleMapKit()
+  if (signal?.aborted) throw abortError()
+  await waitForContainer(container, signal)
+
   const map = new mapkit.Map(container, {
-    region: regionForZoom(initialCenter, initialZoom, container.clientWidth, container.clientHeight),
     mapType: mapkit.MapType.MutedStandard,
     showsMapTypeControl: false,
     showsZoomControl: false,
@@ -126,6 +171,15 @@ export async function createAppleMap({ container, initialCenter, initialZoom, on
     showsCompass: mapkit.FeatureVisibility.Adaptive,
     isRotationEnabled: true,
   })
+
+  try {
+    await waitForMapView(map, container, signal)
+    map.setRegionAnimated(regionForZoom(initialCenter, initialZoom, container.clientWidth, container.clientHeight), false)
+    await nextAnimationFrame(signal)
+  } catch (error) {
+    map.destroy()
+    throw error
+  }
 
   let userAnnotation: Annotation | null = null
   let redrawFrame: number | null = null
