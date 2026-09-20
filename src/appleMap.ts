@@ -78,15 +78,19 @@ async function waitForContainer(container: HTMLElement, signal?: AbortSignal) {
   }
 }
 
-async function waitForMapView(map: AppleMap, container: HTMLElement, signal?: AbortSignal) {
+async function waitForMapView(container: HTMLElement, signal?: AbortSignal) {
   for (let frame = 0; frame < 120; frame += 1) {
     await nextAnimationFrame(signal)
     if (!container.isConnected || container.clientWidth === 0 || container.clientHeight === 0) continue
 
-    // MapKit installs its backing map view asynchronously. Calling camera or
-    // projection APIs before this is non-null makes its renderer dereference a
-    // null visibleMapRect.
-    if (map.visibleMapRect) return
+    // MapKit installs its backing map view asynchronously. Wait until it has
+    // populated the host, then allow one more layout frame before using camera
+    // APIs. Deliberately avoid reading visibleMapRect as that getter itself is
+    // unsafe before the backing view exists.
+    if (container.childElementCount > 0) {
+      await nextAnimationFrame(signal)
+      return
+    }
   }
   throw new Error('Apple Maps could not initialize its map view')
 }
@@ -173,7 +177,7 @@ export async function createAppleMap({ container, initialCenter, initialZoom, si
   })
 
   try {
-    await waitForMapView(map, container, signal)
+    await waitForMapView(container, signal)
     map.setRegionAnimated(regionForZoom(initialCenter, initialZoom, container.clientWidth, container.clientHeight), false)
     await nextAnimationFrame(signal)
   } catch (error) {
