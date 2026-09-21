@@ -88,7 +88,10 @@ export function SyncSheet({ open, onClose }: Props) {
           }
           else if (data.session && data.user) setUser(data.user)
           else {
-            setMessage('Check your inbox to confirm your account. The link will bring you back to Hecate.')
+            setPasswordIntent('signin')
+            setPassword('')
+            setConfirmPassword('')
+            setMessage('Check your inbox to confirm your account. If you cannot see the email, check your spam folder. The link will bring you back to Hecate.')
             setMessageTone('success')
           }
         } else {
