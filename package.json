@@ -14,17 +14,18 @@
     "ios:version": "node scripts/bump-ios-version.mjs"
   },
   "dependencies": {
+    "@apple/mapkit-loader": "^1.0.0",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.6.9",
     "@capacitor/ios": "^7.6.9",
     "@supabase/supabase-js": "^2.57.4",
-    "maplibre-gl": "^6.9.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.9",
+    "@types/apple-mapkit": "^6.0.0",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",

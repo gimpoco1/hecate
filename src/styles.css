@@ -67,6 +67,22 @@ button {
 .mist--map {
   opacity: 0;
 }
+.map-error {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  width: min(360px, calc(100% - 40px));
+  transform: translate(-50%, -50%);
+  padding: 14px 16px;
+  border: 1px solid rgba(104, 52, 43, 0.16);
+  border-radius: 14px;
+  background: rgba(247, 244, 237, 0.94);
+  color: #6f3b33;
+  text-align: center;
+  font-size: 13px;
+  box-shadow: 0 12px 36px rgba(24, 51, 42, 0.14);
+}
 
 .topbar {
   position: absolute;
@@ -1279,19 +1295,6 @@ button {
   color: var(--forest);
 }
 
-.maplibregl-ctrl-attrib {
-  opacity: 0.58;
-  font-size: 9px !important;
-  background: rgba(255, 255, 255, 0.58) !important;
-}
-.maplibregl-ctrl-bottom-left {
-  left: 14px;
-  bottom: 3px;
-}
-.maplibregl-ctrl-logo {
-  display: none !important;
-}
-
 @media (max-width: 680px) {
   .topbar {
     padding-left: 14px;
@@ -1359,13 +1362,6 @@ button {
   }
   .attribution-note {
     display: none;
-  }
-  .maplibregl-ctrl-bottom-left {
-    bottom: 98px;
-    left: 10px;
-  }
-  .app-shell--intro .maplibregl-ctrl-bottom-left {
-    bottom: 5px;
   }
 }
 

@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react'
-import * as maplibregl from 'maplibre-gl'
-import type { Map as MapLibreMap } from 'maplibre-gl'
-import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import 'maplibre-gl/dist/maplibre-gl.css'
+import { useEffect, useRef, useState } from 'react'
+import { createAppleMap, type AppleMapHandle } from '../appleMap'
 import { DISCOVERY_RADIUS_M, discoveryCellCenter, metersToPixels, splitRoute } from '../geo'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
-maplibregl.setWorkerUrl(mapWorkerUrl)
+// These references must stay stable: zoom changes update parent state, and a
+// new default array would otherwise retrigger the map-initialization effect.
+const DEFAULT_INITIAL_CENTER: [number, number] = [7, 24]
+const DEFAULT_INITIAL_ZOOM = 1.35
 
 type Props = {
   mode: MapMode
@@ -16,7 +16,7 @@ type Props = {
   locationState?: 'idle' | 'located' | 'tracking'
   onMapClick?: () => void
   onZoomChange: (zoom: number) => void
-  mapRef: React.MutableRefObject<MapLibreMap | null>
+  mapRef: React.MutableRefObject<AppleMapHandle | null>
   initialCenter?: [number, number]
   initialZoom?: number
 }
@@ -25,7 +25,7 @@ function userMarkerClassName(locationState: NonNullable<Props['locationState']>)
   return `user-marker user-marker--${locationState}`
 }
 
-function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
+function drawMist(canvas: HTMLCanvasElement, map: AppleMapHandle, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
   const rect = canvas.getBoundingClientRect()
   const ratio = Math.min(window.devicePixelRatio || 1, 2)
   const width = Math.round(rect.width * ratio)
@@ -131,69 +131,69 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.stroke()
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = DEFAULT_INITIAL_CENTER, initialZoom = DEFAULT_INITIAL_ZOOM }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const markerRef = useRef<maplibregl.Marker | null>(null)
+  const [mapError, setMapError] = useState<string | null>(null)
   const currentPointRef = useRef(currentPoint)
   const locationStateRef = useRef(locationState)
   const onMapClickRef = useRef(onMapClick)
+  const onZoomChangeRef = useRef(onZoomChange)
   const stateRef = useRef({ mode, points, cells })
 
   useEffect(() => { stateRef.current = { mode, points, cells } }, [mode, points, cells])
   useEffect(() => { currentPointRef.current = currentPoint }, [currentPoint])
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
+  useEffect(() => { onZoomChangeRef.current = onZoomChange }, [onZoomChange])
   useEffect(() => {
     locationStateRef.current = locationState
-    const element = markerRef.current?.getElement()
-    if (element) element.className = userMarkerClassName(locationState)
+    mapRef.current?.setUserLocation(currentPointRef.current, userMarkerClassName(locationState))
   }, [locationState])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
-      center: initialCenter,
-      zoom: initialZoom,
-      pitch: 0,
-      bearing: 0,
-      attributionControl: false,
-      maxZoom: 19,
-      renderWorldCopies: false,
-    })
-    mapRef.current = map
-
-    if (import.meta.env.DEV) (window as Window & { __hecateMap?: MapLibreMap }).__hecateMap = map
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left')
-    map.on('error', event => console.error('Map rendering error', event.error))
-
-    map.on('style.load', () => {
-      map.setProjection({ type: 'globe' })
-      const point = currentPointRef.current
-      if (point && !markerRef.current) {
-        const element = document.createElement('div')
-        element.className = userMarkerClassName(locationStateRef.current)
-        element.innerHTML = '<span></span>'
-        markerRef.current = new maplibregl.Marker({ element, anchor: 'center' })
-          .setLngLat([point.lng, point.lat])
-          .addTo(map)
-      }
-    })
-
+    const container = containerRef.current
+    let disposed = false
+    let createdMap: AppleMapHandle | null = null
+    const initialization = new AbortController()
     const redraw = () => {
-      if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
+      if (canvasRef.current && createdMap) drawMist(canvasRef.current, createdMap, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
     }
-    map.on('render', redraw)
-    map.on('click', () => onMapClickRef.current?.())
-    map.on('zoom', () => onZoomChange(map.getZoom()))
-    map.on('resize', redraw)
+    const resizeObserver = new ResizeObserver(redraw)
+    resizeObserver.observe(container)
+
+    void createAppleMap({
+      container,
+      initialCenter,
+      initialZoom,
+      signal: initialization.signal,
+      onMapClick: () => onMapClickRef.current?.(),
+      onZoomChange: zoom => onZoomChangeRef.current(zoom),
+      onRender: redraw,
+    }).then(map => {
+      if (disposed) {
+        map.remove()
+        return
+      }
+      createdMap = map
+      mapRef.current = map
+      map.setUserLocation(currentPointRef.current, userMarkerClassName(locationStateRef.current))
+      if (import.meta.env.DEV) window.__hecateMap = map
+      redraw()
+    }).catch(error => {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      console.error('Apple Maps failed to load', error)
+      if (!disposed) setMapError(error instanceof Error ? error.message : 'Apple Maps failed to load')
+    })
+
     return () => {
-      markerRef.current?.remove()
-      map.remove()
-      mapRef.current = null
+      disposed = true
+      initialization.abort()
+      resizeObserver.disconnect()
+      createdMap?.remove()
+      if (mapRef.current === createdMap) mapRef.current = null
     }
-  }, [mapRef, onZoomChange])
+  }, [initialCenter, initialZoom, mapRef])
 
   useEffect(() => {
     const map = mapRef.current
@@ -205,18 +205,12 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !currentPoint) return
-    if (!markerRef.current) {
-      const element = document.createElement('div')
-      element.className = userMarkerClassName(locationStateRef.current)
-      element.innerHTML = '<span></span>'
-      markerRef.current = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([currentPoint.lng, currentPoint.lat]).addTo(map)
-    } else {
-      markerRef.current.setLngLat([currentPoint.lng, currentPoint.lat])
-    }
+    map.setUserLocation(currentPoint, userMarkerClassName(locationStateRef.current))
   }, [currentPoint, mapRef])
 
   return <div className="map-stage">
     <div ref={containerRef} className="map" aria-label="Interactive discovery map" />
     <canvas ref={canvasRef} className={`mist mist--${mode}`} aria-hidden="true" />
+    {mapError && <div className="map-error" role="alert">{mapError}</div>}
   </div>
 }

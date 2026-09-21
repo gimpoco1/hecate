@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Map as MapLibreMap } from 'maplibre-gl'
+import type { AppleMapHandle } from './appleMap'
 import { discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
@@ -7,6 +7,7 @@ import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, Perspect
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 import { createLocationTracker, isNativeApp, LocationRequestError, openLocationSettings, requestCurrentLocation, type LocationTracker } from './location'
+import { NativeMap, supportsNative3DAppleMaps } from './nativeMap'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
@@ -83,7 +84,7 @@ export default function App() {
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false)
   const [explorationSummary, setExplorationSummary] = useState<ExplorationSummary | null>(null)
   const [testRouteRunning, setTestRouteRunning] = useState(false)
-  const mapRef = useRef<MapLibreMap | null>(null)
+  const mapRef = useRef<AppleMapHandle | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(undefined)
   const activeWalkRef = useRef<ActiveWalk | null>(null)
@@ -103,7 +104,7 @@ export default function App() {
   const journeyDragFrameRef = useRef<number | null>(null)
   const journeyAnimationRef = useRef<Animation | null>(null)
   const suppressJourneyClickRef = useRef(false)
-  const previewMapRef = useRef<MapLibreMap | null>(null)
+  const previewMapRef = useRef<AppleMapHandle | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
   const cellKeysRef = useRef<Set<string>>(new Set())
   const pointsRef = useRef<Coordinate[]>([])
@@ -129,9 +130,23 @@ export default function App() {
   const discoveryLabel = accountUserId ? formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity) : '—'
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
+  const native3DAppleMaps = supportsNative3DAppleMaps()
 
   useEffect(() => { cellsRef.current = cells }, [cells])
   useEffect(() => { pointsRef.current = points }, [points])
+  useEffect(() => {
+    if (!native3DAppleMaps) return
+    let disposed = false
+    let listener: { remove: () => Promise<void> } | undefined
+    void NativeMap.addListener('dismissed', () => setPerspectiveView(false)).then(handle => {
+      if (disposed) void handle.remove()
+      else listener = handle
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      void listener?.remove()
+    }
+  }, [native3DAppleMaps])
   const cityProgresses = useMemo(() => {
     if (!citiesExpanded) return []
     const unique = new Map(discoveredCities.map(city => [city.id, city]))
@@ -417,7 +432,7 @@ export default function App() {
       mapRef.current?.easeTo({ center: [recordedPoint.lng, recordedPoint.lat], duration: 850, essential: true })
     } else {
       // Native callbacks still record and persist the route in the background,
-      // but React and MapLibre do not need to redraw for every GPS update.
+      // but React and Apple Maps do not need to redraw for every GPS update.
       deferredLocationUiRef.current = true
     }
   }
@@ -801,9 +816,25 @@ export default function App() {
     const map = mapRef.current
     if (!map) return
     const nextPerspective = !perspectiveView
+    if (native3DAppleMaps) {
+      if (!nextPerspective) {
+        void NativeMap.dismiss().then(() => setPerspectiveView(false)).catch(() => undefined)
+        return
+      }
+      const center = map.getCenter()
+      void NativeMap.present({
+        latitude: center.lat,
+        longitude: center.lng,
+        zoom: map.getZoom(),
+        bearing: -24,
+        pitch: 55,
+      }).then(() => setPerspectiveView(true)).catch(error => {
+        console.error('Native Apple Maps failed to open', error)
+      })
+      return
+    }
     setPerspectiveView(nextPerspective)
     map.easeTo({
-      pitch: nextPerspective ? 52 : 0,
       bearing: nextPerspective ? -24 : 0,
       duration: 900,
       essential: true,
@@ -811,8 +842,9 @@ export default function App() {
   }
 
   const showGlobe = () => {
+    if (native3DAppleMaps && perspectiveView) void NativeMap.dismiss().catch(() => undefined)
     setPerspectiveView(false)
-    mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, pitch: 0, bearing: 0, duration: 2200 })
+    mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, bearing: 0, duration: 2200 })
   }
 
   const introVisible = showIntro && zoom < 4
@@ -858,7 +890,7 @@ export default function App() {
     </aside>}
 
     <header className="topbar">
-      <button className="brand" onClick={showGlobe} aria-label="View the globe">
+      <button className="brand" onClick={showGlobe} aria-label="View the world">
         <span className="brand__mark"><HecateMark /></span>
         <span>Hecate</span>
       </button>
@@ -907,7 +939,7 @@ export default function App() {
         aria-pressed={mode === 'map'}
         title={mode === 'map' ? 'Show uncovered map' : 'Reveal full map'}
       ><MapIcon size={21} /></button>
-      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Tilt and rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
+      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={native3DAppleMaps ? perspectiveView ? 'Exit 3D Apple Maps' : 'Open 3D Apple Maps' : perspectiveView ? 'Reset map orientation' : 'Rotate map'} aria-pressed={perspectiveView} title={native3DAppleMaps ? perspectiveView ? 'Exit 3D Apple Maps' : 'Open 3D Apple Maps' : perspectiveView ? 'Reset map orientation' : 'Rotate map'}><PerspectiveIcon size={21} /></button>
     </nav>
 
     {isCityScale && <section
