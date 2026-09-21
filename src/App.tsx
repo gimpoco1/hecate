@@ -7,6 +7,7 @@ import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, Perspect
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 import { createLocationTracker, isNativeApp, LocationRequestError, openLocationSettings, requestCurrentLocation, type LocationTracker } from './location'
+import { NativeMap, supportsNative3DAppleMaps } from './nativeMap'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 
@@ -129,9 +130,23 @@ export default function App() {
   const discoveryLabel = accountUserId ? formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity) : '—'
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
+  const native3DAppleMaps = supportsNative3DAppleMaps()
 
   useEffect(() => { cellsRef.current = cells }, [cells])
   useEffect(() => { pointsRef.current = points }, [points])
+  useEffect(() => {
+    if (!native3DAppleMaps) return
+    let disposed = false
+    let listener: { remove: () => Promise<void> } | undefined
+    void NativeMap.addListener('dismissed', () => setPerspectiveView(false)).then(handle => {
+      if (disposed) void handle.remove()
+      else listener = handle
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      void listener?.remove()
+    }
+  }, [native3DAppleMaps])
   const cityProgresses = useMemo(() => {
     if (!citiesExpanded) return []
     const unique = new Map(discoveredCities.map(city => [city.id, city]))
@@ -801,9 +816,25 @@ export default function App() {
     const map = mapRef.current
     if (!map) return
     const nextPerspective = !perspectiveView
+    if (native3DAppleMaps) {
+      if (!nextPerspective) {
+        void NativeMap.dismiss().then(() => setPerspectiveView(false)).catch(() => undefined)
+        return
+      }
+      const center = map.getCenter()
+      void NativeMap.present({
+        latitude: center.lat,
+        longitude: center.lng,
+        zoom: map.getZoom(),
+        bearing: -24,
+        pitch: 55,
+      }).then(() => setPerspectiveView(true)).catch(error => {
+        console.error('Native Apple Maps failed to open', error)
+      })
+      return
+    }
     setPerspectiveView(nextPerspective)
     map.easeTo({
-      pitch: nextPerspective ? 52 : 0,
       bearing: nextPerspective ? -24 : 0,
       duration: 900,
       essential: true,
@@ -811,8 +842,9 @@ export default function App() {
   }
 
   const showGlobe = () => {
+    if (native3DAppleMaps && perspectiveView) void NativeMap.dismiss().catch(() => undefined)
     setPerspectiveView(false)
-    mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, pitch: 0, bearing: 0, duration: 2200 })
+    mapRef.current?.flyTo({ center: [7, 24], zoom: 1.35, bearing: 0, duration: 2200 })
   }
 
   const introVisible = showIntro && zoom < 4
@@ -907,7 +939,7 @@ export default function App() {
         aria-pressed={mode === 'map'}
         title={mode === 'map' ? 'Show uncovered map' : 'Reveal full map'}
       ><MapIcon size={21} /></button>
-      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={perspectiveView ? 'Reset map orientation' : 'Rotate map'} aria-pressed={perspectiveView}><PerspectiveIcon size={21} /></button>
+      <button className={perspectiveView ? 'active' : ''} onClick={toggleMapPerspective} aria-label={native3DAppleMaps ? perspectiveView ? 'Exit 3D Apple Maps' : 'Open 3D Apple Maps' : perspectiveView ? 'Reset map orientation' : 'Rotate map'} aria-pressed={perspectiveView} title={native3DAppleMaps ? perspectiveView ? 'Exit 3D Apple Maps' : 'Open 3D Apple Maps' : perspectiveView ? 'Reset map orientation' : 'Rotate map'}><PerspectiveIcon size={21} /></button>
     </nav>
 
     {isCityScale && <section

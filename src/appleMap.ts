@@ -8,7 +8,6 @@ type Padding = { top: number; right: number; bottom: number; left: number }
 type FlyToOptions = {
   center: [number, number]
   zoom?: number
-  pitch?: number
   bearing?: number
   duration?: number
   essential?: boolean
@@ -21,7 +20,6 @@ type FitBoundsOptions = {
 }
 type EaseToOptions = {
   center?: [number, number]
-  pitch?: number
   bearing?: number
   duration?: number
   essential?: boolean
@@ -97,6 +95,16 @@ async function waitForMapView(container: HTMLElement, signal?: AbortSignal) {
 
 let mapKitPromise: Promise<MapKit> | null = null
 
+function isMapKitToken(value: string) {
+  return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value)
+}
+
+function pageOrigin() {
+  return window.location.origin === 'null'
+    ? `${window.location.protocol}//${window.location.host}`
+    : window.location.origin
+}
+
 async function loadAppleMapKit() {
   if (mapKitPromise) return mapKitPromise
   mapKitPromise = (async () => {
@@ -109,12 +117,18 @@ async function loadAppleMapKit() {
       const endpoint = configuredEndpoint || (isNativeBundle
         ? 'https://hecate-eta.vercel.app/api/mapkit-token'
         : '/api/mapkit-token')
-      const response = await fetch(endpoint)
-      if (!response.ok) throw new Error(`Apple Maps authorization failed (${response.status})`)
+      const tokenUrl = new URL(endpoint, window.location.href)
+      tokenUrl.searchParams.set('origin', pageOrigin())
+      const response = await fetch(tokenUrl)
+      if (!response.ok) {
+        const detail = (await response.text()).trim()
+        throw new Error(`Apple Maps authorization failed (${response.status})${detail ? `: ${detail}` : ''}`)
+      }
       token = (await response.text()).trim()
     }
 
     if (!token) throw new Error('Apple Maps did not return an authorization token')
+    if (!isMapKitToken(token)) throw new Error('Apple Maps authorization returned an invalid token')
     return load({ token, libraries: ['map', 'annotations'] })
   })().catch(error => {
     mapKitPromise = null
@@ -169,7 +183,11 @@ export async function createAppleMap({ container, initialCenter, initialZoom, si
   const map = new mapkit.Map(container, {
     mapType: mapkit.MapType.MutedStandard,
     showsMapTypeControl: false,
-    showsZoomControl: false,
+    // Keep zoom available to touch/trackpad users and to mouse or keyboard
+    // users with MapKit's accessible zoom buttons.
+    isZoomEnabled: true,
+    isScrollEnabled: true,
+    showsZoomControl: true,
     showsUserLocationControl: false,
     showsScale: mapkit.FeatureVisibility.Hidden,
     showsCompass: mapkit.FeatureVisibility.Adaptive,
@@ -250,9 +268,6 @@ export async function createAppleMap({ container, initialCenter, initialZoom, si
       }, true)
     },
     easeTo: options => {
-      // MapKit JS supports rotation but doesn't expose the pitched camera that
-      // native MapKit does. Keep the orientation interaction without changing
-      // any discovery or camera-position logic.
       if (options.center) {
         map.setCenterAnimated({ latitude: options.center[1], longitude: options.center[0] }, true)
       }

@@ -12,7 +12,7 @@ The app uses Apple MapKit JS through Apple's official loader. Before running it,
 - generate a Maps token and set `VITE_MAPKIT_TOKEN` in `.env.local`; or
 - configure the server-side token endpoint with `APPLE_MAPS_TEAM_ID`, `APPLE_MAPS_KEY_ID`, and `APPLE_MAPS_PRIVATE_KEY`.
 
-The private `.p8` key must never use a `VITE_` prefix or be committed. Paste its complete contents into `APPLE_MAPS_PRIVATE_KEY`. The native Capacitor build fetches its token from `https://hecate-eta.vercel.app/api/mapkit-token` by default; override that URL with `VITE_MAPKIT_TOKEN_ENDPOINT` if the production host changes. Set `APPLE_MAPS_ALLOWED_ORIGINS` to a comma-separated allowlist when adding another web or Capacitor origin.
+The private `.p8` key must never use a `VITE_` prefix or be committed. In `.env.local`, keep it in one quoted value with literal `\\n` separators, for example `APPLE_MAPS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----"`. `npm run dev` serves `/api/mapkit-token` with the same server-side handler as production, so it needs `APPLE_MAPS_TEAM_ID`, `APPLE_MAPS_KEY_ID`, and that correctly formatted key. Every browser token is signed with its exact page origin and the `mapkit_js` scope. Set `APPLE_MAPS_ALLOWED_ORIGINS` to a comma-separated allowlist for every production web origin and `capacitor://localhost`; add `http://localhost:5173` for local Vite development. Set `APPLE_MAPS_ORIGIN` only as the fallback for non-browser token requests. The native Capacitor build fetches its token from `https://hecate-eta.vercel.app/api/mapkit-token` by default; override that URL with `VITE_MAPKIT_TOKEN_ENDPOINT` if the production host changes.
 
 ## Cross-device sync
 

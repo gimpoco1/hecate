@@ -3,6 +3,11 @@ import { createAppleMap, type AppleMapHandle } from '../appleMap'
 import { DISCOVERY_RADIUS_M, discoveryCellCenter, metersToPixels, splitRoute } from '../geo'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
+// These references must stay stable: zoom changes update parent state, and a
+// new default array would otherwise retrigger the map-initialization effect.
+const DEFAULT_INITIAL_CENTER: [number, number] = [7, 24]
+const DEFAULT_INITIAL_ZOOM = 1.35
+
 type Props = {
   mode: MapMode
   points: Coordinate[]
@@ -126,7 +131,7 @@ function drawMist(canvas: HTMLCanvasElement, map: AppleMapHandle, points: Coordi
   context.stroke()
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, mapRef, initialCenter = DEFAULT_INITIAL_CENTER, initialZoom = DEFAULT_INITIAL_ZOOM }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [mapError, setMapError] = useState<string | null>(null)
