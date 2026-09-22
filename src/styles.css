@@ -1239,6 +1239,78 @@ button {
   opacity: .6;
   cursor: wait;
 }
+.tracking-help {
+  margin: 12px 2px 0;
+  color: #65736d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tracking-help summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--forest);
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.tracking-help summary::-webkit-details-marker {
+  display: none;
+}
+.tracking-help summary svg {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  transform: rotate(90deg);
+  transition: transform .16s ease;
+}
+.tracking-help[open] summary svg {
+  transform: rotate(-90deg);
+}
+.tracking-help__content {
+  padding-top: 4px;
+}
+.tracking-help__example {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f5f7f1;
+}
+.tracking-help__example img {
+  display: block;
+  flex: 0 0 auto;
+  width: 122px;
+  height: 42px;
+}
+.tracking-help__example figcaption {
+  color: #65736d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.tracking-help__content p {
+  margin: 9px 0;
+}
+.tracking-help__content strong {
+  color: var(--forest);
+}
+.tracking-help__content button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tracking-help__content small {
+  display: block;
+  margin-top: 3px;
+  font-size: inherit;
+}
 .sign-out-button {
   width: 100%;
   margin-top: 14px;

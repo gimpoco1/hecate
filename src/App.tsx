@@ -8,6 +8,7 @@ import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { ExplorationReminder, isUnmappedArea, loadReminderPreference, REMINDER_COOLDOWN_MS, REMINDER_DISTANCE_M, REMINDER_MINUTES, saveReminderPreference, simulateUnmappedWalk, type ReminderKind } from './explorationReminder'
+import { InactivityReminder, INACTIVITY_RADIUS_M, INACTIVITY_REMINDER_MINUTES, isPreviouslyDiscovered } from './inactivityReminder'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, isNativeApp, openLocationSettings, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, replaceDiscoveredCities, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
@@ -28,15 +29,17 @@ type ExplorationSummary = {
 }
 type PassiveLocationStatus = 'idle' | 'located' | 'denied' | 'unavailable'
 const REMINDER_NOTIFICATION_ID = 1042
+const INACTIVITY_NOTIFICATION_ID = 1043
+const INACTIVITY_TEST_NOTIFICATION_ID = 1044
 
 function reminderMessage() {
-  return 'You have been moving through unmapped areas for 5 minutes. Start recording a walk?'
+  return 'You have been moving through new areas for 5 minutes. Start recording your journey?'
 }
 
 async function sendReminderNotification(delayMs = 1_000) {
   await LocalNotifications.schedule({ notifications: [{
     id: REMINDER_NOTIFICATION_ID,
-    title: 'Start recording a walk?',
+    title: 'Discovering somewhere new?',
     body: reminderMessage(),
     schedule: { at: new Date(Date.now() + delayMs) },
     extra: { kind: 'unmapped' },
@@ -87,6 +90,7 @@ export default function App() {
   const [passiveLocationStatus, setPassiveLocationStatus] = useState<PassiveLocationStatus>('idle')
   const [reminderEnabled, setReminderEnabled] = useState(false)
   const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(null)
+  const [inactivityPrompt, setInactivityPrompt] = useState(false)
   const [reminderDebug, setReminderDebug] = useState({ elapsedMs: 0, distanceM: 0, status: 'Waiting for location' })
   const [reminderTestMessage, setReminderTestMessage] = useState('')
   const [accountUserId, setAccountUserId] = useState<string | null>(null)
@@ -113,6 +117,11 @@ export default function App() {
   const foregroundTrackerRef = useRef<LocationTracker | null>(null)
   const latestPassivePointRef = useRef<Coordinate | null>(null)
   const reminderRef = useRef(new ExplorationReminder())
+  const inactivityReminderRef = useRef(new InactivityReminder())
+  const inactivityDueAtRef = useRef<number | null>(null)
+  const inactivityTimerRef = useRef<number | null>(null)
+  const inactivityGenerationRef = useRef(0)
+  const inactivityNotificationQueueRef = useRef<Promise<void>>(Promise.resolve())
   const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(null)
   const cityLookupAbortRef = useRef<AbortController | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(undefined)
@@ -162,6 +171,58 @@ export default function App() {
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
   const devToolsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === '1'
+
+  const updateInactivitySchedule = useCallback((dueAt: number | null) => {
+    if (inactivityDueAtRef.current === dueAt) return
+    inactivityDueAtRef.current = dueAt
+    const generation = ++inactivityGenerationRef.current
+    if (inactivityTimerRef.current !== null) window.clearTimeout(inactivityTimerRef.current)
+    inactivityTimerRef.current = null
+
+    const showInAppReminder = () => {
+      if (generation !== inactivityGenerationRef.current || trackingStateRef.current !== 'tracking') return
+      inactivityReminderRef.current.markReminded()
+      inactivityDueAtRef.current = null
+      setInactivityPrompt(true)
+    }
+    if (!nativeApp) {
+      if (dueAt !== null) inactivityTimerRef.current = window.setTimeout(showInAppReminder, Math.max(0, dueAt - Date.now()))
+      return
+    }
+
+    // Serialize cancellation and scheduling so an older GPS update cannot
+    // leave a stale notification queued after the recording moves or stops.
+    inactivityNotificationQueueRef.current = inactivityNotificationQueueRef.current.catch(() => undefined).then(async () => {
+      await LocalNotifications.cancel({ notifications: [{ id: INACTIVITY_NOTIFICATION_ID }] })
+      if (dueAt === null || generation !== inactivityGenerationRef.current) return
+      let permission = await LocalNotifications.checkPermissions()
+      if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions()
+      if (generation !== inactivityGenerationRef.current) return
+      if (permission.display !== 'granted') {
+        inactivityTimerRef.current = window.setTimeout(showInAppReminder, Math.max(0, dueAt - Date.now()))
+        return
+      }
+      await LocalNotifications.schedule({ notifications: [{
+        id: INACTIVITY_NOTIFICATION_ID,
+        title: 'Still recording your discovery?',
+        body: `You've stayed near one spot in an area you already discovered for ${INACTIVITY_REMINDER_MINUTES} minutes. Stop recording?`,
+        schedule: { at: new Date(Math.max(dueAt, Date.now() + 1_000)) },
+        extra: { kind: 'inactivity' },
+      }] })
+    }).catch(error => {
+      console.warn('Could not schedule inactivity reminder', error)
+      if (dueAt !== null && generation === inactivityGenerationRef.current) {
+        inactivityTimerRef.current = window.setTimeout(showInAppReminder, Math.max(0, dueAt - Date.now()))
+      }
+    })
+  }, [nativeApp])
+
+  const resetInactivityReminder = useCallback(() => {
+    inactivityReminderRef.current.reset()
+    updateInactivitySchedule(null)
+    if (nativeApp) void LocalNotifications.cancel({ notifications: [{ id: INACTIVITY_TEST_NOTIFICATION_ID }] }).catch(() => undefined)
+    setInactivityPrompt(false)
+  }, [nativeApp, updateInactivitySchedule])
 
   useEffect(() => { cellsRef.current = cells }, [cells])
   useEffect(() => { pointsRef.current = points }, [points])
@@ -214,11 +275,22 @@ export default function App() {
     if (!nativeApp) return
     let disposed = false
     let listener: { remove: () => Promise<void> } | undefined
+    // A recording is never resumed automatically after a fresh app launch.
+    void LocalNotifications.cancel({ notifications: [
+      { id: INACTIVITY_NOTIFICATION_ID },
+      { id: INACTIVITY_TEST_NOTIFICATION_ID },
+    ] }).catch(() => undefined)
     void LocalNotifications.addListener('localNotificationActionPerformed', event => {
+      if (event.notification.id === INACTIVITY_NOTIFICATION_ID || event.notification.id === INACTIVITY_TEST_NOTIFICATION_ID) {
+        if (trackingStateRef.current === 'tracking') {
+          inactivityReminderRef.current.markReminded()
+          setInactivityPrompt(true)
+        }
+        return
+      }
       if (event.notification.id !== REMINDER_NOTIFICATION_ID) return
       if (trackingStateRef.current === 'tracking' || trackingStateRef.current === 'requesting') return
       setShowIntro(false)
-      setReminderPrompt('unmapped')
     }).then(handle => {
       if (disposed) void handle.remove()
       else listener = handle
@@ -389,11 +461,15 @@ export default function App() {
     activeWalkRef.current = null
     trackingUserRef.current = null
     pendingWalksRef.current = []
+    resetInactivityReminder()
     setTracking('idle')
     setPassiveLocationStatus('idle')
-  }, [accountUserId])
+  }, [accountUserId, resetInactivityReminder])
 
-  useEffect(() => () => { void trackerRef.current?.stop() }, [])
+  useEffect(() => () => {
+    void trackerRef.current?.stop()
+    updateInactivitySchedule(null)
+  }, [updateInactivitySchedule])
 
   useEffect(() => {
     const flushBackgroundLocations = () => {
@@ -456,7 +532,7 @@ export default function App() {
         }
         if (!kind) return
         saveReminderPreference(accountUserId, true, reminderRef.current.promptedAt)
-        if (nativeApp) void sendReminderNotification().catch(error => console.warn('Could not show walk reminder', error))
+        if (nativeApp) void sendReminderNotification().catch(error => console.warn('Could not show discovery reminder', error))
         else if (visible) setReminderPrompt(kind)
       }, error => {
         if (disposed || foregroundTrackerRef.current !== tracker) return
@@ -611,7 +687,17 @@ export default function App() {
   }
 
   const addPoint = (point: Coordinate) => {
-    if (!isUsableGpsPoint(point)) return
+    if (!isUsableGpsPoint(point)) {
+      if (trackingUserRef.current && activeWalkRef.current && !activeWalkRef.current.isTest) {
+        updateInactivitySchedule(inactivityReminderRef.current.observe(point, false, Date.now()))
+      }
+      return
+    }
+    const knownAtStart = explorationStartRef.current?.cells
+    if (trackingUserRef.current && activeWalkRef.current && !activeWalkRef.current.isTest && knownAtStart) {
+      const dueAt = inactivityReminderRef.current.observe(point, isPreviouslyDiscovered(point, knownAtStart), Date.now())
+      updateInactivitySchedule(dueAt)
+    }
     const appVisible = document.visibilityState === 'visible'
     if (appVisible) setCurrentPoint(point)
     if (!shouldRecordPoint(lastPointRef.current, point)) return
@@ -646,6 +732,7 @@ export default function App() {
   }
 
   const finishActiveWalk = async () => {
+    resetInactivityReminder()
     if (document.visibilityState === 'visible' && deferredLocationUiRef.current) {
       deferredLocationUiRef.current = false
       setPoints([...pointsRef.current])
@@ -734,6 +821,7 @@ export default function App() {
     }
     if (tracking !== 'idle' || testRouteRunning) return
     setTestRouteRunning(true)
+    resetInactivityReminder()
     setExplorationSummary(null)
     setPassiveLocationStatus('idle')
     try {
@@ -782,12 +870,12 @@ export default function App() {
   }
 
   const updateReminderEnabled = async (enabled: boolean): Promise<string | null> => {
-    if (!accountUserId) return 'Sign in before enabling walk reminders.'
+    if (!accountUserId) return 'Sign in before enabling discovery reminders.'
     if (enabled && nativeApp) {
       try {
         let permission = await LocalNotifications.checkPermissions()
         if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions()
-        if (permission.display !== 'granted') return 'Allow notifications in iPhone Settings to enable walk reminders.'
+        if (permission.display !== 'granted') return 'Allow notifications in iPhone Settings to enable discovery reminders.'
       } catch {
         return 'Notifications are unavailable right now. Try again later.'
       }
@@ -801,7 +889,7 @@ export default function App() {
 
   const simulateReminder = async () => {
     if (!accountUserId || !reminderEnabled) {
-      setReminderTestMessage('Sign in and enable Walk reminders in Account & sync first.')
+      setReminderTestMessage('Sign in and enable Discovery reminders in Account & sync first.')
       return
     }
     if (!discoveryHistoryReadyRef.current) {
@@ -830,8 +918,34 @@ export default function App() {
     }
   }
 
+  const simulateInactivityNotification = async () => {
+    if (tracking !== 'tracking') return
+    if (!nativeApp) {
+      setInactivityPrompt(true)
+      return
+    }
+    try {
+      let permission = await LocalNotifications.checkPermissions()
+      if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions()
+      if (permission.display !== 'granted') {
+        setReminderTestMessage('Allow notifications in iPhone Settings, then try the stop reminder test again.')
+        return
+      }
+      await LocalNotifications.schedule({ notifications: [{
+        id: INACTIVITY_TEST_NOTIFICATION_ID,
+        title: 'Still recording your discovery?',
+        body: 'This is a test stop reminder. Your recording will keep running.',
+        schedule: { at: new Date(Date.now() + 5_000) },
+      }] })
+      setReminderTestMessage('A test stop reminder will appear in 5 seconds. Lock your phone to check it.')
+    } catch {
+      setReminderTestMessage('Could not schedule the test stop reminder.')
+    }
+  }
+
   const toggleTracking = async () => {
     if (tracking === 'tracking') {
+      resetInactivityReminder()
       const tracker = trackerRef.current
       trackerRef.current = null
       try { await tracker?.stop() } catch { /* The in-memory walk must still be finalized. */ }
@@ -847,6 +961,7 @@ export default function App() {
     }
     if (discoveryLoading) return
     reminderRef.current.reset()
+    resetInactivityReminder()
     setReminderPrompt(null)
     setTracking('requesting')
     setPassiveLocationStatus('idle')
@@ -872,6 +987,7 @@ export default function App() {
     try {
       await tracker.start(addPoint, error => {
         trackerFailed = true
+        resetInactivityReminder()
         void Promise.resolve(tracker.stop()).catch(() => undefined)
         trackerRef.current = null
         void finishActiveWalk()
@@ -883,6 +999,7 @@ export default function App() {
         setShowIntro(false)
       }
     } catch {
+      resetInactivityReminder()
       trackerRef.current = null
       void Promise.resolve(tracker.stop()).catch(() => undefined)
       activeWalkRef.current = null
@@ -1119,10 +1236,11 @@ export default function App() {
       <button type="button" onClick={() => void runTestRoute('fells_loop.gpx')} disabled={testRouteRunning}>Test</button>
       <button type="button" onClick={() => void runTestRoute('barcelona-repeat.gpx')} disabled={testRouteRunning}>Repeat Barcelona</button>
       <button type="button" onClick={() => void runTestRoute('san-francisco-exploration.gpx')} disabled={testRouteRunning}>San Francisco</button>
-      <strong>Walk reminder</strong>
-      <small>{reminderEnabled ? reminderDebug.status : 'Enable Walk reminders in Account & sync'}</small>
+      <strong>Discovery reminder</strong>
+      <small>{reminderEnabled ? reminderDebug.status : 'Enable Discovery reminders in Account & sync'}</small>
       {reminderEnabled && <small>{(Math.min(reminderDebug.elapsedMs, REMINDER_MINUTES * 60_000) / 60_000).toFixed(1)} / {REMINDER_MINUTES} min in new areas<br />{Math.min(Math.round(reminderDebug.distanceM), REMINDER_DISTANCE_M)} / {REMINDER_DISTANCE_M} m</small>}
-      <button type="button" onClick={() => void simulateReminder()} disabled={testRouteRunning || tracking === 'tracking' || tracking === 'requesting'}>Simulate 5-min new-area walk</button>
+      <button type="button" onClick={() => void simulateReminder()} disabled={testRouteRunning || tracking === 'tracking' || tracking === 'requesting'}>Simulate 5-min discovery</button>
+      {tracking === 'tracking' && <button type="button" onClick={() => void simulateInactivityNotification()}>Test stop reminder</button>}
       {reminderTestMessage && <small role="status">{reminderTestMessage}</small>}
     </aside>}
 
@@ -1149,12 +1267,21 @@ export default function App() {
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
-    {reminderPrompt && tracking !== 'tracking' && <aside className="reminder-prompt" role="alert" aria-label="Walk reminder">
-      <strong>Start recording a walk?</strong>
+    {!nativeApp && reminderPrompt && tracking !== 'tracking' && <aside className="reminder-prompt" role="alert" aria-label="Discovery reminder">
+      <strong>Start recording your journey?</strong>
       <p>{reminderMessage()}</p>
       <div>
         <button type="button" onClick={() => { setReminderPrompt(null); void toggleTracking() }}>Start recording</button>
         <button type="button" onClick={() => setReminderPrompt(null)}>Not now</button>
+      </div>
+    </aside>}
+
+    {inactivityPrompt && tracking === 'tracking' && <aside className="reminder-prompt" role="alert" aria-label="Stop recording reminder">
+      <strong>Still recording?</strong>
+      <p>You've stayed within {INACTIVITY_RADIUS_M} m of one spot in an area you already discovered for {INACTIVITY_REMINDER_MINUTES} minutes. Stop recording?</p>
+      <div>
+        <button type="button" onClick={() => void toggleTracking()}>Stop recording</button>
+        <button type="button" onClick={() => setInactivityPrompt(false)}>Keep recording</button>
       </div>
     </aside>}
 

@@ -58,18 +58,21 @@ class NativeLocationTracker implements LocationTracker {
 
   async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
     this.stopRequested = false
-    const watcherId = await BackgroundGeolocation.addWatcher({
+    const options: Parameters<BackgroundGeolocationPlugin['addWatcher']>[0] & { showsBackgroundLocationIndicator?: boolean } = {
       ...(this.mode === 'walk' ? {
         backgroundTitle: 'Hecate is revealing your path',
         backgroundMessage: 'Your discovery is continuing in the background.',
+        showsBackgroundLocationIndicator: true,
       } : this.mode === 'reminder' ? {
         backgroundTitle: 'Hecate is checking for walks',
-        backgroundMessage: 'Walk reminders are on. No path is being recorded.',
+        backgroundMessage: 'Discovery reminders are on. No path is being recorded.',
+        showsBackgroundLocationIndicator: false,
       } : {}),
       requestPermissions: true,
       stale: false,
       distanceFilter: this.mode === 'walk' ? 8 : this.mode === 'reminder' ? 30 : 20,
-    }, (location, error) => {
+    }
+    const watcherId = await BackgroundGeolocation.addWatcher(options, (location, error) => {
       if (error) {
         onError(nativeError(error))
         return

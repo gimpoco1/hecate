@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import type { User } from '@supabase/supabase-js'
 import { authRedirectUrl } from '../auth'
 import { clearReminderPreference } from '../explorationReminder'
+import { INACTIVITY_RADIUS_M, INACTIVITY_REMINDER_MINUTES } from '../inactivityReminder'
+import { openLocationSettings } from '../location'
 import { isSyncConfigured, supabase } from '../storage'
-import { XIcon } from './Icons'
+import { ChevronIcon, XIcon } from './Icons'
 
 type Props = {
   open: boolean
@@ -203,17 +206,33 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
           <div className="account-card__status"><span /> Signed in and syncing</div>
           <div className="account-setting">
             <div>
-              <strong>Walk reminders</strong>
+              <strong>Discovery reminders</strong>
               <p>{nativeApp
-                ? 'Check for five minutes of movement through unmapped areas while Hecate is running, including in the background. Reminder samples are not saved or synced.'
+                ? 'Get a reminder after five minutes moving through new areas. Reminder locations are not saved or synced.'
                 : 'Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background.'}</p>
             </div>
-            <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Walk reminders" disabled={reminderPending} onClick={() => {
+            <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Discovery reminders" disabled={reminderPending} onClick={() => {
               setReminderPending(true)
               setReminderError('')
               void onReminderChange(!reminderEnabled).then(error => setReminderError(error ?? '')).finally(() => setReminderPending(false))
             }}>{reminderEnabled ? 'On' : 'Off'}</button>
           </div>
+          {Capacitor.getPlatform() === 'ios' && <details className="tracking-help">
+            <summary>How tracking works <ChevronIcon size={18} strokeWidth={2.4} /></summary>
+            <div className="tracking-help__content">
+              <p><strong>While Using:</strong> Hecate can check for new areas in the background, but iPhone may show a blue clock for Hecate.</p>
+              <p><strong>Always:</strong> Hecate can send background reminders without showing the blue clock. Recording a walk may still show it.</p>
+              <p><strong>Never:</strong> Location features and discovery reminders cannot work.</p>
+              <p>Only walks you start recording are saved to your map. Reminder locations are not saved.</p>
+              <p>While recording, Hecate can remind you to stop after {INACTIVITY_REMINDER_MINUTES} minutes within {INACTIVITY_RADIUS_M} m of one spot in an area you already discovered. Recording never stops automatically.</p>
+              <figure className="tracking-help__example">
+                <img src="/blue-location-clock.svg" alt="Example of the blue clock on an iPhone" width="122" height="42" />
+                <figcaption>A blue clock means an app is using location in the background. It may be Hecate or another app.</figcaption>
+              </figure>
+              <button type="button" onClick={() => void openLocationSettings().catch(() => undefined)}>Open iPhone Settings</button>
+              <small>Then tap Location → Always.</small>
+            </div>
+          </details>}
           {reminderError && <div className="form-message form-message--error" role="alert">{reminderError}</div>}
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
           {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>

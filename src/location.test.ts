@@ -74,7 +74,7 @@ describe('native location lifecycle', () => {
     await tracker.start(() => undefined, () => undefined)
 
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 8, backgroundMessage: expect.any(String) }),
+      expect.objectContaining({ distanceFilter: 8, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
       expect.any(Function),
     )
   })
@@ -85,7 +85,7 @@ describe('native location lifecycle', () => {
     const tracker = createReminderLocationTracker()
     await tracker.start(() => undefined, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 30, backgroundMessage: expect.stringContaining('No path is being recorded') }),
+      expect.objectContaining({ distanceFilter: 30, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
       expect.any(Function),
     )
     await tracker.stop()
