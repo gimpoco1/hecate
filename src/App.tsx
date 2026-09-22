@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Map as MapLibreMap } from 'maplibre-gl'
-import { discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
+import { canonicalCityForStoredBoundary, discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
 import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
-import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, distanceKm, isUsableGpsPoint, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
+import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
 import { createLocationTracker, isNativeApp, LocationRequestError, openLocationSettings, requestCurrentLocation, type LocationTracker } from './location'
-import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
+import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, replaceDiscoveredCities, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
+import { loadWalkJournal, saveWalkJournal } from './walkJournal'
 
 type ActiveWalk = Omit<PendingWalk, 'finishedAt'> & { isTest?: boolean }
 type ExplorationSummary = {
@@ -89,6 +90,9 @@ export default function App() {
   const activeWalkRef = useRef<ActiveWalk | null>(null)
   const trackingUserRef = useRef<string | null>(null)
   const pendingWalksRef = useRef<PendingWalk[]>([])
+  const walkUploadPromiseRef = useRef<Promise<void> | null>(null)
+  const accountUserIdRef = useRef(accountUserId)
+  accountUserIdRef.current = accountUserId
   const locationRefreshInFlightRef = useRef(false)
   const locationUpdatedTimerRef = useRef<number | null>(null)
   const journeyCardRef = useRef<HTMLElement | null>(null)
@@ -143,7 +147,7 @@ export default function App() {
         distance: discoveredCityDistanceKm(points, city),
       }))
       .sort((a, b) => b.percentage - a.percentage || a.city.name.localeCompare(b.city.name))
-  }, [citiesExpanded, cityBoundary, discoveredCities, points])
+  }, [citiesExpanded, cityBoundary, discoveredCities, cells, points])
   const totalCityDistance = useMemo(
     () => cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
@@ -172,6 +176,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true
+    let retryTimer: number | null = null
     setPoints([])
     setCells([])
     setDiscoveredCities([])
@@ -186,36 +191,133 @@ export default function App() {
     cellsRef.current = []
     cellKeysRef.current = new Set()
     pointsRef.current = []
-    pendingWalksRef.current = []
+    pendingWalksRef.current = accountUserId ? loadWalkJournal(accountUserId) : []
     deferredLocationUiRef.current = false
     if (!accountUserId) return
 
-    loadSyncedDiscovery(accountUserId).then(remote => {
+    // An interrupted active recording is a completed route up to its last
+    // accepted sample. Keep it locally until the database accepts it.
+    saveWalkJournal(accountUserId, pendingWalksRef.current)
+    const recoveredPoints = pendingWalksRef.current.flatMap(walk => walk.points)
+    pointsRef.current = mergeRoutePoints(recoveredPoints)
+    cellsRef.current = discoveryCellsFromPoints(recoveredPoints)
+    cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey))
+    setPoints(pointsRef.current)
+    setCells(cellsRef.current)
+    void flushPendingWalks(accountUserId)
+
+    const loadRemote = () => void loadSyncedDiscovery(accountUserId).then(remote => {
+      if (!active || accountUserIdRef.current !== accountUserId) return
+      const mergedPoints = mergeRoutePoints(pointsRef.current, remote.points)
+      const mergedCells = mergeDiscoveryCells(cellsRef.current, remote.cells)
+      pointsRef.current = mergedPoints
+      cellsRef.current = mergedCells
+      setPoints(mergedPoints)
+      setCells(mergedCells)
+      cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey))
+      if (!activeWalkRef.current) lastPointRef.current = mergedPoints.at(-1)
+      void flushPendingWalks(accountUserId)
+    }).catch(error => {
       if (!active) return
-      setPoints(mergeRoutePoints(remote.points))
-      setCells(remote.cells)
-      cellKeysRef.current = new Set(remote.cells.map(discoveryCellKey))
-      lastPointRef.current = remote.points.at(-1)
-    }).catch(() => undefined).finally(() => {
+      console.warn('Could not load discovery history; retrying', error)
+      retryTimer = window.setTimeout(loadRemote, 15_000)
+    }).finally(() => {
       if (active) setDiscoveryLoading(false)
     })
-    return () => { active = false }
+    loadRemote()
+    return () => {
+      active = false
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+    }
+  }, [accountUserId])
+
+  const flushPendingWalks = async (userId: string) => {
+    if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current
+    if (accountUserIdRef.current !== userId || !pendingWalksRef.current.length) return
+    const upload = (async () => {
+      for (const walk of [...pendingWalksRef.current]) {
+        if (accountUserIdRef.current !== userId) break
+        try {
+          await saveCompletedWalk(walk, userId)
+        } catch {
+          break
+        }
+        if (accountUserIdRef.current !== userId) break
+        pendingWalksRef.current = pendingWalksRef.current.filter(item => item.id !== walk.id)
+        saveWalkJournal(userId, pendingWalksRef.current, activeWalkRef.current && !activeWalkRef.current.isTest
+          ? { ...activeWalkRef.current, finishedAt: Math.max(activeWalkRef.current.startedAt, activeWalkRef.current.points.at(-1)?.recordedAt ?? activeWalkRef.current.startedAt) }
+          : null)
+      }
+    })()
+    walkUploadPromiseRef.current = upload
+    try {
+      await upload
+    } finally {
+      if (walkUploadPromiseRef.current === upload) walkUploadPromiseRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    if (!accountUserId) return
+    const retry = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine) return
+      void flushPendingWalks(accountUserId)
+      if (cellsRef.current.length && !activeWalkRef.current?.isTest) {
+        void syncDiscoveryCells(cellsRef.current, accountUserId).catch(() => undefined)
+      }
+    }
+    window.addEventListener('online', retry)
+    document.addEventListener('visibilitychange', retry)
+    return () => {
+      window.removeEventListener('online', retry)
+      document.removeEventListener('visibilitychange', retry)
+    }
   }, [accountUserId])
 
   useEffect(() => {
-    if (!citiesExpanded || !accountUserId || citiesLoadedUserId === accountUserId) return
+    if (!accountUserId || citiesLoadedUserId === accountUserId) return
     let active = true
-    void loadDiscoveredCities(accountUserId).then(cities => {
+    let retryTimer: number | null = null
+    const load = () => void loadDiscoveredCities(accountUserId).then(async cities => {
+      if (!active) return
+      const canonicalCities = new Map<string, CityBoundary>()
+      const obsoleteIds = new Map<string, string[]>()
+      for (const oldCity of cities) {
+        if (!active) return
+        const city = await canonicalCityForStoredBoundary(oldCity)
+        const existing = canonicalCities.get(city.id)
+        canonicalCities.set(city.id, existing ? {
+          ...city,
+          firstDiscoveredAt: Math.min(existing.firstDiscoveredAt ?? Infinity, city.firstDiscoveredAt ?? Infinity),
+          lastDiscoveredAt: Math.max(existing.lastDiscoveredAt ?? 0, city.lastDiscoveredAt ?? 0),
+        } : city)
+        if (city.id !== oldCity.id) {
+          obsoleteIds.set(city.id, [...(obsoleteIds.get(city.id) ?? []), oldCity.id])
+        }
+      }
+      for (const [cityId, ids] of obsoleteIds) {
+        if (!active) return
+        try { await replaceDiscoveredCities(ids, canonicalCities.get(cityId)!, accountUserId) }
+        catch (error) { console.warn('Could not update stored cities', error) }
+      }
       if (!active) return
       setDiscoveredCities(current => {
         const merged = new Map(current.map(city => [city.id, city]))
-        cities.forEach(city => merged.set(city.id, city))
+        canonicalCities.forEach(city => merged.set(city.id, city))
         return [...merged.values()]
       })
       setCitiesLoadedUserId(accountUserId)
+    }).catch(error => {
+      if (!active) return
+      console.warn('Could not load discovered cities; retrying', error)
+      retryTimer = window.setTimeout(load, 15_000)
     })
-    return () => { active = false }
-  }, [accountUserId, citiesExpanded, citiesLoadedUserId])
+    load()
+    return () => {
+      active = false
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+    }
+  }, [accountUserId, citiesLoadedUserId])
 
   useEffect(() => {
     if (!accountUserId || cells.length === 0 || testRouteRunning || activeWalkRef.current?.isTest) return
@@ -402,6 +504,12 @@ export default function App() {
     lastPointRef.current = recordedPoint
     activeWalkRef.current?.points.push(recordedPoint)
     pointsRef.current.push(recordedPoint)
+    if (trackingUserRef.current && activeWalkRef.current && !activeWalkRef.current.isTest) {
+      saveWalkJournal(trackingUserRef.current, pendingWalksRef.current, {
+        ...activeWalkRef.current,
+        finishedAt: Math.max(activeWalkRef.current.startedAt, recordedPoint.recordedAt),
+      })
+    }
     const nextCell = pointToDiscoveryCell(recordedPoint)
     const key = discoveryCellKey(nextCell)
     let discoveredNewCell = false
@@ -435,15 +543,11 @@ export default function App() {
     trackingUserRef.current = null
     if (active && walkOwner && active.points.length >= 2) {
       const started = explorationStartRef.current
-      const completed: PendingWalk = { ...active, finishedAt: active.points.at(-1)?.recordedAt ?? Date.now() }
+      const completed: PendingWalk = { ...active, finishedAt: Math.max(active.startedAt, active.points.at(-1)?.recordedAt ?? Date.now()) }
       if (!active.isTest) {
         pendingWalksRef.current.push(completed)
-        const pending = pendingWalksRef.current
-        pendingWalksRef.current = []
-        for (const walk of pending) {
-          try { await saveCompletedWalk(walk, walkOwner) }
-          catch { pendingWalksRef.current.push(walk) }
-        }
+        saveWalkJournal(walkOwner, pendingWalksRef.current)
+        await flushPendingWalks(walkOwner)
         // The recap and the next app launch must be based on the same completed
         // discovery. Do not rely only on the debounced background cell sync.
         try { await syncDiscoveryCells(cellsRef.current, walkOwner) }
@@ -502,6 +606,8 @@ export default function App() {
           setCells(previousCells)
         }
       }
+    } else if (active && walkOwner && !active.isTest) {
+      saveWalkJournal(walkOwner, pendingWalksRef.current)
     }
     explorationStartRef.current = null
   }
@@ -574,6 +680,7 @@ export default function App() {
       setSyncOpen(true)
       return
     }
+    if (discoveryLoading) return
     setTracking('requesting')
     setPassiveLocationStatus('idle')
     const walkId = createWalkId()
@@ -588,6 +695,7 @@ export default function App() {
     }
     activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] }
     trackingUserRef.current = accountUserId
+    saveWalkJournal(accountUserId, pendingWalksRef.current, { ...activeWalkRef.current, finishedAt: activeWalkRef.current.startedAt })
     const tracker = createLocationTracker()
     trackerRef.current = tracker
     let trackerFailed = false
@@ -607,6 +715,7 @@ export default function App() {
     } catch {
       activeWalkRef.current = null
       trackingUserRef.current = null
+      saveWalkJournal(accountUserId, pendingWalksRef.current)
       setPassiveLocationStatus('idle')
       setTracking('unavailable')
     }
@@ -937,7 +1046,7 @@ export default function App() {
         className={`discovery-control discovery-control--${tracking}`}
         onClick={toggleTracking}
         onPointerDown={event => event.stopPropagation()}
-        disabled={!authReady || tracking === 'requesting'}
+        disabled={!authReady || discoveryLoading || tracking === 'requesting'}
         aria-label={!accountUserId ? 'Sign in to start discovering' : tracking === 'tracking' ? 'Stop discovering' : tracking === 'requesting' ? 'Finding your location' : 'Start discovering'}
         title={!accountUserId ? 'Sign in to discover' : tracking === 'tracking' ? 'Stop discovering' : 'Start discovering'}
       >
@@ -967,7 +1076,7 @@ export default function App() {
         <button className="coverage-sheet__close" onClick={() => setCoverageInfoOpen(false)} aria-label="Close explanation"><XIcon size={19} /></button>
         <div className="eyebrow">City discovery</div>
         <h2 id="coverage-title">{discoveryLabel} of {activeCity.name}</h2>
-        <p>Based on your current location, Hecate detected {activeCity.name} as the city you’re in. This percentage shows how much of its official municipal area you’ve uncovered.</p>
+        <p>Based on your current location, Hecate detected {activeCity.name} as your city region. This percentage shows how much of that region you’ve uncovered.</p>
         <div className="coverage-sheet__source"><span /> Municipal boundary from OpenStreetMap</div>
       </section>
     </div>}

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { cityAreaKm2, discoveredCityAreaKm2, discoveredCityCellDistanceKm, discoveredCityDistanceKm, discoveredCityPercentage, isPointInCity, type CityBoundary } from './city'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { canonicalCityForStoredBoundary, cityAreaKm2, discoveredCityAreaKm2, discoveredCityCellDistanceKm, discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, metropolitanCityForPoint, type CityBoundary } from './city'
 import { pointToDiscoveryCell } from './geo'
 
 const city: CityBoundary = {
@@ -11,6 +11,8 @@ const city: CityBoundary = {
     coordinates: [[[-.01, -.01], [.01, -.01], [.01, .01], [-.01, .01], [-.01, -.01]]],
   },
 }
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('city discovery', () => {
   it('checks whether points are inside the municipal polygon', () => {
@@ -59,5 +61,66 @@ describe('city discovery', () => {
     const cell = pointToDiscoveryCell({ lng: 0, lat: 0, recordedAt: 1 })
     expect(discoveredCityCellDistanceKm([cell, { ...cell, discoveredAt: 2 }], city))
       .toBe(discoveredCityCellDistanceKm([cell], city))
+  })
+
+  it('groups Westminster into Greater London with the matching boundary', async () => {
+    const city = await fetchCityBoundary({ lng: -.127, lat: 51.501 })
+    expect(city.id).toBe('region:greater-london')
+    expect(city.name).toBe('Greater London')
+    expect(isPointInCity({ lng: -.127, lat: 51.501 }, city)).toBe(true)
+    expect(cityAreaKm2(city)).toBeGreaterThan(1_000)
+  })
+
+  it('groups El Prat and Barcelona into the same metropolitan area', async () => {
+    const elPrat = await fetchCityBoundary({ lng: 2.095, lat: 41.327 })
+    const barcelona = await fetchCityBoundary({ lng: 2.17, lat: 41.38 })
+    expect(elPrat.id).toBe('region:barcelona-metropolitan')
+    expect(barcelona.id).toBe(elPrat.id)
+    expect(elPrat.name).toBe('Barcelona')
+    expect(cityAreaKm2(elPrat)).toBeGreaterThan(500)
+    expect(cityAreaKm2(elPrat)).toBeLessThan(800)
+    expect(await metropolitanCityForPoint({ lng: -122.42, lat: 37.77 })).toBeNull()
+  })
+
+  it('groups Manhattan with the full New York City boundary', async () => {
+    const manhattan = await fetchCityBoundary({ lng: -73.985, lat: 40.758 })
+    const queens = await fetchCityBoundary({ lng: -73.79, lat: 40.73 })
+    expect(manhattan.id).toBe('region:new-york')
+    expect(queens.id).toBe(manhattan.id)
+    expect(cityAreaKm2(manhattan)).toBeGreaterThan(500)
+  })
+
+  it('relabels a stored municipality using the metropolitan geometry', async () => {
+    const local: CityBoundary = {
+      ...city,
+      id: 'relation:345761',
+      name: 'el Prat de Llobregat',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[[2.09, 41.32], [2.1, 41.32], [2.1, 41.33], [2.09, 41.33], [2.09, 41.32]]],
+      },
+    }
+    const canonical = await canonicalCityForStoredBoundary(local)
+    expect(canonical.id).toBe('region:barcelona-metropolitan')
+    expect(isPointInCity({ lng: 2.095, lat: 41.327 }, canonical)).toBe(true)
+  })
+
+  it('uses the returned polygon name and rejects a nearby non-containing boundary', async () => {
+    vi.stubGlobal('navigator', { language: 'en' })
+    const point = { lng: 0, lat: 0 }
+    const feature = {
+      type: 'Feature',
+      properties: { osm_type: 'relation', osm_id: 123, name: 'Local Borough', address: { city: 'Parent City' } },
+      geometry: city.geometry,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ features: [feature] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    expect((await fetchCityBoundary(point)).name).toBe('Local Borough')
+
+    feature.geometry = {
+      type: 'Polygon',
+      coordinates: [[[1, 1], [2, 1], [2, 2], [1, 2], [1, 1]]],
+    }
+    await expect(fetchCityBoundary(point)).rejects.toThrow('does not contain')
   })
 })

@@ -10,6 +10,42 @@ export type CityBoundary = {
   name: string
   geometry: CityGeometry
   fetchedAt: number
+  firstDiscoveredAt?: number
+  lastDiscoveredAt?: number
+}
+
+// Snapshots of OpenStreetMap relations R175342, R18205773 and R175905. Their polygons
+// make the coverage denominator match the metropolitan name shown to users.
+const metropolitanRegions = [
+  {
+    id: 'region:greater-london',
+    name: 'Greater London',
+    bounds: [-.511, 51.286, .335, 51.693],
+    geometry: () => import('./regions/greater-london.json'),
+  },
+  {
+    id: 'region:barcelona-metropolitan',
+    name: 'Barcelona',
+    bounds: [1.846, 41.263, 2.297, 41.535],
+    geometry: () => import('./regions/barcelona-metropolitan.json'),
+  },
+  {
+    id: 'region:new-york',
+    name: 'New York',
+    bounds: [-74.26, 40.47, -73.70, 40.92],
+    geometry: () => import('./regions/new-york.json'),
+  },
+] as const
+
+export async function metropolitanCityForPoint(point: Pick<Coordinate, 'lng' | 'lat'>): Promise<CityBoundary | null> {
+  for (const region of metropolitanRegions) {
+    const [west, south, east, north] = region.bounds
+    if (point.lng < west || point.lng > east || point.lat < south || point.lat > north) continue
+    const geometry = (await region.geometry()).default as CityGeometry
+    const city: CityBoundary = { id: region.id, name: region.name, geometry, fetchedAt: Date.now() }
+    if (isPointInCity(point, city)) return city
+  }
+  return null
 }
 
 function pointInRing(lng: number, lat: number, ring: GeoJSON.Position[]) {
@@ -74,6 +110,17 @@ function cityBounds(city: CityBoundary) {
   return { west, south, east, north }
 }
 
+export async function canonicalCityForStoredBoundary(city: CityBoundary): Promise<CityBoundary> {
+  const { west, south, east, north } = cityBounds(city)
+  const center = { lng: (west + east) / 2, lat: (south + north) / 2 }
+  const region = await metropolitanCityForPoint(center)
+  return region ? {
+    ...region,
+    firstDiscoveredAt: city.firstDiscoveredAt,
+    lastDiscoveredAt: city.lastDiscoveredAt,
+  } : city
+}
+
 export function discoveredCityAreaKm2(cells: DiscoveryCell[], city: CityBoundary) {
   if (cells.length === 0) return 0
   const bounds = cityBounds(city)
@@ -106,7 +153,7 @@ export function discoveredCityPercentage(cells: DiscoveryCell[], city: CityBound
   return Math.min(100, revealedArea / cityArea * 100)
 }
 
-/** Distance that unlocked new reveal cells within one municipality. */
+/** Distance that unlocked new reveal cells within one city region. */
 export function discoveredCityDistanceKm(points: Coordinate[], city: CityBoundary) {
   return discoveredDistanceForFootprints(points, point => {
     if (!isPointInCity(point, city)) return []
@@ -127,6 +174,9 @@ export function discoveredCityCellDistanceKm(cells: DiscoveryCell[], city: CityB
 }
 
 export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, signal?: AbortSignal) {
+  const metropolitan = await metropolitanCityForPoint(point)
+  if (signal?.aborted) throw new DOMException('City boundary lookup was cancelled', 'AbortError')
+  if (metropolitan) return metropolitan
   const query = new URLSearchParams({
     format: 'geojson',
     lat: point.lat.toFixed(5),
@@ -157,9 +207,10 @@ export async function fetchCityBoundary(point: Pick<Coordinate, 'lng' | 'lat'>, 
   const address = feature.properties?.address ?? {}
   const city: CityBoundary = {
     id: `${feature.properties?.osm_type ?? 'osm'}:${feature.properties?.osm_id ?? feature.id ?? 'city'}`,
-    name: address.city || address.town || address.municipality || address.village || feature.properties?.name || feature.properties?.display_name?.split(',')[0] || 'Current city',
+    name: feature.properties?.name || address.city || address.town || address.municipality || address.village || feature.properties?.display_name?.split(',')[0] || 'Current city',
     geometry: feature.geometry,
     fetchedAt: Date.now(),
   }
+  if (!isPointInCity(point, city)) throw new Error('The returned city boundary does not contain this location')
   return city
 }

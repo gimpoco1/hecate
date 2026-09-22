@@ -9,9 +9,9 @@ export async function loadDiscoveredCities(expectedUserId: string): Promise<City
   if (!supabase || !await hasExpectedSession(expectedUserId)) return []
   const { data, error } = await supabase
     .from('discovered_cities')
-    .select('city_id,name,geometry,last_discovered_at')
+    .select('city_id,name,geometry,first_discovered_at,last_discovered_at')
     .order('last_discovered_at', { ascending: false })
-  if (error) return []
+  if (error) throw error
   return (data ?? []).flatMap(row => {
     const geometry = row.geometry
     if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return []
@@ -20,6 +20,8 @@ export async function loadDiscoveredCities(expectedUserId: string): Promise<City
       name: row.name,
       geometry,
       fetchedAt: new Date(row.last_discovered_at).getTime(),
+      firstDiscoveredAt: new Date(row.first_discovered_at).getTime(),
+      lastDiscoveredAt: new Date(row.last_discovered_at).getTime(),
     } as CityBoundary]
   })
 }
@@ -33,9 +35,21 @@ export async function syncDiscoveredCity(city: CityBoundary, expectedUserId: str
     city_id: city.id,
     name: city.name,
     geometry: city.geometry,
-    first_discovered_at: now,
-    last_discovered_at: now,
+    first_discovered_at: city.firstDiscoveredAt ? new Date(city.firstDiscoveredAt).toISOString() : now,
+    last_discovered_at: city.lastDiscoveredAt ? new Date(city.lastDiscoveredAt).toISOString() : now,
   }, { onConflict: 'user_id,city_id' })
+  if (error) throw error
+}
+
+export async function replaceDiscoveredCities(oldCityIds: string[], city: CityBoundary, expectedUserId: string) {
+  const obsoleteIds = oldCityIds.filter(id => id !== city.id)
+  if (!supabase || !obsoleteIds.length || !await hasExpectedSession(expectedUserId)) return
+  await syncDiscoveredCity(city, expectedUserId)
+  if (!await hasExpectedSession(expectedUserId)) return
+  const { error } = await supabase.from('discovered_cities')
+    .delete()
+    .eq('user_id', expectedUserId)
+    .in('city_id', obsoleteIds)
   if (error) throw error
 }
 
@@ -131,7 +145,7 @@ async function loadRemoteCells(): Promise<DiscoveryCell[]> {
       .select('cell_z,cell_x,cell_y,first_discovered_at')
       .order('cell_z').order('cell_x').order('cell_y')
       .range(offset, offset + 999)
-    if (error) return []
+    if (error) throw error
     cells.push(...(data ?? []).map(row => ({
       z: row.cell_z,
       x: row.cell_x,
@@ -146,7 +160,8 @@ async function loadRemoteCells(): Promise<DiscoveryCell[]> {
 async function loadRemoteWalkPoints(): Promise<Coordinate[]> {
   if (!supabase) return []
   const { data, error } = await supabase.rpc('get_walk_routes')
-  if (error || !Array.isArray(data)) return []
+  if (error) throw error
+  if (!Array.isArray(data)) throw new Error('Walk route response was invalid')
   return data.flatMap(row => {
     const coordinates = Array.isArray(row.coordinates) ? row.coordinates : []
     const startedAt = new Date(row.started_at).getTime()
@@ -164,36 +179,15 @@ async function loadRemoteWalkPoints(): Promise<Coordinate[]> {
   })
 }
 
-async function loadLegacyPoints(): Promise<Coordinate[]> {
-  if (!supabase) return []
-  const { data, error } = await supabase
-    .from('discovery_points')
-    .select('longitude,latitude,recorded_at,accuracy')
-    .order('recorded_at', { ascending: true })
-    .limit(20_000)
-  if (error) return []
-  return (data ?? []).map(row => ({
-    lng: row.longitude,
-    lat: row.latitude,
-    recordedAt: new Date(row.recorded_at).getTime(),
-    accuracy: row.accuracy ?? undefined,
-  }))
-}
-
 export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
   if (!supabase || !await hasExpectedSession(expectedUserId)) return { points: [], cells: [] }
   const [walkPoints, cells] = await Promise.all([
     loadRemoteWalkPoints(),
     loadRemoteCells(),
   ])
-  // Modern accounts already have routes and cells. Query the legacy table
-  // only as a fallback for installations whose migration is incomplete.
-  const legacyPoints = walkPoints.length > 0 && cells.length > 0
-    ? []
-    : await loadLegacyPoints()
   rememberSyncedCells(expectedUserId, cells)
   return {
-    points: walkPoints.length ? walkPoints : legacyPoints,
-    cells: mergeDiscoveryCells(cells, discoveryCellsFromPoints(walkPoints), discoveryCellsFromPoints(legacyPoints)),
+    points: walkPoints,
+    cells: mergeDiscoveryCells(cells, discoveryCellsFromPoints(walkPoints)),
   }
 }
