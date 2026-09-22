@@ -103,4 +103,4 @@ A marketing website is optional. A small GitHub Pages, Squarespace, or similar s
 
 ## Suggested App Review note
 
-Hecate reveals portions of a map along a walk selected and started by the user. Location updates continue while the display is locked so the route remains complete. A prominent Finish walk control stops recording. The separate Walk reminders switch in Account & sync lets a signed-in user opt into background movement detection; candidate points remain in memory and only a reminder preference and last reminder time are stored locally. Turning the switch off removes the idle background location watcher.
+Hecate reveals portions of a map along a walk selected and started by the user. Location updates continue while the display is locked so the route remains complete. A prominent Finish walk control stops recording. The separate Discovery reminders switch in Account & sync lets a signed-in user opt into background movement detection; candidate points remain in memory and only a reminder preference and last reminder time are stored locally. Turning the switch off removes the idle background location watcher.

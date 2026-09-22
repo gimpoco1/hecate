@@ -279,12 +279,7 @@ export default function App() {
         : null,
     [cityBoundary, discoveredCities, isCityScale, viewCenter, viewedCity],
   );
-  const displayCity = useMemo(() => {
-    if (!viewCenter || !isCityScale) return null;
-    const city = cachedViewCity ?? viewedCity ?? null;
-    if (city && isPointInCity(viewCenter, city)) return city;
-    return null;
-  }, [cachedViewCity, isCityScale, viewCenter, viewedCity]);
+
   const summaryCity = useMemo(() => {
     if (!isCityScale || !viewCenter) return activeCity ?? null;
     const knownCities = [cityBoundary, ...discoveredCities].filter(
@@ -305,19 +300,7 @@ export default function App() {
     viewCenter,
     viewedCity,
   ]);
-  const discoveryPercentage = useMemo(
-    () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
-    [cells, summaryCity],
-  );
-  const visibleDistance = useMemo(
-    () =>
-      isCityScale
-        ? summaryCity
-          ? discoveredCityDistanceKm(points, summaryCity)
-          : null
-        : discoveryDistance,
-    [discoveryDistance, isCityScale, points, summaryCity],
-  );
+
   const currentCityDistance = useMemo(
     () =>
       summaryCity
