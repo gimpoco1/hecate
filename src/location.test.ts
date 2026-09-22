@@ -15,27 +15,25 @@ vi.mock('@capacitor/core', () => ({
   }),
 }))
 
-import { createLocationTracker, openLocationSettings, requestCurrentLocation } from './location'
+import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, openLocationSettings } from './location'
 
 describe('native location lifecycle', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('uses a foreground-only watcher for passive location refreshes', async () => {
-    native.addWatcher.mockImplementation(async (_options, callback) => {
-      callback({ longitude: 2.17, latitude: 41.38, accuracy: 25, time: Date.now() })
-      return 'foreground-watcher'
-    })
+  it('keeps passive location updates in the foreground and removes the watcher when inactive', async () => {
+    native.addWatcher.mockResolvedValue('foreground-watcher')
     native.removeWatcher.mockResolvedValue(undefined)
+    const onPoint = vi.fn()
+    const tracker = createForegroundLocationTracker()
 
-    await expect(requestCurrentLocation()).resolves.toMatchObject({
-      lng: 2.17,
-      lat: 41.38,
-      accuracy: 25,
-    })
+    await tracker.start(onPoint, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.not.objectContaining({ backgroundMessage: expect.anything() }),
+      expect.not.objectContaining({ backgroundMessage: expect.anything(), backgroundTitle: expect.anything() }),
       expect.any(Function),
     )
+    native.addWatcher.mock.calls[0][1]({ longitude: 2.17, latitude: 41.38, accuracy: 25, time: Date.now() })
+    expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38 }))
+    await tracker.stop()
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'foreground-watcher' })
   })
 
@@ -43,7 +41,7 @@ describe('native location lifecycle', () => {
     let resolveWatcher!: (id: string) => void
     native.addWatcher.mockReturnValue(new Promise<string>(resolve => { resolveWatcher = resolve }))
     native.removeWatcher.mockResolvedValue(undefined)
-    const tracker = createLocationTracker()
+    const tracker = createForegroundLocationTracker()
 
     const starting = tracker.start(() => undefined, () => undefined)
     await tracker.stop()
@@ -53,15 +51,17 @@ describe('native location lifecycle', () => {
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'late-watcher' })
   })
 
-  it('classifies denied passive location requests and opens native settings', async () => {
-    native.addWatcher.mockImplementation(async (_options, callback) => {
-      callback(undefined, { code: 'NOT_AUTHORIZED', message: 'Location permission denied' })
-      return 'denied-watcher'
-    })
+  it('classifies denied passive location updates and opens native settings', async () => {
+    native.addWatcher.mockResolvedValue('denied-watcher')
     native.removeWatcher.mockResolvedValue(undefined)
     native.openSettings.mockResolvedValue(undefined)
+    const onError = vi.fn()
+    const tracker = createForegroundLocationTracker()
 
-    await expect(requestCurrentLocation()).rejects.toMatchObject({ code: 'permission-denied' })
+    await tracker.start(() => undefined, onError)
+    native.addWatcher.mock.calls[0][1](undefined, { code: 'NOT_AUTHORIZED', message: 'Location permission denied' })
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'permission-denied' }))
+    await tracker.stop()
     await openLocationSettings()
 
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'denied-watcher' })
@@ -74,8 +74,21 @@ describe('native location lifecycle', () => {
     await tracker.start(() => undefined, () => undefined)
 
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 8 }),
+      expect.objectContaining({ distanceFilter: 8, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
       expect.any(Function),
     )
+  })
+
+  it('marks opt-in reminder monitoring as background-capable without recording a walk', async () => {
+    native.addWatcher.mockResolvedValue('reminder-watcher')
+    native.removeWatcher.mockResolvedValue(undefined)
+    const tracker = createReminderLocationTracker()
+    await tracker.start(() => undefined, () => undefined)
+    expect(native.addWatcher).toHaveBeenCalledWith(
+      expect.objectContaining({ distanceFilter: 30, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
+      expect.any(Function),
+    )
+    await tracker.stop()
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'reminder-watcher' })
   })
 })

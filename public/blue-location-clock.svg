@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="122" height="42" viewBox="0 0 122 42" role="img" aria-labelledby="title">
+  <title id="title">Example iPhone blue clock</title>
+  <rect x="1" y="1" width="120" height="40" rx="20" fill="#0A84FF"/>
+  <text x="61" y="28" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="22" font-weight="600" text-anchor="middle">15:09</text>
+</svg>

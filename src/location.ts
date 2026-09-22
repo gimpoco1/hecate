@@ -7,98 +7,15 @@ export interface LocationTrackerError {
   message: string
 }
 
-export class LocationRequestError extends Error {
-  constructor(public code: LocationTrackerError['code'], message: string) {
-    super(message)
-    this.name = 'LocationRequestError'
-  }
-}
-
 export interface LocationTracker {
   start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void): Promise<void>
   stop(): void | Promise<void>
 }
 
-/**
- * Reads one location without creating a walk. The background-geolocation
- * plugin exposes a watcher rather than a single-read API, so remove it as
- * soon as its first usable update arrives.
- */
-export async function requestCurrentLocation(): Promise<Coordinate> {
-  if (isNativeApp()) {
-    return new Promise((resolve, reject) => {
-      let watcherId: string | null = null
-      let completed = false
-      const timeout = globalThis.setTimeout(() => finish({ error: new LocationRequestError('unavailable', 'Timed out while getting your location.') }), 10_000)
-
-      const stop = () => {
-        if (watcherId) void BackgroundGeolocation.removeWatcher({ id: watcherId }).catch(() => undefined)
-      }
-      const finish = (result: { point: Coordinate } | { error: Error }) => {
-        if (completed) return
-        completed = true
-        globalThis.clearTimeout(timeout)
-        stop()
-        if ('point' in result) resolve(result.point)
-        else reject(result.error)
-      }
-
-      void BackgroundGeolocation.addWatcher({
-        // Omitting backgroundMessage keeps allowsBackgroundLocationUpdates and
-        // the iOS background indicator disabled for this short-lived request.
-        requestPermissions: true,
-        stale: true,
-        distanceFilter: 20,
-      }, (location, error) => {
-        if (error) {
-          const normalized = nativeError(error)
-          finish({ error: new LocationRequestError(normalized.code, normalized.message) })
-          return
-        }
-        if (!location) return
-        const recordedAt = location.time ?? Date.now()
-        // A recent cached position avoids powering GPS back up. Ignore an old
-        // cached callback and wait for the watcher's fresh follow-up instead.
-        if (recordedAt < Date.now() - 60_000) return
-        finish({ point: {
-          lng: location.longitude,
-          lat: location.latitude,
-          recordedAt,
-          accuracy: location.accuracy,
-        } })
-      }).then(id => {
-        watcherId = id
-        if (completed) stop()
-      }).catch(error => {
-        const normalized = nativeError(error)
-        finish({ error: new LocationRequestError(normalized.code, normalized.message || 'Location is unavailable.') })
-      })
-    })
-  }
-
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new LocationRequestError('unavailable', 'Geolocation is unavailable.'))
-      return
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords, timestamp }) => resolve({
-        lng: coords.longitude,
-        lat: coords.latitude,
-        recordedAt: timestamp,
-        accuracy: coords.accuracy,
-      }),
-      error => reject(new LocationRequestError(
-        error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'unavailable',
-        error.message,
-      )),
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 },
-    )
-  })
-}
-
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null
+
+  constructor(private readonly recordingWalk: boolean) {}
 
   async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
     if (!navigator.geolocation) throw new Error('Geolocation is unavailable')
@@ -113,7 +30,7 @@ class WebLocationTracker implements LocationTracker {
         code: error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'unavailable',
         message: error.message,
       }),
-      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 15_000 },
+      { enableHighAccuracy: this.recordingWalk, maximumAge: this.recordingWalk ? 3_000 : 15_000, timeout: 15_000 },
     )
   }
 
@@ -137,18 +54,25 @@ class NativeLocationTracker implements LocationTracker {
   private watcherId: string | null = null
   private stopRequested = false
 
+  constructor(private readonly mode: 'walk' | 'foreground' | 'reminder') {}
+
   async start(onPoint: (point: Coordinate) => void, onError: (error: LocationTrackerError) => void) {
     this.stopRequested = false
-    const watcherId = await BackgroundGeolocation.addWatcher({
-      backgroundTitle: 'Hecate is revealing your path',
-      backgroundMessage: 'Your discovery is continuing in the background.',
+    const options: Parameters<BackgroundGeolocationPlugin['addWatcher']>[0] & { showsBackgroundLocationIndicator?: boolean } = {
+      ...(this.mode === 'walk' ? {
+        backgroundTitle: 'Hecate is revealing your path',
+        backgroundMessage: 'Your discovery is continuing in the background.',
+        showsBackgroundLocationIndicator: true,
+      } : this.mode === 'reminder' ? {
+        backgroundTitle: 'Hecate is checking for walks',
+        backgroundMessage: 'Discovery reminders are on. No path is being recorded.',
+        showsBackgroundLocationIndicator: false,
+      } : {}),
       requestPermissions: true,
       stale: false,
-      // Keep foreground movement visibly responsive while the user watches
-      // the map. Background battery savings come from suppressing hidden UI
-      // redraws, not from making the recorded route noticeably coarser.
-      distanceFilter: 8,
-    }, (location, error) => {
+      distanceFilter: this.mode === 'walk' ? 8 : this.mode === 'reminder' ? 30 : 20,
+    }
+    const watcherId = await BackgroundGeolocation.addWatcher(options, (location, error) => {
       if (error) {
         onError(nativeError(error))
         return
@@ -182,7 +106,15 @@ export function isNativeApp() {
 }
 
 export function createLocationTracker(): LocationTracker {
-  return isNativeApp() ? new NativeLocationTracker() : new WebLocationTracker()
+  return isNativeApp() ? new NativeLocationTracker('walk') : new WebLocationTracker(true)
+}
+
+export function createForegroundLocationTracker(): LocationTracker {
+  return isNativeApp() ? new NativeLocationTracker('foreground') : new WebLocationTracker(false)
+}
+
+export function createReminderLocationTracker(): LocationTracker {
+  return isNativeApp() ? new NativeLocationTracker('reminder') : new WebLocationTracker(false)
 }
 
 export async function openLocationSettings() {
