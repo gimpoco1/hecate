@@ -359,12 +359,6 @@ button {
 }
 .location-status:disabled {
   opacity: 1;
-}
-.location-status--refreshing:disabled {
-  cursor: wait;
-}
-.location-status--updated:disabled,
-.location-status--denied:disabled {
   cursor: default;
 }
 .location-status span {
@@ -374,17 +368,6 @@ button {
   border-radius: 50%;
   background: #7d8983;
   box-shadow: 0 0 0 4px rgba(109, 124, 116, 0.15);
-}
-.location-status--refreshing span {
-  border: 1.5px solid rgba(109, 124, 116, 0.3);
-  border-top-color: #66746d;
-  background: transparent;
-  box-shadow: none;
-  animation: spin 750ms linear infinite;
-}
-.location-status--updated span {
-  background: #8fb533;
-  box-shadow: 0 0 0 4px rgba(143, 181, 51, 0.15);
 }
 .location-status--denied {
   color: #8f4d3d;
@@ -411,7 +394,9 @@ button {
   left: 18px;
   display: grid;
   gap: 5px;
-  width: 134px;
+  width: 210px;
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
   padding: 9px;
   border: 1px solid rgba(26, 57, 46, 0.14);
   border-radius: 12px;
@@ -419,6 +404,14 @@ button {
   box-shadow: 0 8px 22px rgba(27, 51, 42, 0.12);
   color: var(--forest);
   font-size: 10px;
+}
+.test-route-controls strong:not(:first-child) {
+  margin-top: 7px;
+}
+.test-route-controls small {
+  color: #5f6e65;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .test-route-controls button {
   border: 0;
@@ -454,6 +447,46 @@ button {
   color: var(--lime);
   background: var(--forest);
   transform: rotate(-4deg);
+}
+.reminder-prompt {
+  position: absolute;
+  z-index: 7;
+  top: max(85px, calc(env(safe-area-inset-top) + 68px));
+  left: 50%;
+  width: min(360px, calc(100% - 36px));
+  transform: translateX(-50%);
+  padding: 16px;
+  border: 1px solid rgba(29, 61, 49, 0.14);
+  border-radius: 17px;
+  background: var(--paper);
+  box-shadow: 0 14px 36px rgba(20, 42, 33, .18);
+}
+.reminder-prompt strong {
+  color: var(--forest);
+  font: 700 15px/1.3 "Manrope", sans-serif;
+}
+.reminder-prompt p {
+  margin: 7px 0 13px;
+  color: #5e6d64;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.reminder-prompt > div {
+  display: flex;
+  gap: 8px;
+}
+.reminder-prompt button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #e6ebe1;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reminder-prompt button:first-child {
+  background: var(--forest);
+  color: white;
 }
 .journey-card {
   position: absolute;
@@ -964,6 +997,8 @@ button {
 .sheet {
   position: relative;
   width: min(520px, 100%);
+  max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+  overflow-y: auto;
   border-radius: 28px 28px 0 0;
   padding: 34px 26px calc(26px + env(safe-area-inset-bottom));
   background: var(--paper);
@@ -1163,6 +1198,46 @@ button {
   border-radius: 50%;
   background: var(--lime);
   border: 1px solid #71862d;
+}
+.account-setting {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #dce3d6;
+  border-radius: 13px;
+  background: #f5f7f1;
+}
+.account-setting strong {
+  font-size: 13px;
+}
+.account-setting p {
+  margin: 5px 0 0;
+  color: #65736d;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.account-setting button {
+  flex: 0 0 auto;
+  min-width: 50px;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: #dce2dc;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.account-setting button[aria-checked="true"] {
+  background: var(--forest);
+  color: var(--lime);
+}
+.account-setting button:disabled {
+  opacity: .6;
+  cursor: wait;
 }
 .sign-out-button {
   width: 100%;

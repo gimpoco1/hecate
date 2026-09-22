@@ -18,6 +18,7 @@
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.6.9",
     "@capacitor/ios": "^7.6.9",
+    "@capacitor/local-notifications": "^7.0.7",
     "@supabase/supabase-js": "^2.57.4",
     "maplibre-gl": "^6.9.0",
     "react": "^19.1.1",

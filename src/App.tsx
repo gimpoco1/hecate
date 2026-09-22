@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { App as CapacitorApp } from '@capacitor/app'
+import { LocalNotifications } from '@capacitor/local-notifications'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { canonicalCityForStoredBoundary, discoveredCityDistanceKm, discoveredCityPercentage, fetchCityBoundary, isPointInCity, type CityBoundary } from './city'
 import { DiscoveryMap } from './components/DiscoveryMap'
 import { SyncSheet } from './components/SyncSheet'
-import { ChevronIcon, HecateMark, LocateIcon, LocationOffIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
+import { ChevronIcon, HecateMark, LocateIcon, MapIcon, PerspectiveIcon, UserIcon, XIcon } from './components/Icons'
 import { discoveredDistanceKm, discoveryCellCenter, discoveryCellKey, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeDiscoveryCells, mergeRoutePoints, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint } from './geo'
+import { ExplorationReminder, isUnmappedArea, loadReminderPreference, REMINDER_COOLDOWN_MS, REMINDER_DISTANCE_M, REMINDER_MINUTES, saveReminderPreference, simulateUnmappedWalk, type ReminderKind } from './explorationReminder'
 import { shouldExpandJourneySheet, shouldShowExplorationRecap, shouldStartJourneyDrag } from './journeyUi'
-import { createLocationTracker, isNativeApp, LocationRequestError, openLocationSettings, requestCurrentLocation, type LocationTracker } from './location'
+import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, isNativeApp, openLocationSettings, type LocationTracker } from './location'
 import { isSyncConfigured, loadDiscoveredCities, loadSyncedDiscovery, purgeLegacyDiscoveryCache, replaceDiscoveredCities, saveCompletedWalk, supabase, syncDiscoveredCity, syncDiscoveryCells } from './storage'
 import type { Coordinate, DiscoveryCell, MapMode, PendingWalk, TrackingState } from './types'
 import { loadWalkJournal, saveWalkJournal } from './walkJournal'
@@ -23,7 +26,22 @@ type ExplorationSummary = {
   cityName?: string
   cityPercentageAdded?: number
 }
-type PassiveLocationStatus = 'idle' | 'refreshing' | 'updated' | 'current' | 'denied'
+type PassiveLocationStatus = 'idle' | 'located' | 'denied' | 'unavailable'
+const REMINDER_NOTIFICATION_ID = 1042
+
+function reminderMessage() {
+  return 'You have been moving through unmapped areas for 5 minutes. Start recording a walk?'
+}
+
+async function sendReminderNotification(delayMs = 1_000) {
+  await LocalNotifications.schedule({ notifications: [{
+    id: REMINDER_NOTIFICATION_ID,
+    title: 'Start recording a walk?',
+    body: reminderMessage(),
+    schedule: { at: new Date(Date.now() + delayMs) },
+    extra: { kind: 'unmapped' },
+  }] })
+}
 
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`
@@ -67,9 +85,15 @@ export default function App() {
   const [cells, setCells] = useState<DiscoveryCell[]>([])
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>()
   const [passiveLocationStatus, setPassiveLocationStatus] = useState<PassiveLocationStatus>('idle')
+  const [reminderEnabled, setReminderEnabled] = useState(false)
+  const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(null)
+  const [reminderDebug, setReminderDebug] = useState({ elapsedMs: 0, distanceM: 0, status: 'Waiting for location' })
+  const [reminderTestMessage, setReminderTestMessage] = useState('')
   const [accountUserId, setAccountUserId] = useState<string | null>(null)
   const [authReady, setAuthReady] = useState(!isSyncConfigured)
   const [tracking, setTracking] = useState<TrackingState>('idle')
+  const trackingStateRef = useRef<TrackingState>(tracking)
+  trackingStateRef.current = tracking
   const [zoom, setZoom] = useState(1.35)
   const [syncOpen, setSyncOpen] = useState(false)
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false)
@@ -86,6 +110,11 @@ export default function App() {
   const [testRouteRunning, setTestRouteRunning] = useState(false)
   const mapRef = useRef<MapLibreMap | null>(null)
   const trackerRef = useRef<LocationTracker | null>(null)
+  const foregroundTrackerRef = useRef<LocationTracker | null>(null)
+  const latestPassivePointRef = useRef<Coordinate | null>(null)
+  const reminderRef = useRef(new ExplorationReminder())
+  const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(null)
+  const cityLookupAbortRef = useRef<AbortController | null>(null)
   const lastPointRef = useRef<Coordinate | undefined>(undefined)
   const activeWalkRef = useRef<ActiveWalk | null>(null)
   const trackingUserRef = useRef<string | null>(null)
@@ -93,8 +122,6 @@ export default function App() {
   const walkUploadPromiseRef = useRef<Promise<void> | null>(null)
   const accountUserIdRef = useRef(accountUserId)
   accountUserIdRef.current = accountUserId
-  const locationRefreshInFlightRef = useRef(false)
-  const locationUpdatedTimerRef = useRef<number | null>(null)
   const journeyCardRef = useRef<HTMLElement | null>(null)
   const journeyDragRef = useRef<{
     pointerId: number
@@ -110,6 +137,7 @@ export default function App() {
   const previewMapRef = useRef<MapLibreMap | null>(null)
   const cellsRef = useRef<DiscoveryCell[]>([])
   const cellKeysRef = useRef<Set<string>>(new Set())
+  const discoveryHistoryReadyRef = useRef(false)
   const pointsRef = useRef<Coordinate[]>([])
   const deferredLocationUiRef = useRef(false)
   const explorationStartRef = useRef<{
@@ -133,6 +161,7 @@ export default function App() {
   const discoveryLabel = accountUserId ? formatDiscoveryPercentage(discoveryPercentage, cityLoading && !activeCity) : '—'
   const isCityScale = zoom >= 6
   const nativeApp = isNativeApp()
+  const devToolsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === '1'
 
   useEffect(() => { cellsRef.current = cells }, [cells])
   useEffect(() => { pointsRef.current = points }, [points])
@@ -175,6 +204,32 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const preference = accountUserId ? loadReminderPreference(accountUserId) : { enabled: false, promptedAt: 0 }
+    reminderRef.current = new ExplorationReminder(preference.promptedAt)
+    setReminderEnabled(preference.enabled)
+    setReminderPrompt(null)
+  }, [accountUserId])
+
+  useEffect(() => {
+    if (!nativeApp) return
+    let disposed = false
+    let listener: { remove: () => Promise<void> } | undefined
+    void LocalNotifications.addListener('localNotificationActionPerformed', event => {
+      if (event.notification.id !== REMINDER_NOTIFICATION_ID) return
+      if (trackingStateRef.current === 'tracking' || trackingStateRef.current === 'requesting') return
+      setShowIntro(false)
+      setReminderPrompt('unmapped')
+    }).then(handle => {
+      if (disposed) void handle.remove()
+      else listener = handle
+    }).catch(() => undefined)
+    return () => {
+      disposed = true
+      if (listener) void listener.remove()
+    }
+  }, [nativeApp])
+
+  useEffect(() => {
     let active = true
     let retryTimer: number | null = null
     setPoints([])
@@ -185,11 +240,11 @@ export default function App() {
     setCityBackfillLoading(false)
     setCoverageInfoOpen(false)
     setExplorationSummary(null)
-    setPassiveLocationStatus('idle')
     setDiscoveryLoading(Boolean(accountUserId))
     lastPointRef.current = undefined
     cellsRef.current = []
     cellKeysRef.current = new Set()
+    discoveryHistoryReadyRef.current = false
     pointsRef.current = []
     pendingWalksRef.current = accountUserId ? loadWalkJournal(accountUserId) : []
     deferredLocationUiRef.current = false
@@ -215,6 +270,7 @@ export default function App() {
       setPoints(mergedPoints)
       setCells(mergedCells)
       cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey))
+      discoveryHistoryReadyRef.current = true
       if (!activeWalkRef.current) lastPointRef.current = mergedPoints.at(-1)
       void flushPendingWalks(accountUserId)
     }).catch(error => {
@@ -339,10 +395,6 @@ export default function App() {
 
   useEffect(() => () => { void trackerRef.current?.stop() }, [])
 
-  useEffect(() => () => {
-    if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
-  }, [])
-
   useEffect(() => {
     const flushBackgroundLocations = () => {
       if (document.visibilityState !== 'visible') return
@@ -352,55 +404,121 @@ export default function App() {
         setCells([...cellsRef.current])
         if (lastPointRef.current) setCurrentPoint(lastPointRef.current)
       }
-      // Returning to the foreground makes a one-shot fix stale, but does not
-      // start a watcher or request location by itself.
-      if (!trackerRef.current) {
-        if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
-        locationUpdatedTimerRef.current = null
-        setPassiveLocationStatus('idle')
-        setTracking(current => current === 'denied' || current === 'unavailable' ? 'idle' : current)
-      }
     }
     document.addEventListener('visibilitychange', flushBackgroundLocations)
     return () => document.removeEventListener('visibilitychange', flushBackgroundLocations)
   }, [])
 
-  const refreshCurrentLocation = useCallback(async (centerMap = false) => {
-    if (locationRefreshInFlightRef.current) return
-    locationRefreshInFlightRef.current = true
-    setPassiveLocationStatus('refreshing')
-    setTracking(current => current === 'denied' || current === 'unavailable' ? 'idle' : current)
-    try {
-      const point = await requestCurrentLocation()
-      // A locator may initially receive an approximate fix. That is still
-      // useful for moving the marker; the stricter accuracy filter remains
-      // in addPoint so approximate fixes never reveal new map area.
-      if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) {
-        setPassiveLocationStatus('idle')
-        return
-      }
-      setCurrentPoint(point)
-      setPassiveLocationStatus('updated')
-      if (locationUpdatedTimerRef.current !== null) window.clearTimeout(locationUpdatedTimerRef.current)
-      locationUpdatedTimerRef.current = window.setTimeout(() => {
-        setPassiveLocationStatus(current => current === 'updated' ? 'current' : current)
-        locationUpdatedTimerRef.current = null
-      }, 1_600)
-      if (centerMap) {
-        mapRef.current?.flyTo({ center: [point.lng, point.lat], zoom: 15, duration: 1400, essential: true })
-      }
-    } catch (error) {
-      // Keep the most recent known position when a fresh read is unavailable,
-      // while distinguishing a permission decision from a temporary failure.
-      setPassiveLocationStatus(error instanceof LocationRequestError && error.code === 'permission-denied' ? 'denied' : 'idle')
-    } finally {
-      locationRefreshInFlightRef.current = false
+  useEffect(() => {
+    if (tracking === 'requesting' || tracking === 'tracking') return
+    const backgroundReminder = nativeApp && reminderEnabled && Boolean(accountUserId)
+    let disposed = false
+    let nativeActive = true
+    let retryTimer: number | null = null
+    const stop = () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer)
+      retryTimer = null
+      const tracker = foregroundTrackerRef.current
+      foregroundTrackerRef.current = null
+      if (tracker) void Promise.resolve(tracker.stop()).catch(() => undefined)
     }
-  }, [])
+    const start = () => {
+      if (disposed || (!backgroundReminder && (!nativeActive || document.visibilityState !== 'visible')) || foregroundTrackerRef.current) return
+      const tracker = backgroundReminder ? createReminderLocationTracker() : createForegroundLocationTracker()
+      foregroundTrackerRef.current = tracker
+      setPassiveLocationStatus('idle')
+      void tracker.start(point => {
+        if (disposed || foregroundTrackerRef.current !== tracker) return
+        if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat)) return
+        latestPassivePointRef.current = point
+        const visible = nativeActive && document.visibilityState === 'visible'
+        if (visible) {
+          setCurrentPoint(point)
+          setPassiveLocationStatus('located')
+          setTracking(current => current === 'denied' || current === 'unavailable' ? 'idle' : current)
+        }
+        if (!reminderEnabled || !accountUserId) return
+        if (!discoveryHistoryReadyRef.current) {
+          reminderRef.current.reset()
+          if (devToolsEnabled && visible) setReminderDebug({ elapsedMs: 0, distanceM: 0, status: 'Waiting for discovery history' })
+          return
+        }
+        const unmapped = isUnmappedArea(point, cellKeysRef.current)
+        const kind = reminderRef.current.observe(point, unmapped)
+        if (devToolsEnabled && visible) {
+          const progress = reminderRef.current.progress
+          const cooldownMinutes = reminderRef.current.promptedAt
+            ? Math.ceil((REMINDER_COOLDOWN_MS - (point.recordedAt - reminderRef.current.promptedAt)) / 60_000)
+            : 0
+          setReminderDebug({ elapsedMs: progress.elapsedMs, distanceM: progress.distanceM,
+            status: kind ? 'Reminder triggered' : cooldownMinutes > 0
+              ? `Cooldown: ${cooldownMinutes} min left` : unmapped ? 'New area' : 'Already discovered' })
+        }
+        if (!kind) return
+        saveReminderPreference(accountUserId, true, reminderRef.current.promptedAt)
+        if (nativeApp) void sendReminderNotification().catch(error => console.warn('Could not show walk reminder', error))
+        else if (visible) setReminderPrompt(kind)
+      }, error => {
+        if (disposed || foregroundTrackerRef.current !== tracker) return
+        stop()
+        setPassiveLocationStatus(error.code === 'permission-denied' ? 'denied' : 'unavailable')
+        if (error.code !== 'permission-denied') retryTimer = window.setTimeout(start, 10_000)
+      }).catch(() => {
+        if (disposed || foregroundTrackerRef.current !== tracker) return
+        stop()
+        setPassiveLocationStatus('unavailable')
+        retryTimer = window.setTimeout(start, 10_000)
+      })
+    }
+    const updateVisibility = () => {
+      if (!nativeActive || document.visibilityState !== 'visible') {
+        if (!backgroundReminder) {
+          stop()
+          setPassiveLocationStatus('idle')
+        }
+      } else {
+        if (latestPassivePointRef.current && Date.now() - latestPassivePointRef.current.recordedAt < 60_000) {
+          setCurrentPoint(latestPassivePointRef.current)
+          setPassiveLocationStatus('located')
+        } else {
+          setPassiveLocationStatus('idle')
+        }
+        start()
+      }
+    }
+    document.addEventListener('visibilitychange', updateVisibility)
+    let appStateListener: { remove: () => Promise<void> } | undefined
+    if (nativeApp) {
+      void CapacitorApp.addListener('appStateChange', state => {
+        nativeActive = state.isActive
+        updateVisibility()
+      }).then(listener => {
+        if (disposed) void listener.remove()
+        else appStateListener = listener
+      }).catch(() => undefined)
+    }
+    start()
+    return () => {
+      disposed = true
+      document.removeEventListener('visibilitychange', updateVisibility)
+      if (appStateListener) void appStateListener.remove()
+      stop()
+    }
+  }, [accountUserId, devToolsEnabled, nativeApp, reminderEnabled, tracking])
+
+  useEffect(() => () => cityLookupAbortRef.current?.abort(), [])
 
   useEffect(() => {
     if (!currentPoint || activeCity) return
+    const previous = lastCityLookupRef.current
+    const now = Date.now()
+    if (previous && (now - previous.at < 15_000 || (
+      !cityBoundary && now - previous.at < 300_000 && distanceKm(previous.point, currentPoint) < 1
+    ))) return
+    lastCityLookupRef.current = { point: currentPoint, at: now }
+    cityLookupAbortRef.current?.abort()
     const controller = new AbortController()
+    cityLookupAbortRef.current = controller
     setCityLoading(true)
     fetchCityBoundary(currentPoint, controller.signal)
       .then(setCityBoundary)
@@ -410,7 +528,6 @@ export default function App() {
       .finally(() => {
         if (!controller.signal.aborted) setCityLoading(false)
       })
-    return () => controller.abort()
   }, [activeCity, currentPoint])
 
   useEffect(() => {
@@ -487,8 +604,6 @@ export default function App() {
 
     setShowIntro(false)
     if (focus) {
-      setPassiveLocationStatus('idle')
-      setCurrentPoint(focus)
       mapRef.current?.flyTo({ center: [focus.lng, focus.lat], zoom: 14.3, duration: 2600, essential: true })
     } else {
       void toggleTracking()
@@ -666,12 +781,62 @@ export default function App() {
     }
   }
 
+  const updateReminderEnabled = async (enabled: boolean): Promise<string | null> => {
+    if (!accountUserId) return 'Sign in before enabling walk reminders.'
+    if (enabled && nativeApp) {
+      try {
+        let permission = await LocalNotifications.checkPermissions()
+        if (permission.display !== 'granted') permission = await LocalNotifications.requestPermissions()
+        if (permission.display !== 'granted') return 'Allow notifications in iPhone Settings to enable walk reminders.'
+      } catch {
+        return 'Notifications are unavailable right now. Try again later.'
+      }
+    }
+    setReminderEnabled(enabled)
+    reminderRef.current.reset()
+    setReminderPrompt(null)
+    saveReminderPreference(accountUserId, enabled, reminderRef.current.promptedAt)
+    return null
+  }
+
+  const simulateReminder = async () => {
+    if (!accountUserId || !reminderEnabled) {
+      setReminderTestMessage('Sign in and enable Walk reminders in Account & sync first.')
+      return
+    }
+    if (!discoveryHistoryReadyRef.current) {
+      setReminderTestMessage('Wait for your discovery history to finish loading.')
+      return
+    }
+    if (!simulateUnmappedWalk(cellKeysRef.current)) {
+      setReminderTestMessage('Could not find an unmapped test route.')
+      return
+    }
+    if (nativeApp) {
+      try {
+        const permission = await LocalNotifications.checkPermissions()
+        if (permission.display !== 'granted') {
+          setReminderTestMessage('Allow notifications in iPhone Settings, then try again.')
+          return
+        }
+        await sendReminderNotification(5_000)
+        setReminderTestMessage('A local notification is scheduled in 5 seconds. Lock your phone to check background delivery.')
+      } catch {
+        setReminderTestMessage('Could not schedule the local notification.')
+      }
+    } else {
+      setReminderPrompt('unmapped')
+      setReminderTestMessage('The simulated route qualified. Browsers show the in-app reminder only.')
+    }
+  }
+
   const toggleTracking = async () => {
     if (tracking === 'tracking') {
       const tracker = trackerRef.current
       trackerRef.current = null
       try { await tracker?.stop() } catch { /* The in-memory walk must still be finalized. */ }
       await finishActiveWalk()
+      reminderRef.current.reset()
       setTracking('idle')
       setPassiveLocationStatus('idle')
       return
@@ -681,8 +846,13 @@ export default function App() {
       return
     }
     if (discoveryLoading) return
+    reminderRef.current.reset()
+    setReminderPrompt(null)
     setTracking('requesting')
     setPassiveLocationStatus('idle')
+    const foregroundTracker = foregroundTrackerRef.current
+    foregroundTrackerRef.current = null
+    try { await foregroundTracker?.stop() } catch { /* Walk tracking can still start. */ }
     const walkId = createWalkId()
     lastPointRef.current = undefined
     const startingPoints = pointsRef.current
@@ -713,6 +883,8 @@ export default function App() {
         setShowIntro(false)
       }
     } catch {
+      trackerRef.current = null
+      void Promise.resolve(tracker.stop()).catch(() => undefined)
       activeWalkRef.current = null
       trackingUserRef.current = null
       saveWalkJournal(accountUserId, pendingWalksRef.current)
@@ -722,12 +894,9 @@ export default function App() {
   }
 
   const locate = () => {
-    // Recenter immediately on the last known point. This keeps the control
-    // responsive while iOS obtains a newer fix, including for signed-out users.
     if (currentPoint) {
       mapRef.current?.flyTo({ center: [currentPoint.lng, currentPoint.lat], zoom: 15, duration: 1400, essential: true })
     }
-    if (tracking !== 'tracking') void refreshCurrentLocation(true)
   }
 
   const journeyBounds = (card: HTMLElement) => {
@@ -925,25 +1094,11 @@ export default function App() {
   }
 
   const introVisible = showIntro && zoom < 4
-  const locationIsCurrent = tracking === 'tracking' || passiveLocationStatus === 'updated' || passiveLocationStatus === 'current'
+  const locationIsCurrent = tracking === 'tracking' || passiveLocationStatus === 'located'
   const locationDisplayStatus: PassiveLocationStatus = tracking === 'denied' ? 'denied' : passiveLocationStatus
-  const locationStatusText = locationDisplayStatus === 'refreshing'
-    ? 'Updating location…'
-    : locationDisplayStatus === 'updated'
-      ? 'Location updated'
-      : locationDisplayStatus === 'denied'
-        ? nativeApp ? 'Location access disabled · Open Settings' : 'Location access disabled · Check browser settings'
-        : 'Location idle · Tap to update'
-  const locationStatusDisabled = locationDisplayStatus === 'refreshing'
-    || locationDisplayStatus === 'updated'
-    || (locationDisplayStatus === 'denied' && !nativeApp)
-  const activateLocationStatus = () => {
-    if (locationDisplayStatus === 'denied' && nativeApp) {
-      void openLocationSettings().catch(() => undefined)
-      return
-    }
-    locate()
-  }
+  const locationStatusText = locationDisplayStatus === 'denied'
+    ? nativeApp ? 'Location access disabled · Open Settings' : 'Location access disabled · Check browser settings'
+    : 'Location temporarily unavailable'
 
   return <main className={`app-shell ${introVisible ? 'app-shell--intro' : ''}`}>
     <DiscoveryMap
@@ -958,12 +1113,17 @@ export default function App() {
       onZoomChange={onZoomChange}
       mapRef={mapRef}
     />
-    {import.meta.env.DEV && <aside className="test-route-controls" aria-label="Development test routes">
+    {devToolsEnabled && <aside className="test-route-controls" aria-label="Development test tools">
       <strong>Test routes</strong>
       <button type="button" onClick={() => void runTestRoute('barcelona-exploration.gpx')} disabled={testRouteRunning}>Barcelona</button>
       <button type="button" onClick={() => void runTestRoute('fells_loop.gpx')} disabled={testRouteRunning}>Test</button>
       <button type="button" onClick={() => void runTestRoute('barcelona-repeat.gpx')} disabled={testRouteRunning}>Repeat Barcelona</button>
       <button type="button" onClick={() => void runTestRoute('san-francisco-exploration.gpx')} disabled={testRouteRunning}>San Francisco</button>
+      <strong>Walk reminder</strong>
+      <small>{reminderEnabled ? reminderDebug.status : 'Enable Walk reminders in Account & sync'}</small>
+      {reminderEnabled && <small>{(Math.min(reminderDebug.elapsedMs, REMINDER_MINUTES * 60_000) / 60_000).toFixed(1)} / {REMINDER_MINUTES} min in new areas<br />{Math.min(Math.round(reminderDebug.distanceM), REMINDER_DISTANCE_M)} / {REMINDER_DISTANCE_M} m</small>}
+      <button type="button" onClick={() => void simulateReminder()} disabled={testRouteRunning || tracking === 'tracking' || tracking === 'requesting'}>Simulate 5-min new-area walk</button>
+      {reminderTestMessage && <small role="status">{reminderTestMessage}</small>}
     </aside>}
 
     <header className="topbar">
@@ -989,11 +1149,20 @@ export default function App() {
 
     {!isCityScale && !showIntro && <div className="zoom-hint"><span /> Zoom closer to reveal discoveries</div>}
 
-    {!introVisible && tracking !== 'tracking' && tracking !== 'requesting' && locationDisplayStatus !== 'current' && <button
+    {reminderPrompt && tracking !== 'tracking' && <aside className="reminder-prompt" role="alert" aria-label="Walk reminder">
+      <strong>Start recording a walk?</strong>
+      <p>{reminderMessage()}</p>
+      <div>
+        <button type="button" onClick={() => { setReminderPrompt(null); void toggleTracking() }}>Start recording</button>
+        <button type="button" onClick={() => setReminderPrompt(null)}>Not now</button>
+      </div>
+    </aside>}
+
+    {!introVisible && tracking !== 'tracking' && tracking !== 'requesting' && (locationDisplayStatus === 'denied' || locationDisplayStatus === 'unavailable') && <button
       type="button"
       className={`location-status location-status--${locationDisplayStatus}`}
-      onClick={activateLocationStatus}
-      disabled={locationStatusDisabled}
+      onClick={() => void openLocationSettings().catch(() => undefined)}
+      disabled={locationDisplayStatus !== 'denied' || !nativeApp}
       aria-live="polite"
       aria-label={locationStatusText}
     >
@@ -1004,11 +1173,10 @@ export default function App() {
       <button
         className="location-control"
         onClick={locate}
-        disabled={locationDisplayStatus === 'refreshing'}
-        aria-busy={locationDisplayStatus === 'refreshing'}
-        aria-label={locationIsCurrent ? 'Center on current location' : 'Location is not current. Tap to update'}
-        title={locationIsCurrent ? 'Current location' : 'Update my current location'}
-      >{locationIsCurrent ? <LocateIcon size={21} /> : <LocationOffIcon size={21} />}</button>
+        disabled={!currentPoint}
+        aria-label="Center on my location"
+        title="Center on my location"
+      ><LocateIcon size={21} /></button>
       <button
         className={mode === 'map' ? 'active' : ''}
         onClick={() => setMode(currentMode => currentMode === 'discover' ? 'map' : 'discover')}
@@ -1080,7 +1248,7 @@ export default function App() {
         <div className="coverage-sheet__source"><span /> Municipal boundary from OpenStreetMap</div>
       </section>
     </div>}
-    <SyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} />
+    <SyncSheet open={syncOpen} onClose={() => setSyncOpen(false)} reminderEnabled={reminderEnabled} nativeApp={nativeApp} onReminderChange={updateReminderEnabled} />
     {explorationSummary && <div className="exploration-recap-backdrop" role="presentation">
       <section className="exploration-recap" role="dialog" aria-modal="true" aria-labelledby="exploration-recap-title">
         <div className="eyebrow">Exploration complete</div>

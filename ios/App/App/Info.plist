@@ -39,9 +39,9 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Hecate uses your location during an active walk, including when the screen is locked, to reveal the places you explore.</string>
+	<string>Hecate uses background location during a walk you start, or when you enable walk reminders, to suggest recording an untracked walk. Reminder locations are not saved to your map or account.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Hecate uses your location to show your position and reveal your discovered path.</string>
+	<string>Hecate uses your location to show your position, reveal a walk you start, and detect walks when reminders are enabled.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

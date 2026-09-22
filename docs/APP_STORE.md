@@ -5,7 +5,7 @@
 - Capacitor 7 packages the production web build from `dist/` inside the iOS app.
 - Bundle identifier: `com.gimpoco.hecate`
 - App version: `1.0.1`; local build number: `5`
-- Background location is enabled only while the user has started a walk.
+- Background location is enabled during a recorded walk or when the signed-in user opts into walk reminders.
 - Both foreground and always-location purpose strings are in `Info.plist`.
 - The Hecate torch logo is installed as the 1024 x 1024 App Store icon.
 
@@ -103,4 +103,4 @@ A marketing website is optional. A small GitHub Pages, Squarespace, or similar s
 
 ## Suggested App Review note
 
-Hecate reveals portions of a map along a walk selected and started by the user. Location updates must continue while the display is locked so the route remains complete. A prominent Finish walk control stops tracking. Background location is not used when a walk is inactive.
+Hecate reveals portions of a map along a walk selected and started by the user. Location updates continue while the display is locked so the route remains complete. A prominent Finish walk control stops recording. The separate Walk reminders switch in Account & sync lets a signed-in user opt into background movement detection; candidate points remain in memory and only a reminder preference and last reminder time are stored locally. Turning the switch off removes the idle background location watcher.

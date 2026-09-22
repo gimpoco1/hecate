@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { authRedirectUrl } from '../auth'
+import { clearReminderPreference } from '../explorationReminder'
 import { isSyncConfigured, supabase } from '../storage'
 import { XIcon } from './Icons'
 
-type Props = { open: boolean; onClose: () => void }
+type Props = {
+  open: boolean
+  onClose: () => void
+  reminderEnabled: boolean
+  nativeApp: boolean
+  onReminderChange: (enabled: boolean) => Promise<string | null>
+}
 type SignInMethod = 'password' | 'link'
 type PasswordIntent = 'signin' | 'signup'
 type MessageTone = 'success' | 'error'
 
-export function SyncSheet({ open, onClose }: Props) {
+export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminderChange }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -21,6 +28,8 @@ export function SyncSheet({ open, onClose }: Props) {
   const [authLoading, setAuthLoading] = useState(isSyncConfigured)
   const [authPending, setAuthPending] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [reminderPending, setReminderPending] = useState(false)
+  const [reminderError, setReminderError] = useState('')
 
   useEffect(() => {
     if (!open) {
@@ -149,6 +158,7 @@ export function SyncSheet({ open, onClose }: Props) {
         return
       }
 
+      if (user) clearReminderPreference(user.id)
       await supabase.auth.signOut({ scope: 'local' })
       setUser(null)
       setConfirmingDelete(false)
@@ -176,7 +186,7 @@ export function SyncSheet({ open, onClose }: Props) {
     <section className="sheet" onClick={event => event.stopPropagation()} aria-modal="true" role="dialog" aria-labelledby="sync-title">
       <button className="icon-button sheet__close" onClick={onClose} aria-label="Close"><XIcon /></button>
       <div className="eyebrow">{user ? 'Account & sync' : 'Private by design'}</div>
-      {!user && <div className="sync-privacy-subtitle"><span /> Location history is never sold or shared.</div>}
+      {!user && <div className="sync-privacy-subtitle"><span /> Your recorded discoveries stay private to your account.</div>}
       <h2 id="sync-title">{user ? 'Your map is with you.' : 'Carry your map everywhere.'}</h2>
       <p>{user
         ? 'Your discoveries are connected to your private Hecate account and available across your signed-in devices.'
@@ -191,6 +201,20 @@ export function SyncSheet({ open, onClose }: Props) {
             </span>
           </div>
           <div className="account-card__status"><span /> Signed in and syncing</div>
+          <div className="account-setting">
+            <div>
+              <strong>Walk reminders</strong>
+              <p>{nativeApp
+                ? 'Check for five minutes of movement through unmapped areas while Hecate is running, including in the background. Reminder samples are not saved or synced.'
+                : 'Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background.'}</p>
+            </div>
+            <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Walk reminders" disabled={reminderPending} onClick={() => {
+              setReminderPending(true)
+              setReminderError('')
+              void onReminderChange(!reminderEnabled).then(error => setReminderError(error ?? '')).finally(() => setReminderPending(false))
+            }}>{reminderEnabled ? 'On' : 'Off'}</button>
+          </div>
+          {reminderError && <div className="form-message form-message--error" role="alert">{reminderError}</div>}
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
           {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>
             : <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">
