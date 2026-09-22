@@ -208,7 +208,7 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
             <div>
               <strong>Discovery reminders</strong>
               <p>{nativeApp
-                ? 'Get a reminder after five minutes moving through new areas. Reminder locations are not saved or synced.'
+                ? 'Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced.'
                 : 'Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background.'}</p>
             </div>
             <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Discovery reminders" disabled={reminderPending} onClick={() => {
@@ -224,7 +224,7 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
               <p><strong>Always:</strong> Hecate can send background reminders without showing the blue clock. Recording a walk may still show it.</p>
               <p><strong>Never:</strong> Location features and discovery reminders cannot work.</p>
               <p>Only walks you start recording are saved to your map. Reminder locations are not saved.</p>
-              <p>While recording, Hecate can remind you to stop after {INACTIVITY_REMINDER_MINUTES} minutes within {INACTIVITY_RADIUS_M} m of one spot in an area you already discovered. Recording never stops automatically.</p>
+              <p>While recording, Hecate can suggest stopping after {INACTIVITY_REMINDER_MINUTES} minutes within {INACTIVITY_RADIUS_M} m of one spot already on your map. Areas revealed during the current recording count too. The reminder is a suggestion; recording never stops automatically.</p>
               <figure className="tracking-help__example">
                 <img src="/blue-location-clock.svg" alt="Example of the blue clock on an iPhone" width="122" height="42" />
                 <figcaption>A blue clock means an app is using location in the background. It may be Hecate or another app.</figcaption>

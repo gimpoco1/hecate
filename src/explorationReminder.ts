@@ -6,6 +6,7 @@ export const REMINDER_DISTANCE_M = 150
 const REMINDER_DURATION_MS = REMINDER_MINUTES * 60_000
 const THREE_MINUTES = 3 * 60_000
 export const REMINDER_COOLDOWN_MS = 2 * 60 * 60_000
+export const REMINDER_TAP_PAUSE_MS = 30 * 60_000
 
 export type ReminderKind = 'unmapped'
 
@@ -37,17 +38,29 @@ const keyForUser = (userId: string) => `hecate:exploration-reminders:v1:${userId
 
 export function loadReminderPreference(userId: string) {
   try {
-    const value = JSON.parse(localStorage.getItem(keyForUser(userId)) || '{}') as { enabled?: boolean; promptedAt?: number }
-    return { enabled: value.enabled === true, promptedAt: Number.isFinite(value.promptedAt) ? value.promptedAt! : 0 }
+    const value = JSON.parse(localStorage.getItem(keyForUser(userId)) || '{}') as { enabled?: boolean; promptedAt?: number; pausedUntil?: number }
+    return {
+      enabled: value.enabled === true,
+      promptedAt: Number.isFinite(value.promptedAt) ? value.promptedAt! : 0,
+      pausedUntil: Number.isFinite(value.pausedUntil) ? value.pausedUntil! : 0,
+    }
   } catch {
-    return { enabled: false, promptedAt: 0 }
+    return { enabled: false, promptedAt: 0, pausedUntil: 0 }
   }
 }
 
-export function saveReminderPreference(userId: string, enabled: boolean, promptedAt: number) {
+export function saveReminderPreference(userId: string, enabled: boolean, promptedAt: number, pausedUntil = 0) {
   try {
-    localStorage.setItem(keyForUser(userId), JSON.stringify({ enabled, promptedAt }))
+    localStorage.setItem(keyForUser(userId), JSON.stringify({ enabled, promptedAt, pausedUntil }))
   } catch { /* A disabled storage API must not break location monitoring. */ }
+}
+
+export function pauseReminderAfterTap(userId: string, tappedAt: number) {
+  const preference = loadReminderPreference(userId)
+  if (!preference.enabled) return preference
+  const pausedUntil = tappedAt + REMINDER_TAP_PAUSE_MS
+  saveReminderPreference(userId, true, 0, pausedUntil)
+  return { enabled: true, promptedAt: 0, pausedUntil }
 }
 
 export function clearReminderPreference(userId: string) {
@@ -62,7 +75,13 @@ export class ExplorationReminder {
   private distanceM = 0
   private unmappedSegments = 0
 
-  constructor(private lastPromptAt = 0) {}
+  constructor(private lastPromptAt = 0, private pauseUntil = 0) {}
+
+  pauseAfterTap(tappedAt: number) {
+    this.reset()
+    this.lastPromptAt = 0
+    this.pauseUntil = tappedAt + REMINDER_TAP_PAUSE_MS
+  }
 
   reset() {
     this.first = null
@@ -73,6 +92,14 @@ export class ExplorationReminder {
 
   observe(point: Coordinate, unmapped: boolean): ReminderKind | null {
     if (!isUsableGpsPoint(point)) return null
+    if (this.pauseUntil) {
+      if (point.recordedAt < this.pauseUntil) {
+        this.reset()
+        return null
+      }
+      this.pauseUntil = 0
+      this.reset()
+    }
     if (!unmapped) {
       this.reset()
       return null
@@ -113,6 +140,10 @@ export class ExplorationReminder {
 
   get promptedAt() {
     return this.lastPromptAt
+  }
+
+  get pausedUntil() {
+    return this.pauseUntil
   }
 
   get progress() {
