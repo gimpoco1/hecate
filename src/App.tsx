@@ -2,8 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
-import { evaluatePersonalAchievements } from "./achievements";
-import { cityBadgeProgress, earnedCityBadges } from "./badges";
+import {
+  evaluatePersonalAchievements,
+  isPersonalAchievementId,
+  PERSONAL_ACHIEVEMENTS,
+  personalAchievementDefinition,
+  type PersonalAchievementId,
+} from "./achievements";
+import {
+  dismissAchievementUnlock,
+  reconcileAchievementUnlocks,
+} from "./achievementUnlocks";
+import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
@@ -16,10 +26,13 @@ import {
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
 import { AchievementCard } from "./components/AchievementCard";
+import { AchievementCelebration } from "./components/AchievementCelebration";
+import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
   ChevronIcon,
   HecateMark,
+  InfoIcon,
   LocateIcon,
   MapIcon,
   PerspectiveIcon,
@@ -102,6 +115,7 @@ const REMINDER_NOTIFICATION_ID = 1042;
 const INACTIVITY_NOTIFICATION_ID = 1043;
 const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
 const REMINDER_TEST_NOTIFICATION_ID = 1045;
+const ACHIEVEMENT_NOTIFICATION_ID_START = 1100;
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 
 function reminderMessage() {
@@ -126,9 +140,50 @@ async function sendReminderNotification(
   });
 }
 
+async function sendAchievementNotification(
+  achievementId: PersonalAchievementId,
+  userId: string,
+  test = false,
+) {
+  let permission = await LocalNotifications.checkPermissions();
+  if (permission.display === "prompt" || permission.display === "prompt-with-rationale")
+    permission = await LocalNotifications.requestPermissions();
+  if (permission.display !== "granted") return false;
+  const achievement = personalAchievementDefinition(achievementId);
+  const notificationIndex = Math.max(
+    0,
+    PERSONAL_ACHIEVEMENTS.findIndex(({ id }) => id === achievementId),
+  );
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: test
+          ? ACHIEVEMENT_NOTIFICATION_ID_START + PERSONAL_ACHIEVEMENTS.length
+          : ACHIEVEMENT_NOTIFICATION_ID_START + notificationIndex,
+        title: `Achievement unlocked: ${achievement.title}`,
+        body: achievement.description,
+        sound: "default",
+        schedule: { at: new Date(Date.now() + 500) },
+        extra: {
+          kind: test ? "achievement-test" : "achievement",
+          achievementId,
+          userId,
+        },
+        threadIdentifier: "hecate-achievements",
+      },
+    ],
+  });
+  return true;
+}
+
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`;
   return `${distance.toFixed(distance >= 10 ? 1 : 2)} km`;
+}
+
+function formatRemainingDistance(distance: number) {
+  if (distance < 1) return `${Math.round(distance * 1000)} m`;
+  return `${distance.toFixed(1)} km`;
 }
 
 function formatDiscoveryPercentage(
@@ -154,54 +209,6 @@ function formatDuration(startedAt: number, finishedAt: number) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
-}
-
-function CityQuestProgress({
-  cityId,
-  cityName,
-  distance,
-}: {
-  cityId: string;
-  cityName: string;
-  distance: number;
-}) {
-  const { next, progress } = cityBadgeProgress(distance);
-  const earned = earnedCityBadges(cityId, cityName, distance);
-  const latest = earned.at(-1);
-
-  return (
-    <div
-      className={`city-quest-progress${next ? "" : " city-quest-progress--complete"}`}
-      aria-label={
-        next
-          ? `${formatDistance(distance)} of ${formatDistance(next.thresholdKm)} toward the ${next.title} badge in ${cityName}`
-          : `All city badges earned in ${cityName}`
-      }
-    >
-      <span className={`city-quest-progress__seal city-quest-progress__seal--${latest?.level ?? 0}`}>
-        {latest ? latest.level : "·"}
-      </span>
-      <span className="city-quest-progress__copy">
-        <span>
-          {next ? (
-            <>
-              Next: <strong>{next.title}</strong>
-            </>
-          ) : (
-            <strong>City Cartographer earned</strong>
-          )}
-        </span>
-        {next && (
-          <small>
-            {formatDistance(distance)} / {formatDistance(next.thresholdKm)}
-          </small>
-        )}
-      </span>
-      <span className="city-quest-progress__track" aria-hidden="true">
-        <span style={{ width: `${progress * 100}%` }} />
-      </span>
-    </div>
-  );
 }
 
 function createWalkId() {
@@ -233,6 +240,7 @@ export default function App() {
     status: "Waiting for location",
   });
   const [reminderTestMessage, setReminderTestMessage] = useState("");
+  const [achievementTestMessage, setAchievementTestMessage] = useState("");
   const [devToolsVisible, setDevToolsVisible] = useState(() => {
     if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
       return false;
@@ -268,6 +276,11 @@ export default function App() {
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
+  const [achievementCelebrations, setAchievementCelebrations] = useState<
+    PersonalAchievementId[]
+  >([]);
+  const [achievementTestPreview, setAchievementTestPreview] =
+    useState<PersonalAchievementId | null>(null);
   const [testRouteRunning, setTestRouteRunning] = useState(false);
   const mapRef = useRef<MapLibreMap | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
@@ -282,6 +295,7 @@ export default function App() {
   const inactivityNotificationQueueRef = useRef<Promise<void>>(
     Promise.resolve(),
   );
+  const achievementTestIndexRef = useRef(0);
   const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(
     null,
   );
@@ -369,6 +383,13 @@ export default function App() {
         : discoveryDistance,
     [discoveryDistance, points, summaryCity],
   );
+  const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
+  const currentCityMilestoneRemaining = currentCityMilestone.next
+    ? Math.max(0, currentCityMilestone.next.thresholdKm - currentCityDistance)
+    : 0;
+  const currentCityMilestoneLevel = currentCityMilestone.next
+    ? currentCityMilestone.next.level - 1
+    : 3;
   const summaryCityPercentage = useMemo(
     () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
     [cells, summaryCity],
@@ -491,7 +512,6 @@ export default function App() {
     pointsRef.current = points;
   }, [points]);
   const cityProgresses = useMemo(() => {
-    if (!citiesExpanded) return [];
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
     return [...unique.values()]
@@ -504,12 +524,19 @@ export default function App() {
         (a, b) =>
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
-  }, [citiesExpanded, cityBoundary, discoveredCities, cells, points]);
+  }, [cityBoundary, discoveredCities, cells, points]);
   const totalCityDistance = useMemo(
     () =>
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
   );
+  const accountCityProgress = activeCity
+    ? {
+        cityId: activeCity.id,
+        cityName: activeCity.name,
+        discoveredKm: discoveredCityDistanceKm(points, activeCity),
+      }
+    : null;
   const achievementEvaluations = useMemo(
     () =>
       evaluatePersonalAchievements(
@@ -522,6 +549,43 @@ export default function App() {
       ),
     [cityProgresses, points],
   );
+  const activeAchievementCelebration = achievementTestPreview
+    ? personalAchievementDefinition(achievementTestPreview)
+    : achievementCelebrations[0]
+      ? personalAchievementDefinition(achievementCelebrations[0])
+      : null;
+
+  useEffect(() => {
+    if (!accountUserId) {
+      setAchievementCelebrations([]);
+      return;
+    }
+    if (
+      testRouteRunning ||
+      activeWalkRef.current?.isTest ||
+      !discoveryHistoryReadyRef.current ||
+      citiesLoadedUserId !== accountUserId
+    )
+      return;
+    const earned = achievementEvaluations
+      .filter(({ earned: isEarned }) => isEarned)
+      .map(({ definition }) => definition.id);
+    const unlocks = reconcileAchievementUnlocks(accountUserId, earned);
+    setAchievementCelebrations(unlocks.pending);
+    if (nativeApp) {
+      unlocks.newlyEarned.forEach((achievementId) => {
+        void sendAchievementNotification(achievementId, accountUserId).catch(
+          (error) => console.warn("Could not show achievement notification", error),
+        );
+      });
+    }
+  }, [
+    accountUserId,
+    achievementEvaluations,
+    citiesLoadedUserId,
+    nativeApp,
+    testRouteRunning,
+  ]);
 
   useEffect(() => {
     purgeLegacyDiscoveryCache();
@@ -572,6 +636,33 @@ export default function App() {
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
       (event) => {
+        if (
+          event.notification.extra?.kind === "achievement-test" &&
+          isPersonalAchievementId(event.notification.extra.achievementId)
+        ) {
+          setAchievementTestPreview(event.notification.extra.achievementId);
+          setShowIntro(false);
+          return;
+        }
+        if (
+          event.notification.extra?.kind === "achievement" &&
+          isPersonalAchievementId(event.notification.extra.achievementId)
+        ) {
+          const notifiedUserId = event.notification.extra.userId;
+          if (
+            typeof notifiedUserId === "string" &&
+            notifiedUserId !== accountUserIdRef.current
+          )
+            return;
+          const achievementId = event.notification.extra.achievementId;
+          setAchievementCelebrations((current) =>
+            current.includes(achievementId)
+              ? current
+              : [achievementId, ...current],
+          );
+          setShowIntro(false);
+          return;
+        }
         if (
           event.notification.id === INACTIVITY_NOTIFICATION_ID ||
           event.notification.id === INACTIVITY_TEST_NOTIFICATION_ID
@@ -1587,6 +1678,38 @@ export default function App() {
     }
   };
 
+  const simulateAchievementUnlock = async () => {
+    const achievement =
+      PERSONAL_ACHIEVEMENTS[
+        achievementTestIndexRef.current % PERSONAL_ACHIEVEMENTS.length
+      ];
+    achievementTestIndexRef.current += 1;
+    setAchievementTestPreview(achievement.id);
+    setShowIntro(false);
+    if (!nativeApp) {
+      setAchievementTestMessage(
+        `Showing ${achievement.title}. Native notifications are only available in the iPhone app.`,
+      );
+      return;
+    }
+    try {
+      const scheduled = await sendAchievementNotification(
+        achievement.id,
+        accountUserId ?? "development-preview",
+        true,
+      );
+      setAchievementTestMessage(
+        scheduled
+          ? `${achievement.title} notification scheduled. The next test uses another badge.`
+          : "Celebration shown. Allow notifications in iPhone Settings to test the notification too.",
+      );
+    } catch {
+      setAchievementTestMessage(
+        "Celebration shown, but the test notification could not be scheduled.",
+      );
+    }
+  };
+
   const toggleTracking = async () => {
     if (tracking === "tracking") {
       resetInactivityReminder();
@@ -2091,6 +2214,20 @@ export default function App() {
               Test stop reminder
             </button>
           )}
+          <strong>Achievements</strong>
+          <small>
+            Opens the real celebration and, in the native app, schedules the
+            same local notification. Each press cycles to another badge.
+          </small>
+          <button
+            type="button"
+            onClick={() => void simulateAchievementUnlock()}
+          >
+            Test achievement unlock
+          </button>
+          {achievementTestMessage && (
+            <small role="status">{achievementTestMessage}</small>
+          )}
           {reminderTestMessage && (
             <small role="status">{reminderTestMessage}</small>
           )}
@@ -2250,6 +2387,35 @@ export default function App() {
         )}
 
       <nav className="map-actions" aria-label="Map controls">
+        {accountUserId && summaryCity && isCityScale && (
+          <button
+            className="map-milestone"
+            type="button"
+            onClick={() => settleJourneySheet(true)}
+            aria-label={
+              currentCityMilestone.next
+                ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
+                : `All 3 city stars earned in ${summaryCity.name}. Open city progress.`
+            }
+            title={
+              currentCityMilestone.next
+                ? `Next city star at ${formatDistance(currentCityMilestone.next.thresholdKm)}`
+                : "All 3 city stars earned"
+            }
+          >
+            <CityLevelStars level={currentCityMilestoneLevel} />
+            <span className="map-milestone__track" aria-hidden="true">
+              <span
+                style={{ width: `${currentCityMilestone.progress * 100}%` }}
+              />
+            </span>
+            <small>
+              {currentCityMilestone.next
+                ? `${formatRemainingDistance(currentCityMilestoneRemaining)} left`
+                : "Complete"}
+            </small>
+          </button>
+        )}
         <button
           className="location-control"
           onClick={locate}
@@ -2315,7 +2481,9 @@ export default function App() {
                     >
                       <strong>{discoveryLabel}</strong>
                       <span>of {summaryCity.name}</span>
-                      <span className="city-progress__info">i</span>
+                      <span className="city-progress__info">
+                        <InfoIcon size={18} strokeWidth={1.7} />
+                      </span>
                     </button>
                   )}
                 </>
@@ -2323,13 +2491,6 @@ export default function App() {
                 <p className="discovery-sign-in">Sign in to start tracking</p>
               )}
             </div>
-            {accountUserId && summaryCity && (
-              <CityQuestProgress
-                cityId={summaryCity.id}
-                cityName={summaryCity.name}
-                distance={currentCityDistance}
-              />
-            )}
           </div>
           <button
             className={`discovery-control discovery-control--${tracking}`}
@@ -2398,12 +2559,12 @@ export default function App() {
                 cityProgresses.length ? (
                   <ul>
                     {cityProgresses.map(({ city, percentage, distance }) => {
-                      const earned = earnedCityBadges(
+                      const earned = earnedCityMilestones(
                         city.id,
                         city.name,
                         distance,
                       );
-                      const next = cityBadgeProgress(distance).next;
+                      const next = cityMilestoneProgress(distance).next;
                       return (
                         <li key={city.id}>
                           <button
@@ -2415,13 +2576,11 @@ export default function App() {
                               <small>
                                 {next
                                   ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
-                                  : `${earned.at(-1)?.title} · all badges earned`}
+                                  : `${earned.at(-1)?.title} · all 3 stars earned`}
                               </small>
                             </span>
                             <span className="discovered-cities__metrics">
-                              <span className={`city-quest-progress__seal city-quest-progress__seal--${earned.at(-1)?.level ?? 0}`}>
-                                {earned.at(-1)?.level ?? "·"}
-                              </span>
+                              <CityLevelStars level={earned.length} />
                               <strong>
                                 {formatDiscoveryPercentage(percentage, false)}
                               </strong>
@@ -2515,6 +2674,7 @@ export default function App() {
         onClose={() => setSyncOpen(false)}
         reminderEnabled={reminderEnabled}
         nativeApp={nativeApp}
+        cityProgress={accountCityProgress}
         onReminderChange={updateReminderEnabled}
       />
       {explorationSummary && (
@@ -2592,6 +2752,24 @@ export default function App() {
             </div>
           </section>
         </div>
+      )}
+      {activeAchievementCelebration && !explorationSummary && (
+        <AchievementCelebration
+          achievement={activeAchievementCelebration}
+          remaining={Math.max(0, achievementCelebrations.length - 1)}
+          onDismiss={() => {
+            if (achievementTestPreview) {
+              setAchievementTestPreview(null);
+              return;
+            }
+            if (accountUserId)
+              dismissAchievementUnlock(
+                accountUserId,
+                activeAchievementCelebration.id,
+              );
+            setAchievementCelebrations((current) => current.slice(1));
+          }}
+        />
       )}
     </main>
   );

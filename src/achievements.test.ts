@@ -37,20 +37,28 @@ describe("personal achievements", () => {
       evaluateAchievementsFromJourneys(
         [
           journey(1, {
-            travelledKm: 5,
-            newGroundKm: 4.2,
+            travelledKm: 9,
+            newGroundKm: 8.2,
           }),
           journey(2, {
-            travelledKm: 2.2,
-            newGroundKm: 1.8,
+            travelledKm: 5.2,
+            newGroundKm: 4.2,
             points: [
               { lng: 2, lat: 41, recordedAt: Date.UTC(2026, 8, 2, 10) },
               { lng: 2.0005, lat: 41, recordedAt: Date.UTC(2026, 8, 2, 11) },
             ],
           }),
           journey(3, {
-            travelledKm: 3,
-            newGroundKm: 1.2,
+            travelledKm: 5.5,
+            newGroundKm: 2.2,
+            points: [
+              { lng: 2, lat: 41, recordedAt: Date.UTC(2026, 8, 3, 10) },
+              { lng: 2.0005, lat: 41, recordedAt: Date.UTC(2026, 8, 3, 11) },
+            ],
+          }),
+          journey(4, {
+            travelledKm: 8,
+            newGroundKm: 4,
           }),
         ],
         [],
@@ -67,11 +75,13 @@ describe("personal achievements", () => {
     const results = byId(
       evaluateAchievementsFromJourneys(
         [
-          journey(1),
-          journey(2),
-          journey(3),
-          journey(5),
-          journey(6),
+          journey(1, { newGroundKm: 0.5 }),
+          journey(2, { newGroundKm: 0.5 }),
+          journey(3, { newGroundKm: 0.5 }),
+          journey(5, { newGroundKm: 0.5 }),
+          journey(7, { newGroundKm: 0.5 }),
+          journey(9, { newGroundKm: 0.5 }),
+          journey(11, { newGroundKm: 0.5 }),
         ],
         [],
       ),
@@ -84,11 +94,15 @@ describe("personal achievements", () => {
   it("awards place achievements from separate qualifying days and cities", () => {
     const results = byId(
       evaluateAchievementsFromJourneys(
-        [journey(1), journey(2), journey(3), journey(4), journey(5)],
+        Array.from({ length: 10 }, (_, index) =>
+          journey(index + 1, { newGroundKm: 0.5 }),
+        ),
         [
-          { cityId: "barcelona", discoveredKm: 1 },
-          { cityId: "london", discoveredKm: 0.7 },
-          { cityId: "new-york", discoveredKm: 0.5 },
+          { cityId: "barcelona", discoveredKm: 3 },
+          { cityId: "london", discoveredKm: 2.7 },
+          { cityId: "new-york", discoveredKm: 2.5 },
+          { cityId: "paris", discoveredKm: 2.2 },
+          { cityId: "rome", discoveredKm: 2 },
         ],
       ),
     );

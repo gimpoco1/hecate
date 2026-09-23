@@ -5,9 +5,10 @@ import {
   type PersonalAchievementId,
 } from "../achievements";
 import { authRedirectUrl } from "../auth";
-import { earnedCityBadges } from "../badges";
+import { earnedCityMilestones } from "../badges";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { AchievementCard } from "./AchievementCard";
+import { CityLevelStars } from "./CityLevelStars";
 import {
   buildLeaderboardSnapshot,
   cityLeaderboardGroups,
@@ -71,12 +72,12 @@ function ExplorerProfilePanel({
   onClose: () => void;
 }) {
   if (!entry) return null;
-  const cityBadges = entry.cities.flatMap((city) =>
-    earnedCityBadges(
-      city.cityId,
-      city.cityName,
-      city.discoveredKm,
-    ),
+  const cityMilestones = entry.cities.flatMap((city) =>
+    earnedCityMilestones(
+        city.cityId,
+        city.cityName,
+        city.discoveredKm,
+      ),
   );
   const personalAchievements = entry.achievements.map(
     personalAchievementDefinition,
@@ -116,7 +117,9 @@ function ExplorerProfilePanel({
             <small>shared cities</small>
           </span>
           <span>
-            <strong>{cityBadges.length + personalAchievements.length}</strong>
+            <strong>
+              {cityMilestones.length + personalAchievements.length}
+            </strong>
             <small>badges earned</small>
           </span>
         </div>
@@ -140,35 +143,34 @@ function ExplorerProfilePanel({
         )}
         <section className="explorer-passport" aria-labelledby="passport-title">
           <div>
-            <div className="eyebrow">City badges</div>
+            <div className="eyebrow">City stars</div>
             <h3 id="passport-title">Places made personal.</h3>
           </div>
-          {cityBadges.length ? (
+          {cityMilestones.length ? (
             <ul>
-              {cityBadges.map((badge) => (
+              {cityMilestones.map((milestone) => (
                 <li
-                  key={`${badge.cityId}:${badge.id}`}
-                  className={`passport-badge passport-badge--${badge.level}`}
+                  key={`${milestone.cityId}:${milestone.id}`}
+                  className={`passport-badge passport-badge--${milestone.level}`}
                 >
                   <span className="passport-badge__seal" aria-hidden="true">
                     <AchievementArtwork
-                      image={badge.image}
-                      title={badge.title}
-                      size={48}
+                      image={milestone.image}
+                      title={milestone.title}
+                      size={38}
                     />
-                    <small>{badge.level}</small>
                   </span>
                   <span>
-                    <strong>{badge.title}</strong>
-                    <small>{badge.cityName}</small>
+                    <strong>{milestone.title}</strong>
+                    <small>{milestone.cityName}</small>
                   </span>
-                  <em>{formatDistance(badge.thresholdKm)}</em>
+                  <CityLevelStars level={milestone.level} />
                 </li>
               ))}
             </ul>
           ) : (
             <div className="explorer-passport__empty">
-              The first badge unlocks after 1 km of new ground in a shared city.
+              The first star unlocks after 5 km of new ground in a shared city.
             </div>
           )}
         </section>
@@ -523,26 +525,50 @@ function LeaderboardAccountPanel({
                   .filter(
                     (city) => Math.round(city.discoveredKm * 1_000) > 0,
                   )
-                  .map((city) => (
-                    <label key={city.cityId}>
-                      <input
-                        type="checkbox"
-                        checked={selectedCityIds.includes(city.cityId)}
-                        onChange={(event) => {
-                          citySelectionDirty.current = true;
-                          setSelectedCityIds((current) =>
-                            event.target.checked
-                              ? [...current, city.cityId]
-                              : current.filter(
-                                  (cityId) => cityId !== city.cityId,
-                                ),
-                          );
-                        }}
-                      />
-                      <span>{city.cityName}</span>
-                      <strong>{formatDistance(city.discoveredKm)}</strong>
-                    </label>
-                  ))}
+                  .map((city) => {
+                    const milestones = earnedCityMilestones(
+                      city.cityId,
+                      city.cityName,
+                      city.discoveredKm,
+                    );
+                    const latestMilestone = milestones.at(-1);
+                    return (
+                      <label key={city.cityId}>
+                        <input
+                          type="checkbox"
+                          checked={selectedCityIds.includes(city.cityId)}
+                          onChange={(event) => {
+                            citySelectionDirty.current = true;
+                            setSelectedCityIds((current) =>
+                              event.target.checked
+                                ? [...current, city.cityId]
+                                : current.filter(
+                                    (cityId) => cityId !== city.cityId,
+                                  ),
+                            );
+                          }}
+                        />
+                        <span className="leaderboard-city-sharing__artwork">
+                          {latestMilestone ? (
+                            <AchievementArtwork
+                              image={latestMilestone.image}
+                              title={latestMilestone.title}
+                              size={32}
+                            />
+                          ) : (
+                            <CityLevelStars level={0} />
+                          )}
+                        </span>
+                        <span className="leaderboard-city-sharing__identity">
+                          <span>{city.cityName}</span>
+                          <small>
+                            {latestMilestone?.title ?? "First Footprint at 5 km"}
+                          </small>
+                        </span>
+                        <strong>{formatDistance(city.discoveredKm)}</strong>
+                      </label>
+                    );
+                  })}
               </div>
             </fieldset>
             <fieldset className="leaderboard-achievement-sharing">

@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { cityBadgeProgress, earnedCityBadges, nextCityBadge } from "./badges";
+import {
+  cityMilestoneProgress,
+  earnedCityMilestones,
+  nextCityMilestone,
+} from "./badges";
 
-describe("city passport badges", () => {
-  it("awards cumulative badges at 1, 5, and 20 kilometres", () => {
-    expect(earnedCityBadges("barcelona", "Barcelona", 0.99)).toHaveLength(0);
+describe("city stars", () => {
+  it("awards cumulative stars at 5, 25, and 100 kilometres", () => {
+    expect(earnedCityMilestones("barcelona", "Barcelona", 4.99)).toHaveLength(0);
     expect(
-      earnedCityBadges("barcelona", "Barcelona", 5).map(
-        (badge) => badge.id,
+      earnedCityMilestones("barcelona", "Barcelona", 25).map(
+        (star) => star.id,
       ),
     ).toEqual(["first-footprint", "pathfinder"]);
-    expect(earnedCityBadges("barcelona", "Barcelona", 20)).toHaveLength(3);
+    expect(earnedCityMilestones("barcelona", "Barcelona", 99.99)).toHaveLength(2);
+    expect(earnedCityMilestones("barcelona", "Barcelona", 100)).toHaveLength(3);
   });
 
   it("reports progress within the current tier instead of against lifetime distance", () => {
-    expect(nextCityBadge(1)?.thresholdKm).toBe(5);
-    expect(cityBadgeProgress(3).progress).toBe(0.5);
-    expect(cityBadgeProgress(20)).toEqual({ next: null, progress: 1 });
+    expect(nextCityMilestone(5)?.thresholdKm).toBe(25);
+    expect(cityMilestoneProgress(15).progress).toBe(0.5);
+    expect(cityMilestoneProgress(100)).toEqual({ next: null, progress: 1 });
   });
 });

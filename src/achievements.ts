@@ -28,7 +28,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
   {
     id: "the-long-way",
     title: "The Long Way",
-    description: "Uncover 4 km of new ground in a single walk.",
+    description: "Uncover 8 km of new ground in a single walk.",
     image: "/achievements/the-long-way.png",
     category: "single-walk",
   },
@@ -36,7 +36,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "mostly-uncharted",
     title: "Mostly Uncharted",
     description:
-      "Complete a 2 km walk where at least 75% of the route reveals new ground.",
+      "Complete a 5 km walk where at least 80% of the route reveals new ground.",
     image: "/achievements/mostly-uncharted.png",
     category: "single-walk",
   },
@@ -44,21 +44,21 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "full-circle",
     title: "Full Circle",
     description:
-      "Walk 2 km, uncover 1 km, and finish within 150 m of where you started.",
+      "Walk 5 km, uncover 2 km, and finish within 200 m of where you started.",
     image: "/achievements/full-circle.png",
     category: "single-walk",
   },
   {
     id: "three-day-spark",
     title: "Three-Day Spark",
-    description: "Uncover at least 250 m on three consecutive days.",
+    description: "Uncover at least 500 m on three consecutive days.",
     image: "/achievements/three-day-spark.png",
     category: "consistency",
   },
   {
     id: "momentum",
     title: "Momentum",
-    description: "Uncover at least 250 m on five days within one week.",
+    description: "Uncover at least 500 m on seven days within two weeks.",
     image: "/achievements/momentum.png",
     category: "consistency",
   },
@@ -66,14 +66,14 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "local-ritual",
     title: "Local Ritual",
     description:
-      "Make a qualifying discovery in the same city on five different days.",
+      "Uncover at least 500 m in the same city on ten different days.",
     image: "/achievements/local-ritual.png",
     category: "places",
   },
   {
     id: "city-hopper",
     title: "City Hopper",
-    description: "Uncover at least 500 m in three different cities.",
+    description: "Uncover at least 2 km in five different cities.",
     image: "/achievements/city-hopper.png",
     category: "places",
   },
@@ -81,7 +81,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "against-the-familiar",
     title: "Against the Familiar",
     description:
-      "Uncover 1 km on a 2 km walk where at least 40% of the route was already familiar.",
+      "Walk 8 km, uncover 3 km, and keep at least half the route on familiar ground.",
     image: "/achievements/against-the-familiar.png",
     category: "single-walk",
   },
@@ -89,7 +89,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
 
 const ACHIEVEMENT_IDS = new Set(PERSONAL_ACHIEVEMENTS.map(({ id }) => id));
 const DAY_MS = 24 * 60 * 60 * 1_000;
-const QUALIFYING_DAY_KM = 0.25;
+const QUALIFYING_DAY_KM = 0.5;
 
 export type AchievementEvaluation = {
   definition: PersonalAchievementDefinition;
@@ -170,7 +170,7 @@ export function evaluateAchievementsFromJourneys(
       const ratio = journey.travelledKm > 0
         ? Math.min(1, journey.newGroundKm / journey.travelledKm)
         : 0;
-      const progress = Math.min(journey.travelledKm / 2, ratio / 0.75);
+      const progress = Math.min(journey.travelledKm / 5, ratio / 0.8);
       return progress > best.progress ? { journey, ratio, progress } : best;
     },
     { journey: null as JourneyWithCity | null, ratio: 0, progress: 0 },
@@ -179,9 +179,9 @@ export function evaluateAchievementsFromJourneys(
     (best, journey) => {
       const first = journey.points[0];
       const last = journey.points.at(-1);
-      const closes = first && last ? distanceKm(first, last) <= 0.15 : false;
-      const completed = Number(journey.travelledKm >= 2)
-        + Number(journey.newGroundKm >= 1)
+      const closes = first && last ? distanceKm(first, last) <= 0.2 : false;
+      const completed = Number(journey.travelledKm >= 5)
+        + Number(journey.newGroundKm >= 2)
         + Number(closes);
       return completed > best ? completed : best;
     },
@@ -196,7 +196,7 @@ export function evaluateAchievementsFromJourneys(
     .filter(([, distance]) => distance >= QUALIFYING_DAY_KM)
     .map(([day]) => day);
   const consecutiveDays = longestConsecutiveRun(qualifyingDays);
-  const momentumDays = mostDaysWithinWindow(qualifyingDays, 7);
+  const momentumDays = mostDaysWithinWindow(qualifyingDays, 14);
 
   const cityDays = new Map<string, Set<number>>();
   journeys
@@ -207,7 +207,7 @@ export function evaluateAchievementsFromJourneys(
       cityDays.set(journey.cityId!, days);
     });
   const localRitualDays = Math.max(0, ...[...cityDays.values()].map((days) => days.size));
-  const qualifyingCities = cityDistances.filter(({ discoveredKm }) => discoveredKm >= 0.5).length;
+  const qualifyingCities = cityDistances.filter(({ discoveredKm }) => discoveredKm >= 2).length;
   const againstFamiliar = journeys.reduce(
     (best, journey) => {
       const newRatio = journey.travelledKm > 0
@@ -215,9 +215,9 @@ export function evaluateAchievementsFromJourneys(
         : 0;
       const familiarRatio = 1 - newRatio;
       const progress = Math.min(
-        journey.travelledKm / 2,
-        journey.newGroundKm / 1,
-        familiarRatio / 0.4,
+        journey.travelledKm / 8,
+        journey.newGroundKm / 3,
+        familiarRatio / 0.5,
       );
       return progress > best.progress
         ? { journey, familiarRatio, progress }
@@ -232,15 +232,15 @@ export function evaluateAchievementsFromJourneys(
 
   const states: Record<PersonalAchievementId, Omit<AchievementEvaluation, "definition">> = {
     "the-long-way": {
-      earned: longestNewWalk >= 4,
-      progress: Math.min(1, longestNewWalk / 4),
-      progressLabel: `${Math.min(longestNewWalk, 4).toFixed(1)} / 4 km in one walk`,
+      earned: longestNewWalk >= 8,
+      progress: Math.min(1, longestNewWalk / 8),
+      progressLabel: `${Math.min(longestNewWalk, 8).toFixed(1)} / 8 km in one walk`,
     },
     "mostly-uncharted": {
       earned: Boolean(
         bestUncharted.journey
-          && bestUncharted.journey.travelledKm >= 2
-          && bestUncharted.ratio >= 0.75,
+          && bestUncharted.journey.travelledKm >= 5
+          && bestUncharted.ratio >= 0.8,
       ),
       progress: Math.min(1, bestUncharted.progress),
       progressLabel: bestUncharted.journey
@@ -258,26 +258,26 @@ export function evaluateAchievementsFromJourneys(
       progressLabel: `${Math.min(consecutiveDays, 3)} / 3 consecutive days`,
     },
     momentum: {
-      earned: momentumDays >= 5,
-      progress: Math.min(1, momentumDays / 5),
-      progressLabel: `${Math.min(momentumDays, 5)} / 5 days in one week`,
+      earned: momentumDays >= 7,
+      progress: Math.min(1, momentumDays / 7),
+      progressLabel: `${Math.min(momentumDays, 7)} / 7 days in two weeks`,
     },
     "local-ritual": {
-      earned: localRitualDays >= 5,
-      progress: Math.min(1, localRitualDays / 5),
-      progressLabel: `${Math.min(localRitualDays, 5)} / 5 days in one city`,
+      earned: localRitualDays >= 10,
+      progress: Math.min(1, localRitualDays / 10),
+      progressLabel: `${Math.min(localRitualDays, 10)} / 10 days in one city`,
     },
     "city-hopper": {
-      earned: qualifyingCities >= 3,
-      progress: Math.min(1, qualifyingCities / 3),
-      progressLabel: `${Math.min(qualifyingCities, 3)} / 3 cities`,
+      earned: qualifyingCities >= 5,
+      progress: Math.min(1, qualifyingCities / 5),
+      progressLabel: `${Math.min(qualifyingCities, 5)} / 5 cities`,
     },
     "against-the-familiar": {
       earned: Boolean(
         againstFamiliar.journey
-          && againstFamiliar.journey.travelledKm >= 2
-          && againstFamiliar.journey.newGroundKm >= 1
-          && againstFamiliar.familiarRatio >= 0.4,
+          && againstFamiliar.journey.travelledKm >= 8
+          && againstFamiliar.journey.newGroundKm >= 3
+          && againstFamiliar.familiarRatio >= 0.5,
       ),
       progress: Math.min(1, againstFamiliar.progress),
       progressLabel: againstFamiliar.journey

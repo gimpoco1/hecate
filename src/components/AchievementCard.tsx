@@ -29,6 +29,7 @@ export function AchievementCard({
       className={`achievement-card${earned ? " achievement-card--earned" : " achievement-card--locked"}${compact ? " achievement-card--compact" : ""}`}
       type="button"
       data-category={achievement.category}
+      data-achievement={achievement.id}
       aria-pressed={flipped}
       aria-label={`${achievement.title}. ${achievement.description} ${status}. Activate to ${flipped ? "show the badge artwork" : "read the achievement details"}.`}
       onClick={() => setFlipped((current) => !current)}
