@@ -7,7 +7,7 @@ npm install
 npm run dev
 ```
 
-The app uses MapLibre GL JS and OpenFreeMap's OpenStreetMap-derived vector tiles. No map API key is required.
+Every browser redirects from `/` to the public leaderboard at `/leaderboard`. Only the installed Capacitor app exposes the private discovery map and live position. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
 
 ## Cross-device sync
 
@@ -15,8 +15,9 @@ The app uses MapLibre GL JS and OpenFreeMap's OpenStreetMap-derived vector tiles
    The Hecate hosted project was cleaned with `scripts/cleanup-hosted-discovery.sql` and `scripts/install-city-region-compatibility.sql` on 2026-09-21. Those scripts are one-time records, not setup steps for a fresh project.
 2. Copy `.env.example` to `.env.local` and add the project URL and anonymous key.
 3. Enable Email authentication in Supabase. Keep password sign-in, new-user signup, and email OTP enabled. With **Confirm email** enabled, new password accounts receive a confirmation link before their first session starts.
-4. In **Authentication → URL Configuration**, set the Site URL to `https://hecate-eta.vercel.app/` and add both redirect URLs:
+4. In **Authentication → URL Configuration**, set the Site URL to `https://hecate-eta.vercel.app/` and add these redirect URLs:
    - `https://hecate-eta.vercel.app/`
+   - `https://hecate-eta.vercel.app/leaderboard`
    - `hecate://auth/callback`
 
 Magic links opened from the website return to the deployed browser app. Links requested inside the Capacitor app use the `hecate://` URL scheme to reopen Hecate and complete the Supabase session.
@@ -25,11 +26,15 @@ Supabase configuration and a signed-in account are required to record discoverie
 
 The same SQL script installs the authenticated `delete_account` function used by the account dialog. It deletes the current user from Supabase Auth; foreign-key cascades then remove that user's walks, discovery cells, and discovered cities. Rerun `supabase.sql` on an existing project whenever this function is added or updated.
 
+It also installs the public leaderboard tables and the `publish_leaderboard_snapshot`, `unpublish_leaderboard_snapshot`, and `get_my_leaderboard_entry_id` functions. The public tables contain an opaque entry ID and aggregate totals only. Account ownership is kept in a separate RLS-protected table, and private routes, cells, coordinates, and city boundaries are never copied into a leaderboard snapshot. The web client subscribes to Supabase Realtime and polls every 20 seconds as a fallback. Users must explicitly publish or update a snapshot; private discovery sync does not update the leaderboard automatically.
+
+Existing hosted projects must also run `scripts/install-leaderboard-sharing-controls.sql`. It reserves public names case-insensitively in a private profile table, allows one rename per account even across unpublishing, and installs the profile RPC used by the sharing panel. Users choose which city aggregates to include; unselected cities and their distance are omitted from the public snapshot.
+
 Completed walks retain every accepted route sample in PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 
 ## iOS and background tracking
 
-The web version is installable from Safari with **Share → Add to Home Screen**. iOS can suspend Safari and installed web apps after the screen locks, so uninterrupted tracking requires the native Capacitor package in `ios/`.
+Browsers can run the discovery experience while the page remains active, but they cannot provide reliable locked-screen tracking. Uninterrupted tracking uses the Capacitor package in `ios/`.
 
 The native build uses `@capacitor-community/background-geolocation` while a walk is active. Its iOS target includes the required location usage descriptions and `location` background mode. With no walk active, a foreground watcher keeps the position marker current; the locate control only centers the map. The optional Discovery reminders switch replaces that watcher with a background-capable one. Its samples are held in memory, never added to discovery history. A local notification suggests starting a recording after five minutes and at least 150 m of movement through unmapped areas; returning to mapped ground resets the candidate. Background reminders work while the app process is running; a force quit or system termination ends the in-memory candidate. Check all three cases on an iPhone: idle with reminders off stops location on backgrounding, idle with reminders on continues monitoring and can notify, and an explicitly started walk continues recording after lock.
 

@@ -1,5 +1,5 @@
-const CACHE = 'hecate-shell-v3'
-const SHELL = ['/', '/manifest.webmanifest', '/icon.svg?v=2']
+const CACHE = 'hecate-shell-v5'
+const SHELL = ['/', '/leaderboard', '/manifest.webmanifest', '/icon.svg?v=2']
 
 self.addEventListener('install', event => {
   event.waitUntil(
