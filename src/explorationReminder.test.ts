@@ -69,6 +69,11 @@ describe('private exploration reminders', () => {
     expect(simulateUnmappedWalk(known, 2_000_000)).toBe('unmapped')
   })
 
+  it('does not call a revealed position new merely because unknown cells border its footprint', () => {
+    const known = new Set([discoveryCellKey(pointToDiscoveryCell(start))])
+    expect(isUnmappedArea(start, known)).toBe(false)
+  })
+
   it('stores only the per-account switch and cooldown locally', () => {
     const entries = new Map<string, string>()
     vi.stubGlobal('localStorage', {

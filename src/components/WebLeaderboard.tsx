@@ -117,10 +117,8 @@ function ExplorerProfilePanel({
             <small>shared cities</small>
           </span>
           <span>
-            <strong>
-              {cityMilestones.length + personalAchievements.length}
-            </strong>
-            <small>badges earned</small>
+            <strong>{personalAchievements.length}</strong>
+            <small>achievements earned</small>
           </span>
         </div>
         {personalAchievements.length > 0 && (
@@ -163,6 +161,9 @@ function ExplorerProfilePanel({
                   <span>
                     <strong>{milestone.title}</strong>
                     <small>{milestone.cityName}</small>
+                    <small className="passport-badge__meaning">
+                      {milestone.thresholdKm} km of new ground
+                    </small>
                   </span>
                   <CityLevelStars level={milestone.level} />
                 </li>
@@ -218,6 +219,7 @@ function LeaderboardAccountPanel({
   >([]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [pending, setPending] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const displayNameDirty = useRef(false);
@@ -383,6 +385,7 @@ function LeaderboardAccountPanel({
 
   const unpublish = async () => {
     setPending(true);
+    setUnpublishing(true);
     setMessage("");
     try {
       await unpublishLeaderboardSnapshot();
@@ -395,6 +398,7 @@ function LeaderboardAccountPanel({
       setError(true);
       setMessage("Unable to remove your public snapshot right now.");
     } finally {
+      setUnpublishing(false);
       setPending(false);
     }
   };
@@ -550,11 +554,14 @@ function LeaderboardAccountPanel({
                         />
                         <span className="leaderboard-city-sharing__artwork">
                           {latestMilestone ? (
-                            <AchievementArtwork
-                              image={latestMilestone.image}
-                              title={latestMilestone.title}
-                              size={32}
-                            />
+                            <>
+                              <AchievementArtwork
+                                image={latestMilestone.image}
+                                title={latestMilestone.title}
+                                size={28}
+                              />
+                              <CityLevelStars level={latestMilestone.level} />
+                            </>
                           ) : (
                             <CityLevelStars level={0} />
                           )}
@@ -653,41 +660,45 @@ function LeaderboardAccountPanel({
               </div>
               <div>
                 <small>Shared</small>
-                <strong>{selectedAchievementIds.length} badges</strong>
+                <strong>{selectedAchievementIds.length} achievements</strong>
               </div>
             </div>
-            <button
-              className="leaderboard-primary-button"
-              type="button"
-              onClick={() => void publish()}
-              disabled={
-                pending || loadingSnapshot || !snapshot || !profileLoaded
-              }
-            >
-              {pending
-                ? "Updating…"
-                : entryId
-                  ? "Update my ranking"
-                  : "Publish my ranking"}
-            </button>
-            {entryId && (
+            <div className="leaderboard-publishing-actions">
               <button
-                className="leaderboard-unpublish"
+                className="leaderboard-primary-button"
                 type="button"
-                onClick={() => void unpublish()}
+                onClick={() => void publish()}
+                disabled={
+                  pending || loadingSnapshot || !snapshot || !profileLoaded
+                }
+              >
+                {pending && !unpublishing
+                  ? "Updating…"
+                  : entryId
+                    ? "Update my ranking"
+                    : "Publish my ranking"}
+              </button>
+              {entryId && (
+                <button
+                  className="leaderboard-unpublish"
+                  type="button"
+                  onClick={() => void unpublish()}
+                  disabled={pending}
+                >
+                  {unpublishing ? "Stopping sharing…" : "Stop sharing my ranking"}
+                </button>
+              )}
+            </div>
+            <div className="leaderboard-account-actions">
+              <button
+                className="leaderboard-link-button"
+                type="button"
+                onClick={() => void supabase?.auth.signOut()}
                 disabled={pending}
               >
-                Stop sharing
+                Sign out
               </button>
-            )}
-            <button
-              className="leaderboard-link-button"
-              type="button"
-              onClick={() => void supabase?.auth.signOut()}
-              disabled={pending}
-            >
-              Sign out
-            </button>
+            </div>
           </>
         )}
         {message && (
@@ -712,8 +723,12 @@ export function WebLeaderboard() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [myProfile, setMyProfile] = useState<LeaderboardProfile | null>(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [profileLoadedUserId, setProfileLoadedUserId] = useState<string | null>(
+    null,
+  );
   const boardRef = useRef<HTMLElement | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = user?.id ?? null;
 
   const refresh = async () => {
     try {
@@ -727,12 +742,14 @@ export function WebLeaderboard() {
   };
 
   const refreshMine = async () => {
+    const expectedUserId = userIdRef.current;
     const [, profile] = await Promise.all([
       refresh(),
-      user ? loadMyLeaderboardProfile().catch(() => null) : null,
+      expectedUserId ? loadMyLeaderboardProfile().catch(() => null) : null,
     ]);
+    if (userIdRef.current !== expectedUserId) return;
     setMyProfile(profile);
-    setProfileLoaded(true);
+    setProfileLoadedUserId(expectedUserId);
   };
 
   useEffect(() => {
@@ -784,15 +801,29 @@ export function WebLeaderboard() {
   useEffect(() => {
     if (!user) {
       setMyProfile(null);
-      setProfileLoaded(true);
+      setProfileLoadedUserId(null);
       return;
     }
-    setProfileLoaded(false);
+    const expectedUserId = user.id;
+    let active = true;
+    setMyProfile(null);
+    setProfileLoadedUserId(null);
     void loadMyLeaderboardProfile()
-      .then(setMyProfile)
-      .catch(() => setMyProfile(null))
-      .finally(() => setProfileLoaded(true));
-  }, [user]);
+      .then((profile) => {
+        if (active && userIdRef.current === expectedUserId)
+          setMyProfile(profile);
+      })
+      .catch(() => {
+        if (active && userIdRef.current === expectedUserId) setMyProfile(null);
+      })
+      .finally(() => {
+        if (active && userIdRef.current === expectedUserId)
+          setProfileLoadedUserId(expectedUserId);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (!focusedCityId) return;
@@ -807,7 +838,9 @@ export function WebLeaderboard() {
     (sum, entry) => sum + entry.totalDiscoveredKm,
     0,
   );
-  const myEntryId = myProfile?.entryId ?? null;
+  const profileLoaded = !user || profileLoadedUserId === user.id;
+  const currentProfile = profileLoaded ? myProfile : null;
+  const myEntryId = currentProfile?.entryId ?? null;
   const myEntry = entries.find((entry) => entry.entryId === myEntryId) ?? null;
   const focusedEntry =
     entries.find((entry) => entry.entryId === focusedEntryId) ?? null;
@@ -1064,11 +1097,12 @@ export function WebLeaderboard() {
         </nav>
       </footer>
       <LeaderboardAccountPanel
+        key={user?.id ?? "signed-out"}
         open={panelOpen}
         user={user}
         entryId={myEntryId}
-        publishedDisplayName={myProfile?.displayName ?? null}
-        displayNameChanges={myProfile?.displayNameChanges ?? 0}
+        publishedDisplayName={currentProfile?.displayName ?? null}
+        displayNameChanges={currentProfile?.displayNameChanges ?? 0}
         profileLoaded={profileLoaded}
         publishedCityIds={myEntry?.cities.map((city) => city.cityId) ?? []}
         publishedAchievementIds={myEntry?.achievements ?? []}

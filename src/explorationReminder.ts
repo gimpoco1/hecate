@@ -11,8 +11,12 @@ export const REMINDER_TAP_PAUSE_MS = 30 * 60_000
 export type ReminderKind = 'unmapped'
 
 export function isUnmappedArea(point: Coordinate, knownCells: Set<string>) {
-  return discoveryFootprintCells(pointToDiscoveryCell(point))
-    .some(cell => !knownCells.has(discoveryCellKey(cell)))
+  // Stored discovery cells are the centres of the 35 m areas already revealed
+  // on the map. If any stored centre overlaps the current reveal footprint,
+  // the user's actual position is familiar ground even when unknown cells sit
+  // around its edge.
+  return !discoveryFootprintCells(pointToDiscoveryCell(point))
+    .some(cell => knownCells.has(discoveryCellKey(cell)))
 }
 
 /** Runs the production detector on synthetic points without altering app data. */
