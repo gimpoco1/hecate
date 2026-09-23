@@ -7,7 +7,9 @@ npm install
 npm run dev
 ```
 
-Every browser redirects from `/` to the public leaderboard at `/leaderboard`. Only the installed Capacitor app exposes the private discovery map and live position. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
+In production, every browser redirects from `/` to the public leaderboard at `/leaderboard`. During `npm run dev`, `/` intentionally renders the private app experience in the browser so its map, tracking, journey drawer, and achievements can be tested locally; `/leaderboard` remains available for the public experience. The installed Capacitor app always opens the private app. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
+
+The development test-routes panel can be hidden with its close button. That preference is stored locally under `hecate:dev-tools-visible`; the small **Dev tools** control restores the panel. Neither control is rendered in production.
 
 ## Cross-device sync
 
@@ -29,6 +31,10 @@ The same SQL script installs the authenticated `delete_account` function used by
 It also installs the public leaderboard tables and the `publish_leaderboard_snapshot`, `unpublish_leaderboard_snapshot`, and `get_my_leaderboard_entry_id` functions. The public tables contain an opaque entry ID and aggregate totals only. Account ownership is kept in a separate RLS-protected table, and private routes, cells, coordinates, and city boundaries are never copied into a leaderboard snapshot. The web client subscribes to Supabase Realtime and polls every 20 seconds as a fallback. Users must explicitly publish or update a snapshot; private discovery sync does not update the leaderboard automatically.
 
 Existing hosted projects must also run `scripts/install-leaderboard-sharing-controls.sql`. It reserves public names case-insensitively in a private profile table, allows one rename per account even across unpublishing, and installs the profile RPC used by the sharing panel. Users choose which city aggregates to include; unselected cities and their distance are omitted from the public snapshot.
+
+City passport badges are deterministic milestones based on the same canonical discovered-city distance: First Footprint at 1 km, Pathfinder at 5 km, and City Cartographer at 20 km. Private progress stays in the installed app. The public explorer profile derives earned badges only from city totals the user explicitly published, so an unshared city cannot reveal a badge or progress.
+
+Personal achievements are recomputed from synchronized route history with the same new-ground algorithm used by the map. `scripts/install-leaderboard-achievements.sql` adds the public achievement-ID table and updates the publishing RPC. The public snapshot contains only achievement IDs selected by the user—never the qualifying route, date, activity history, or location. Artwork lives in `public/achievements/<achievement-id>.png`; a Hecate fallback is rendered until a PNG is supplied.
 
 Completed walks retain every accepted route sample in PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 

@@ -8,9 +8,14 @@ describe('browser routes', () => {
     expect(isLeaderboardPath('/')).toBe(false)
   })
 
-  it('redirects every browser at the app root to the leaderboard', () => {
+  it('redirects production browsers at the app root to the leaderboard', () => {
     expect(shouldRedirectBrowserToLeaderboard('/', false)).toBe(true)
     expect(shouldRedirectBrowserToLeaderboard('/', true)).toBe(false)
+  })
+
+  it('keeps the app root available in browser development mode', () => {
+    expect(shouldRedirectBrowserToLeaderboard('/', false, true)).toBe(false)
+    expect(shouldRedirectBrowserToLeaderboard('/leaderboard', false, true)).toBe(false)
   })
 
   it('does not redirect a browser that is already on the leaderboard', () => {

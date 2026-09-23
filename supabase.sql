@@ -327,6 +327,12 @@ create table if not exists public.leaderboard_city_stats (
   primary key (entry_id, city_id)
 );
 
+create table if not exists public.leaderboard_achievements (
+  entry_id uuid not null references public.leaderboard_entries(entry_id) on delete cascade,
+  achievement_id text not null,
+  primary key (entry_id, achievement_id)
+);
+
 create index if not exists leaderboard_entries_distance_idx
   on public.leaderboard_entries (total_discovered_km desc, updated_at desc);
 create index if not exists leaderboard_city_stats_city_idx
@@ -343,12 +349,16 @@ alter table public.leaderboard_entries enable row level security;
 alter table public.leaderboard_profiles enable row level security;
 alter table public.leaderboard_owners enable row level security;
 alter table public.leaderboard_city_stats enable row level security;
+alter table public.leaderboard_achievements enable row level security;
 
 drop policy if exists "Leaderboard entries are public" on public.leaderboard_entries;
 create policy "Leaderboard entries are public" on public.leaderboard_entries
   for select using (true);
 drop policy if exists "Leaderboard city totals are public" on public.leaderboard_city_stats;
 create policy "Leaderboard city totals are public" on public.leaderboard_city_stats
+  for select using (true);
+drop policy if exists "Leaderboard achievements are public" on public.leaderboard_achievements;
+create policy "Leaderboard achievements are public" on public.leaderboard_achievements
   for select using (true);
 drop policy if exists "Users read their leaderboard ownership" on public.leaderboard_owners;
 create policy "Users read their leaderboard ownership" on public.leaderboard_owners
@@ -357,17 +367,21 @@ create policy "Users read their leaderboard ownership" on public.leaderboard_own
 revoke all on public.leaderboard_entries from anon, authenticated;
 revoke all on public.leaderboard_profiles from anon, authenticated;
 revoke all on public.leaderboard_city_stats from anon, authenticated;
+revoke all on public.leaderboard_achievements from anon, authenticated;
 revoke all on public.leaderboard_owners from anon, authenticated;
 grant select on public.leaderboard_entries to anon, authenticated;
 grant select on public.leaderboard_city_stats to anon, authenticated;
+grant select on public.leaderboard_achievements to anon, authenticated;
 grant select on public.leaderboard_owners to authenticated;
 
 drop function if exists public.publish_leaderboard_snapshot(text, double precision, jsonb);
+drop function if exists public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint);
 create or replace function public.publish_leaderboard_snapshot(
   p_display_name text,
   p_total_discovered_km double precision,
   p_cities jsonb,
-  p_calculation_version smallint
+  p_calculation_version smallint,
+  p_achievements jsonb
 ) returns uuid
 language plpgsql
 security definer
@@ -377,6 +391,7 @@ declare
   v_user_id uuid := auth.uid();
   v_entry_id uuid;
   v_city jsonb;
+  v_achievement text;
   v_name text := btrim(p_display_name);
   v_profile_name text;
   v_name_changes smallint;
@@ -393,6 +408,10 @@ begin
   if jsonb_typeof(p_cities) <> 'array' or jsonb_array_length(p_cities) < 1
      or jsonb_array_length(p_cities) > 500 then
     raise exception 'Cities must be an array containing between 1 and 500 entries';
+  end if;
+  if jsonb_typeof(p_achievements) <> 'array'
+     or jsonb_array_length(p_achievements) > 20 then
+    raise exception 'Achievements must be an array containing at most 20 entries';
   end if;
   if p_calculation_version <> 3 then
     raise exception 'This Hecate version uses an outdated leaderboard calculation';
@@ -451,6 +470,7 @@ begin
       updated_at = now()
     where entry_id = v_entry_id;
     delete from public.leaderboard_city_stats where entry_id = v_entry_id;
+    delete from public.leaderboard_achievements where entry_id = v_entry_id;
   end if;
 
   for v_city in select value from jsonb_array_elements(p_cities)
@@ -470,6 +490,25 @@ begin
       (v_city ->> 'discovered_km')::double precision,
       (v_city ->> 'discovered_percentage')::double precision
     );
+  end loop;
+
+  for v_achievement in select value from jsonb_array_elements_text(p_achievements)
+  loop
+    if v_achievement not in (
+      'the-long-way',
+      'mostly-uncharted',
+      'full-circle',
+      'three-day-spark',
+      'momentum',
+      'local-ritual',
+      'city-hopper',
+      'against-the-familiar'
+    ) then
+      raise exception 'An achievement ID is invalid';
+    end if;
+    insert into public.leaderboard_achievements (entry_id, achievement_id)
+    values (v_entry_id, v_achievement)
+    on conflict do nothing;
   end loop;
 
   return v_entry_id;
@@ -527,11 +566,11 @@ begin
 end;
 $$;
 
-revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) from public, anon;
+revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) from public, anon;
 revoke all on function public.get_my_leaderboard_entry_id() from public, anon;
 revoke all on function public.get_my_leaderboard_profile() from public, anon;
 revoke all on function public.unpublish_leaderboard_snapshot() from public, anon;
-grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) to authenticated;
+grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) to authenticated;
 grant execute on function public.get_my_leaderboard_entry_id() to authenticated;
 grant execute on function public.get_my_leaderboard_profile() to authenticated;
 grant execute on function public.unpublish_leaderboard_snapshot() to authenticated;
@@ -547,6 +586,12 @@ $$;
 do $$
 begin
   alter publication supabase_realtime add table public.leaderboard_city_stats;
+exception when duplicate_object then null;
+end;
+$$;
+do $$
+begin
+  alter publication supabase_realtime add table public.leaderboard_achievements;
 exception when duplicate_object then null;
 end;
 $$;

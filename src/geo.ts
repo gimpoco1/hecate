@@ -43,12 +43,32 @@ export function discoveredDistanceForFootprints(
   points: Coordinate[],
   footprintForPoint: (point: Coordinate) => DiscoveryCell[],
 ) {
-  const revealed = new Set<string>()
-  let total = 0
+  return discoveryJourneyMetricsForFootprints(points, footprintForPoint)
+    .reduce((total, journey) => total + journey.newGroundKm, 0)
+}
 
-  for (const segment of splitRoute(points)) {
+export type DiscoveryJourneyMetric = {
+  journeyId: string
+  points: Coordinate[]
+  startedAt: number
+  finishedAt: number
+  travelledKm: number
+  newGroundKm: number
+}
+
+function discoveryJourneyMetricsForFootprints(
+  points: Coordinate[],
+  footprintForPoint: (point: Coordinate) => DiscoveryCell[],
+) {
+  const revealed = new Set<string>()
+  const metrics = new Map<string, DiscoveryJourneyMetric>()
+
+  for (const [segmentIndex, segment] of splitRoute(points).entries()) {
     const firstPoint = segment[0]
     if (!firstPoint) continue
+    const journeyId = firstPoint.walkId ?? `journey-${segmentIndex}`
+    let newGroundKm = 0
+    let travelledKm = 0
     footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)))
     let distanceSinceLastUnlockKm = 0
 
@@ -56,6 +76,7 @@ export function discoveredDistanceForFootprints(
       const previous = segment[index - 1]
       const point = segment[index]
       const segmentDistance = distanceKm(previous, point)
+      travelledKm += segmentDistance
       const steps = Math.max(1, Math.ceil(segmentDistance * 1_000 / DISCOVERY_DISTANCE_SAMPLE_M))
       const stepDistance = segmentDistance / steps
 
@@ -73,14 +94,39 @@ export function discoveredDistanceForFootprints(
           // A cell unlock represents the last small stretch of newly revealed
           // ground. Cap the credit at the reveal radius so a sparse GPS jump
           // cannot claim a long, already-known street before its endpoint.
-          total += Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
+          newGroundKm += Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
           distanceSinceLastUnlockKm = 0
         }
         footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
       }
     }
+
+    const existing = metrics.get(journeyId)
+    metrics.set(journeyId, existing ? {
+      ...existing,
+      points: [...existing.points, ...segment],
+      startedAt: Math.min(existing.startedAt, firstPoint.recordedAt),
+      finishedAt: Math.max(existing.finishedAt, segment.at(-1)?.recordedAt ?? firstPoint.recordedAt),
+      travelledKm: existing.travelledKm + travelledKm,
+      newGroundKm: existing.newGroundKm + newGroundKm,
+    } : {
+      journeyId,
+      points: segment,
+      startedAt: firstPoint.recordedAt,
+      finishedAt: segment.at(-1)?.recordedAt ?? firstPoint.recordedAt,
+      travelledKm,
+      newGroundKm,
+    })
   }
-  return total
+  return [...metrics.values()]
+}
+
+/** Per-recording totals using the same new-ground algorithm as the main map. */
+export function discoveryJourneyMetrics(points: Coordinate[]) {
+  return discoveryJourneyMetricsForFootprints(
+    points,
+    point => discoveryFootprintCells(pointToDiscoveryCell(point)),
+  )
 }
 
 /**

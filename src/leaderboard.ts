@@ -1,4 +1,5 @@
 import type { User } from '@supabase/supabase-js'
+import { earnedPersonalAchievementIds, isPersonalAchievementId, type PersonalAchievementId } from './achievements'
 import { canonicalCityForStoredBoundary, discoveredCityDistanceKm, discoveredCityPercentage, type CityBoundary } from './city'
 import { discoveredDistanceKm } from './geo'
 import { loadDiscoveredCities, loadSyncedDiscovery, supabase } from './storage'
@@ -18,6 +19,7 @@ export type LeaderboardEntry = {
   cityCount: number
   updatedAt: string
   cities: LeaderboardCity[]
+  achievements: PersonalAchievementId[]
 }
 
 export type LeaderboardProfile = {
@@ -39,6 +41,9 @@ type LeaderboardRow = {
     discovered_km: number | string
     discovered_percentage: number | string
   }>
+  leaderboard_achievements?: Array<{
+    achievement_id: string
+  }>
 }
 
 export const LEADERBOARD_CALCULATION_VERSION = 3
@@ -47,6 +52,7 @@ export type LeaderboardSnapshot = {
   calculationVersion: number
   totalDiscoveredKm: number
   cities: LeaderboardCity[]
+  achievements: PersonalAchievementId[]
 }
 
 export type CityLeaderboardGroup = {
@@ -88,6 +94,9 @@ export function mapLeaderboardRows(rows: LeaderboardRow[]): LeaderboardEntry[] {
       discoveredKm: Number(city.discovered_km),
       discoveredPercentage: Number(city.discovered_percentage),
     })),
+    achievements: (row.leaderboard_achievements ?? [])
+      .map(achievement => achievement.achievement_id)
+      .filter(isPersonalAchievementId),
   }))
 }
 
@@ -183,7 +192,7 @@ export async function loadLeaderboard() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('leaderboard_entries')
-    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
+    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage),leaderboard_achievements(achievement_id)')
     .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
     .order('total_discovered_km', { ascending: false })
   if (error) throw error
@@ -246,6 +255,7 @@ export function leaderboardSnapshotFromDiscovery(
     // complete discovery total remains 18.3 km.
     totalDiscoveredKm: discoveredDistanceKm(points),
     cities: citySnapshots,
+    achievements: earnedPersonalAchievementIds(points, cities, citySnapshots),
   }
 }
 
@@ -276,6 +286,7 @@ export async function publishLeaderboardSnapshot(displayName: string, snapshot: 
       discovered_km: city.discoveredKm,
       discovered_percentage: city.discoveredPercentage,
     })),
+    p_achievements: snapshot.achievements,
   })
   if (error) throw error
 }

@@ -48,7 +48,11 @@ button {
   position: absolute;
   inset: 0;
 }
-.map {
+.map-stage > .map.maplibregl-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   background: radial-gradient(
     circle at 52% 45%,
     #edf1ed 0,
@@ -405,6 +409,41 @@ button {
   color: var(--forest);
   font-size: 10px;
 }
+.test-route-controls__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.test-route-controls .test-route-controls__heading button {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+}
+.test-route-controls .test-route-controls__heading button:hover {
+  background: #e9ede7;
+}
+.test-route-controls__restore {
+  position: absolute;
+  z-index: 8;
+  top: 76px;
+  left: 18px;
+  border: 1px solid rgba(26, 57, 46, 0.12);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(250, 248, 242, 0.88);
+  box-shadow: 0 6px 18px rgba(27, 51, 42, 0.1);
+  color: rgba(24, 60, 47, 0.68);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
 .test-route-controls strong:not(:first-child) {
   margin-top: 7px;
 }
@@ -623,6 +662,90 @@ button {
     700 9px/1 "DM Sans",
     sans-serif;
 }
+.city-quest-progress {
+  width: min(100%, 310px);
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 7px;
+  margin-top: 7px;
+}
+.city-quest-progress__seal {
+  grid-row: 1 / span 2;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(24, 60, 47, 0.14);
+  border-radius: 50%;
+  background: #e9ece6;
+  color: #738078;
+  font: 750 8px/1 "Manrope", sans-serif;
+}
+.city-quest-progress__seal--1 {
+  background: #e7d9c8;
+  color: #795438;
+}
+.city-quest-progress__seal--2 {
+  background: #dfe6e2;
+  color: #4f6960;
+}
+.city-quest-progress__seal--3 {
+  border-color: rgba(109, 132, 57, 0.28);
+  background: #e6edcd;
+  color: #61782d;
+}
+.city-quest-progress__copy {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #68776f;
+  font-size: 8px;
+}
+.city-quest-progress__copy strong {
+  color: #4e6359;
+  font-weight: 750;
+}
+.city-quest-progress__copy small {
+  flex: 0 0 auto;
+  color: #7b8780;
+  font-size: 8px;
+}
+.city-quest-progress__track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(24, 60, 47, 0.09);
+}
+.city-quest-progress__track span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: #8da551;
+}
+.city-quest-progress--complete .city-quest-progress__track {
+  background: #8da551;
+}
+.achievement-artwork {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+.achievement-artwork img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.achievement-artwork--fallback {
+  overflow: hidden;
+  border: 1px solid rgba(24, 60, 47, 0.14);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #eef3df, #e4ebe6);
+  color: var(--forest);
+}
 .discovery-control {
   flex: 0 0 auto;
   width: 52px;
@@ -729,10 +852,10 @@ button {
   margin: 0;
   padding: 0;
 }
-.discovered-cities li {
+.discovered-cities > ul > li {
   border-bottom: 1px solid rgba(34, 65, 53, 0.09);
 }
-.discovered-cities li button {
+.discovered-cities > ul > li > button {
   width: 100%;
   min-height: 50px;
   display: flex;
@@ -746,10 +869,27 @@ button {
   text-align: left;
   cursor: pointer;
 }
-.discovered-cities li button:active {
+.discovered-cities__identity {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.discovered-cities__identity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.discovered-cities__identity small {
+  overflow: hidden;
+  color: #748078;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.discovered-cities > ul > li > button:active {
   opacity: 0.65;
 }
-.discovered-cities li strong {
+.discovered-cities > ul > li strong {
   color: #78903b;
   font:
     700 16px/1 "Manrope",
@@ -758,7 +898,8 @@ button {
 }
 .discovered-cities__metrics {
   display: flex;
-  align-items: baseline;
+  flex: 0 0 auto;
+  align-items: center;
   gap: 10px;
 }
 .discovered-cities__metrics small {
@@ -771,6 +912,267 @@ button {
   color: #748078;
   font-size: 13px;
   text-align: center;
+}
+.personal-achievements {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(34, 65, 53, 0.12);
+}
+.personal-achievements__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.personal-achievements__heading > span {
+  color: var(--forest);
+  font: 700 16px/1 "Manrope", sans-serif;
+}
+.personal-achievements__heading small {
+  color: #748078;
+  font-size: 11px;
+}
+.discovered-cities .personal-achievements ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(102px, 1fr));
+  gap: 9px;
+}
+.discovered-cities .personal-achievements li {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.personal-achievements button.achievement-card {
+  width: 100%;
+  min-height: 142px;
+  display: block;
+  padding: 0;
+  text-align: center;
+}
+.achievement-card {
+  --achievement-accent: #748f45;
+  position: relative;
+  width: 100%;
+  min-height: 176px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0;
+  background: transparent;
+  color: var(--forest);
+  cursor: pointer;
+  perspective: 950px;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+}
+.achievement-card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 12% 8%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--achievement-accent) 45%, transparent);
+  filter: blur(18px);
+  opacity: 0;
+  transform: scale(0.72);
+  transition:
+    opacity 320ms ease,
+    transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.achievement-card__inner {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  transform-style: preserve-3d;
+  transition: transform 760ms cubic-bezier(0.16, 0.85, 0.22, 1.15);
+  will-change: transform;
+}
+.achievement-card__face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(24, 60, 47, 0.1);
+  border-radius: inherit;
+  padding: 14px 10px 12px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 7px 17px rgba(25, 53, 43, 0.06);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.achievement-card__front {
+  grid-template-rows: 78px 30px 12px;
+  gap: 5px;
+}
+.achievement-card--compact .achievement-card__front {
+  grid-template-rows: 64px 28px 11px;
+  gap: 4px;
+  padding: 10px 8px;
+}
+.achievement-card__front::after {
+  content: "";
+  position: absolute;
+  inset: -70% -45%;
+  background: linear-gradient(
+    112deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.78) 49%,
+    transparent 60%
+  );
+  opacity: 0;
+  transform: translateX(-45%) rotate(8deg);
+  transition:
+    transform 750ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease;
+  pointer-events: none;
+}
+.achievement-card__back {
+  align-content: center;
+  gap: 7px;
+  padding: 16px 13px;
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.3), transparent 32%),
+    linear-gradient(145deg, #334f43, #173a2e);
+  color: white;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.achievement-card[data-category="single-walk"] {
+  --achievement-accent: #e1794d;
+}
+.achievement-card[data-category="single-walk"] .achievement-card__back {
+  background:
+    radial-gradient(circle at 22% 12%, rgba(255, 239, 203, 0.35), transparent 32%),
+    linear-gradient(145deg, #9f4935, #55291f);
+}
+.achievement-card[data-category="consistency"] {
+  --achievement-accent: #aa6aa8;
+}
+.achievement-card[data-category="consistency"] .achievement-card__back {
+  background:
+    radial-gradient(circle at 22% 12%, rgba(255, 226, 255, 0.32), transparent 32%),
+    linear-gradient(145deg, #754a77, #37283f);
+}
+.achievement-card__artwork {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 6px 7px rgba(24, 60, 47, 0.14));
+  transform: translateZ(24px);
+  transition: transform 650ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.achievement-card--locked .achievement-card__artwork {
+  filter: grayscale(1) opacity(0.38);
+}
+.achievement-card__front strong {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  color: #40544a;
+  font: 700 11px/1.18 "Manrope", sans-serif;
+  text-wrap: balance;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.achievement-card--compact .achievement-card__front strong {
+  font-size: 10px;
+}
+.achievement-card__front small {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  width: 100%;
+  color: #7b8780;
+  font-size: 8px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.achievement-card__category {
+  color: rgba(255, 255, 255, 0.65);
+  font: 700 7px/1.2 "Manrope", sans-serif;
+  letter-spacing: 0.75px;
+  text-transform: uppercase;
+}
+.achievement-card__back strong {
+  color: white;
+  font: 700 12px/1.2 "Manrope", sans-serif;
+}
+.achievement-card__description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 9px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.achievement-card__back small {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 8px;
+  line-height: 1.25;
+}
+.achievement-card__progress {
+  width: 100%;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.achievement-card__progress span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.82);
+}
+.achievement-card[aria-pressed="true"]::before {
+  opacity: 0.55;
+  transform: scale(1.08);
+}
+.achievement-card[aria-pressed="true"] .achievement-card__inner {
+  transform: translateY(-3px) rotateX(3deg) rotateY(180deg) rotateZ(-1deg)
+    scale(1.025);
+}
+.achievement-card[aria-pressed="true"] .achievement-card__artwork {
+  transform: translateZ(34px) rotate(-4deg) scale(1.08);
+}
+.achievement-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--achievement-accent) 50%, white);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .achievement-card:hover::before {
+    opacity: 0.55;
+    transform: scale(1.08);
+  }
+  .achievement-card:hover .achievement-card__inner {
+    transform: translateY(-3px) rotateX(3deg) rotateY(180deg) rotateZ(-1deg)
+      scale(1.025);
+  }
+  .achievement-card:hover .achievement-card__front::after {
+    opacity: 0.8;
+    transform: translateX(46%) rotate(8deg);
+  }
+  .achievement-card:hover .achievement-card__artwork {
+    transform: translateZ(34px) rotate(-4deg) scale(1.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .achievement-card__inner,
+  .achievement-card__artwork,
+  .achievement-card::before,
+  .achievement-card__front::after {
+    transition-duration: 1ms;
+  }
 }
 .tracking-notice {
   position: absolute;
@@ -1838,7 +2240,6 @@ button {
   padding: clamp(18px, 2vw, 24px);
   background: #edf1eb;
   color: var(--forest);
-  cursor: pointer;
   text-align: left;
   transition:
     background-color 180ms ease,
@@ -1875,7 +2276,7 @@ button {
     gap: 0;
     margin: 7px 0 0;
   }
-  .city-treemap--stacked .city-treemap__tile:not(.city-treemap__tile--featured) .city-treemap__leaders li {
+  .city-treemap--stacked .city-treemap__tile:not(.city-treemap__tile--featured) .city-treemap__leader-button {
     grid-template-columns: 14px 21px minmax(0, 1fr) auto;
     gap: 5px;
     min-height: 22px;
@@ -1918,6 +2319,21 @@ button {
   outline: 3px solid rgba(24, 60, 47, 0.28);
   outline-offset: 3px;
 }
+.city-treemap__open-card {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  border-radius: inherit;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.city-treemap__open-card:focus-visible {
+  outline: 3px solid rgba(24, 60, 47, 0.28);
+  outline-offset: -4px;
+}
 .city-treemap__number {
   display: grid;
   width: 30px;
@@ -1952,6 +2368,8 @@ button {
   font: 600 clamp(9px, 1vw, 11px)/1.3 "Manrope", sans-serif;
 }
 .city-treemap__leaders {
+  position: relative;
+  z-index: 2;
   width: 100%;
   display: grid;
   gap: 2px;
@@ -1961,13 +2379,26 @@ button {
 }
 .city-treemap__leaders li {
   min-width: 0;
+}
+.city-treemap__leader-button {
+  width: 100%;
   display: grid;
   grid-template-columns: 19px 27px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 31px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: rgba(24, 60, 47, 0.72);
   font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.city-treemap__leader-button:hover .city-treemap__leader-name,
+.city-treemap__leader-button:focus-visible .city-treemap__leader-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .city-treemap__leaders li + li {
   border-top: 1px solid rgba(24, 60, 47, 0.07);
@@ -1999,6 +2430,8 @@ button {
   font-weight: 700;
 }
 .city-treemap__view-all {
+  position: relative;
+  z-index: 0;
   min-height: 34px;
   display: flex;
   align-items: center;
@@ -2055,12 +2488,26 @@ button {
   border-top: 1px solid rgba(24, 60, 47, 0.09);
 }
 .city-detail-list li {
+  border-bottom: 1px solid rgba(24, 60, 47, 0.075);
+}
+.city-detail-list li > button {
+  width: 100%;
   display: grid;
   grid-template-columns: 42px 42px minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
+  border: 0;
   padding: 14px 12px;
-  border-bottom: 1px solid rgba(24, 60, 47, 0.075);
+  background: transparent;
+  color: var(--forest);
+  text-align: left;
+  cursor: pointer;
+}
+.city-detail-list li > button:hover,
+.city-detail-list li > button:focus-visible {
+  border-radius: 12px;
+  outline: 2px solid rgba(24, 60, 47, 0.12);
+  background: rgba(255, 255, 255, 0.55);
 }
 .city-detail-list__mine {
   border-radius: 14px;
@@ -2225,6 +2672,228 @@ button {
   background: rgba(17, 40, 32, 0.22);
   backdrop-filter: blur(7px);
   animation: leaderboard-fade 180ms ease;
+}
+.explorer-profile-backdrop {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(17, 40, 32, 0.25);
+  backdrop-filter: blur(8px);
+  animation: leaderboard-fade 180ms ease;
+}
+.explorer-profile {
+  position: relative;
+  width: min(480px, 100%);
+  height: 100%;
+  overflow: auto;
+  padding: max(76px, env(safe-area-inset-top)) 34px 34px;
+  background: #f8f7f2;
+  box-shadow: -24px 0 80px rgba(20, 44, 35, 0.2);
+  animation: leaderboard-panel-in 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.explorer-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.explorer-profile__identity h2 {
+  margin: 6px 0 0;
+  font: 650 30px/1 "Manrope", sans-serif;
+  letter-spacing: -1.2px;
+}
+.explorer-profile__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 25px 0 30px;
+  overflow: hidden;
+  border: 1px solid rgba(24, 60, 47, 0.09);
+  border-radius: 15px;
+  background: white;
+}
+.explorer-profile__summary span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 15px 12px;
+}
+.explorer-profile__summary span + span {
+  border-left: 1px solid rgba(24, 60, 47, 0.08);
+}
+.explorer-profile__summary strong {
+  overflow: hidden;
+  font: 650 17px/1.1 "Manrope", sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explorer-profile__summary small {
+  color: #7c8983;
+  font-size: 9px;
+}
+.explorer-achievements {
+  margin-bottom: 32px;
+}
+.explorer-achievements > div h3,
+.explorer-passport > div:first-child h3 {
+  margin: 7px 0 18px;
+  font: 650 23px/1.1 "Manrope", sans-serif;
+  letter-spacing: -0.7px;
+}
+.explorer-achievements ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.explorer-achievements li {
+  min-width: 0;
+  min-height: 176px;
+}
+.explorer-achievements .achievement-card {
+  height: 176px;
+}
+.explorer-passport ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.passport-badge {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 72px;
+  padding: 10px 14px 10px 10px;
+  border: 1px solid rgba(98, 123, 58, 0.16);
+  border-radius: 17px;
+  background: #eff4df;
+}
+.passport-badge--2 {
+  border-color: rgba(41, 103, 85, 0.15);
+  background: #e6efec;
+}
+.passport-badge--3 {
+  border-color: rgba(95, 85, 113, 0.14);
+  background: #ececf1;
+}
+.passport-badge__seal {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(24, 60, 47, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.62);
+}
+.passport-badge__seal small {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--forest);
+  color: white;
+  font: 700 8px/1 "Manrope", sans-serif;
+}
+.passport-badge > span:nth-child(2) {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.passport-badge > span:nth-child(2) strong {
+  font: 650 13px/1.2 "Manrope", sans-serif;
+}
+.passport-badge > span:nth-child(2) small {
+  overflow: hidden;
+  color: #718078;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.passport-badge em {
+  color: rgba(24, 60, 47, 0.65);
+  font: normal 700 10px/1 "Manrope", sans-serif;
+}
+.explorer-passport__empty {
+  padding: 22px;
+  border: 1px dashed rgba(24, 60, 47, 0.18);
+  border-radius: 17px;
+  color: #718078;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+.explorer-profile__privacy {
+  margin: 25px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid rgba(24, 60, 47, 0.09);
+  color: #7b8781;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.leaderboard-achievement-sharing {
+  margin: 20px 0 0;
+  border: 0;
+  padding: 0;
+}
+.leaderboard-achievement-sharing legend {
+  margin-bottom: 7px;
+  color: #53675d;
+  font-size: 11px;
+  font-weight: 700;
+}
+.leaderboard-achievement-sharing__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.leaderboard-achievement-sharing__grid label {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(24, 60, 47, 0.1);
+  border-radius: 13px;
+  padding: 8px;
+  background: white;
+  cursor: pointer;
+}
+.leaderboard-achievement-sharing__grid input {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  accent-color: var(--forest);
+}
+.leaderboard-achievement-sharing__grid label:has(input:not(:checked)) {
+  opacity: 0.52;
+}
+.leaderboard-achievement-sharing__grid label > span:last-child {
+  overflow: hidden;
+  padding-right: 14px;
+  color: #40544a;
+  font: 700 9px/1.25 "Manrope", sans-serif;
+  text-overflow: ellipsis;
+}
+.leaderboard-achievement-sharing__empty {
+  margin: 10px 0 0;
+  padding: 13px;
+  border-radius: 12px;
+  background: #eef0ea;
+  color: #718078;
+  font-size: 10px;
+  line-height: 1.4;
 }
 @keyframes leaderboard-fade {
   from {
@@ -2558,7 +3227,7 @@ button {
   .city-detail-total {
     max-width: 120px;
   }
-  .city-detail-list li {
+  .city-detail-list li > button {
     grid-template-columns: 28px 35px minmax(0, 1fr) auto;
     gap: 8px;
     padding: 12px 2px;
@@ -2590,5 +3259,8 @@ button {
   .leaderboard-panel {
     padding-left: 24px;
     padding-right: 24px;
+  }
+  .explorer-profile {
+    padding: max(70px, env(safe-area-inset-top)) 20px 28px;
   }
 }

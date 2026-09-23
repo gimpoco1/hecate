@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { User } from "@supabase/supabase-js";
+import {
+  personalAchievementDefinition,
+  type PersonalAchievementId,
+} from "../achievements";
 import { authRedirectUrl } from "../auth";
+import { earnedCityBadges } from "../badges";
+import { AchievementArtwork } from "./AchievementArtwork";
+import { AchievementCard } from "./AchievementCard";
 import {
   buildLeaderboardSnapshot,
   cityLeaderboardGroups,
@@ -56,6 +63,124 @@ function ExplorerAvatar({ name, rank }: { name: string; rank?: number }) {
   );
 }
 
+function ExplorerProfilePanel({
+  entry,
+  onClose,
+}: {
+  entry: LeaderboardEntry | null;
+  onClose: () => void;
+}) {
+  if (!entry) return null;
+  const cityBadges = entry.cities.flatMap((city) =>
+    earnedCityBadges(
+      city.cityId,
+      city.cityName,
+      city.discoveredKm,
+    ),
+  );
+  const personalAchievements = entry.achievements.map(
+    personalAchievementDefinition,
+  );
+
+  return (
+    <div className="explorer-profile-backdrop" onClick={onClose}>
+      <aside
+        className="explorer-profile"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="explorer-profile-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          className="leaderboard-panel__close"
+          type="button"
+          onClick={onClose}
+          aria-label="Close explorer profile"
+        >
+          <XIcon />
+        </button>
+        <div className="explorer-profile__identity">
+          <ExplorerAvatar name={entry.displayName} />
+          <div>
+            <div className="eyebrow">Explorer passport</div>
+            <h2 id="explorer-profile-title">{entry.displayName}</h2>
+          </div>
+        </div>
+        <div className="explorer-profile__summary">
+          <span>
+            <strong>{formatDistance(entry.totalDiscoveredKm)}</strong>
+            <small>shared ground</small>
+          </span>
+          <span>
+            <strong>{entry.cities.length}</strong>
+            <small>shared cities</small>
+          </span>
+          <span>
+            <strong>{cityBadges.length + personalAchievements.length}</strong>
+            <small>badges earned</small>
+          </span>
+        </div>
+        {personalAchievements.length > 0 && (
+          <section
+            className="explorer-achievements"
+            aria-labelledby="achievements-title"
+          >
+            <div>
+              <div className="eyebrow">Earned achievements</div>
+              <h3 id="achievements-title">Stories from the map.</h3>
+            </div>
+            <ul>
+              {personalAchievements.map((achievement) => (
+                <li key={achievement.id}>
+                  <AchievementCard achievement={achievement} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <section className="explorer-passport" aria-labelledby="passport-title">
+          <div>
+            <div className="eyebrow">City badges</div>
+            <h3 id="passport-title">Places made personal.</h3>
+          </div>
+          {cityBadges.length ? (
+            <ul>
+              {cityBadges.map((badge) => (
+                <li
+                  key={`${badge.cityId}:${badge.id}`}
+                  className={`passport-badge passport-badge--${badge.level}`}
+                >
+                  <span className="passport-badge__seal" aria-hidden="true">
+                    <AchievementArtwork
+                      image={badge.image}
+                      title={badge.title}
+                      size={48}
+                    />
+                    <small>{badge.level}</small>
+                  </span>
+                  <span>
+                    <strong>{badge.title}</strong>
+                    <small>{badge.cityName}</small>
+                  </span>
+                  <em>{formatDistance(badge.thresholdKm)}</em>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="explorer-passport__empty">
+              The first badge unlocks after 1 km of new ground in a shared city.
+            </div>
+          )}
+        </section>
+        <p className="explorer-profile__privacy">
+          Only accomplishments and city totals this explorer chose to publish
+          are shown. Routes and locations remain private.
+        </p>
+      </aside>
+    </div>
+  );
+}
+
 type AccountPanelProps = {
   open: boolean;
   user: User | null;
@@ -64,6 +189,7 @@ type AccountPanelProps = {
   displayNameChanges: number;
   profileLoaded: boolean;
   publishedCityIds: string[];
+  publishedAchievementIds: PersonalAchievementId[];
   onClose: () => void;
   onPublished: () => Promise<void>;
 };
@@ -76,6 +202,7 @@ function LeaderboardAccountPanel({
   displayNameChanges,
   profileLoaded,
   publishedCityIds,
+  publishedAchievementIds,
   onClose,
   onPublished,
 }: AccountPanelProps) {
@@ -84,18 +211,23 @@ function LeaderboardAccountPanel({
   const [displayName, setDisplayName] = useState("");
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
+  const [selectedAchievementIds, setSelectedAchievementIds] = useState<
+    PersonalAchievementId[]
+  >([]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const displayNameDirty = useRef(false);
   const citySelectionDirty = useRef(false);
+  const achievementSelectionDirty = useRef(false);
 
   useEffect(() => {
     if (!open) {
       setSnapshot(null);
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
+      achievementSelectionDirty.current = false;
       return;
     }
     if (!user) {
@@ -139,6 +271,13 @@ function LeaderboardAccountPanel({
       : availableCityIds;
     setSelectedCityIds(nextSelection);
   }, [entryId, open, publishedCityIds, snapshot]);
+
+  useEffect(() => {
+    if (!open || !snapshot || achievementSelectionDirty.current) return;
+    setSelectedAchievementIds(
+      entryId ? publishedAchievementIds : snapshot.achievements,
+    );
+  }, [entryId, open, publishedAchievementIds, snapshot]);
 
   if (!open) return null;
 
@@ -203,11 +342,17 @@ function LeaderboardAccountPanel({
       }
       await publishLeaderboardSnapshot(
         displayName,
-        leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
+        {
+          ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
+          achievements: currentSnapshot.achievements.filter((achievementId) =>
+            selectedAchievementIds.includes(achievementId),
+          ),
+        },
       );
       await onPublished();
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
+      achievementSelectionDirty.current = false;
       setError(false);
       setMessage(
         entryId
@@ -400,6 +545,62 @@ function LeaderboardAccountPanel({
                   ))}
               </div>
             </fieldset>
+            <fieldset className="leaderboard-achievement-sharing">
+              <legend>Achievements to share</legend>
+              <div className="leaderboard-city-sharing__actions">
+                <span>Share only the accomplishments you want featured.</span>
+                {snapshot?.achievements.length ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      achievementSelectionDirty.current = true;
+                      setSelectedAchievementIds(snapshot.achievements);
+                    }}
+                  >
+                    Select all
+                  </button>
+                ) : null}
+              </div>
+              {snapshot?.achievements.length ? (
+                <div className="leaderboard-achievement-sharing__grid">
+                  {snapshot.achievements.map((achievementId) => {
+                    const achievement =
+                      personalAchievementDefinition(achievementId);
+                    return (
+                      <label key={achievementId}>
+                        <input
+                          type="checkbox"
+                          checked={selectedAchievementIds.includes(
+                            achievementId,
+                          )}
+                          onChange={(event) => {
+                            achievementSelectionDirty.current = true;
+                            setSelectedAchievementIds((current) =>
+                              event.target.checked
+                                ? [...current, achievementId]
+                                : current.filter(
+                                    (currentId) => currentId !== achievementId,
+                                  ),
+                            );
+                          }}
+                        />
+                        <AchievementArtwork
+                          image={achievement.image}
+                          title={achievement.title}
+                          size={42}
+                        />
+                        <span>{achievement.title}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="leaderboard-achievement-sharing__empty">
+                  Your first personal achievement will appear here after a
+                  qualifying discovery.
+                </p>
+              )}
+            </fieldset>
             <div className="leaderboard-preview" aria-busy={loadingSnapshot}>
               <div>
                 <small>Shared ground</small>
@@ -426,7 +627,7 @@ function LeaderboardAccountPanel({
               </div>
               <div>
                 <small>Shared</small>
-                <strong>Selected cities</strong>
+                <strong>{selectedAchievementIds.length} badges</strong>
               </div>
             </div>
             <button
@@ -479,6 +680,7 @@ function LeaderboardAccountPanel({
 export function WebLeaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [focusedCityId, setFocusedCityId] = useState<string | null>(null);
+  const [focusedEntryId, setFocusedEntryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -522,6 +724,11 @@ export function WebLeaderboard() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "leaderboard_city_stats" },
+        () => void refresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leaderboard_achievements" },
         () => void refresh(),
       )
       .subscribe();
@@ -576,6 +783,8 @@ export function WebLeaderboard() {
   );
   const myEntryId = myProfile?.entryId ?? null;
   const myEntry = entries.find((entry) => entry.entryId === myEntryId) ?? null;
+  const focusedEntry =
+    entries.find((entry) => entry.entryId === focusedEntryId) ?? null;
 
   return (
     <main className="leaderboard-page">
@@ -723,17 +932,13 @@ export function WebLeaderboard() {
               <article
                 key={group.cityId}
                 className={`city-treemap__tile${index === 0 ? " city-treemap__tile--featured" : ""}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`View the ${group.cityName} ranking`}
-                onClick={() => setFocusedCityId(group.cityId)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setFocusedCityId(group.cityId);
-                  }
-                }}
               >
+                <button
+                  className="city-treemap__open-card"
+                  type="button"
+                  aria-label={`View the ${group.cityName} ranking`}
+                  onClick={() => setFocusedCityId(group.cityId)}
+                />
                 <span className="city-treemap__number">
                   {String(index + 1).padStart(2, "0")}
                 </span>
@@ -748,10 +953,17 @@ export function WebLeaderboard() {
                 <ol className="city-treemap__leaders" aria-label={`Top explorers in ${group.cityName}`}>
                   {group.explorers.slice(0, 5).map(({ entry, city }, explorerIndex) => (
                     <li key={entry.entryId}>
-                      <span className="city-treemap__leader-rank">{explorerIndex + 1}</span>
-                      <span className="city-treemap__leader-avatar" aria-hidden="true">{entry.displayName.trim().charAt(0).toUpperCase()}</span>
-                      <span className="city-treemap__leader-name">{entry.displayName}</span>
-                      <strong>{formatDistance(city.discoveredKm)}</strong>
+                      <button
+                        className="city-treemap__leader-button"
+                        type="button"
+                        onClick={() => setFocusedEntryId(entry.entryId)}
+                        aria-label={`View ${entry.displayName}'s explorer passport`}
+                      >
+                        <span className="city-treemap__leader-rank">{explorerIndex + 1}</span>
+                        <span className="city-treemap__leader-avatar" aria-hidden="true">{entry.displayName.trim().charAt(0).toUpperCase()}</span>
+                        <span className="city-treemap__leader-name">{entry.displayName}</span>
+                        <strong>{formatDistance(city.discoveredKm)}</strong>
+                      </button>
                     </li>
                   ))}
                 </ol>
@@ -778,19 +990,25 @@ export function WebLeaderboard() {
                   entry.entryId === myEntryId ? "city-detail-list__mine" : ""
                 }
               >
-                <span className="city-detail-list__rank">{index + 1}</span>
-                <ExplorerAvatar name={entry.displayName} />
-                <span className="city-detail-list__identity">
-                  <strong>{entry.displayName}</strong>
-                  <small>{relativeUpdate(entry.updatedAt)}</small>
-                </span>
-                <span className="city-detail-list__metric">
-                  <strong>{formatDistance(city.discoveredKm)}</strong>
-                  <small>
-                    {formatPercentage(city.discoveredPercentage)} of{" "}
-                    {focusedCity.cityName}
-                  </small>
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setFocusedEntryId(entry.entryId)}
+                  aria-label={`View ${entry.displayName}'s explorer passport`}
+                >
+                  <span className="city-detail-list__rank">{index + 1}</span>
+                  <ExplorerAvatar name={entry.displayName} />
+                  <span className="city-detail-list__identity">
+                    <strong>{entry.displayName}</strong>
+                    <small>{relativeUpdate(entry.updatedAt)}</small>
+                  </span>
+                  <span className="city-detail-list__metric">
+                    <strong>{formatDistance(city.discoveredKm)}</strong>
+                    <small>
+                      {formatPercentage(city.discoveredPercentage)} of{" "}
+                      {focusedCity.cityName}
+                    </small>
+                  </span>
+                </button>
               </li>
             ))}
           </ol>
@@ -827,8 +1045,13 @@ export function WebLeaderboard() {
         displayNameChanges={myProfile?.displayNameChanges ?? 0}
         profileLoaded={profileLoaded}
         publishedCityIds={myEntry?.cities.map((city) => city.cityId) ?? []}
+        publishedAchievementIds={myEntry?.achievements ?? []}
         onClose={() => setPanelOpen(false)}
         onPublished={refreshMine}
+      />
+      <ExplorerProfilePanel
+        entry={focusedEntry}
+        onClose={() => setFocusedEntryId(null)}
       />
     </main>
   );

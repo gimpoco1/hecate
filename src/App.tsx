@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import { evaluatePersonalAchievements } from "./achievements";
+import { cityBadgeProgress, earnedCityBadges } from "./badges";
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
@@ -13,6 +15,7 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { AchievementCard } from "./components/AchievementCard";
 import { SyncSheet } from "./components/SyncSheet";
 import {
   ChevronIcon,
@@ -99,6 +102,7 @@ const REMINDER_NOTIFICATION_ID = 1042;
 const INACTIVITY_NOTIFICATION_ID = 1043;
 const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
 const REMINDER_TEST_NOTIFICATION_ID = 1045;
+const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 
 function reminderMessage() {
   return "You have been moving through new areas for 5 minutes. Start recording your journey?";
@@ -152,6 +156,54 @@ function formatDuration(startedAt: number, finishedAt: number) {
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
 }
 
+function CityQuestProgress({
+  cityId,
+  cityName,
+  distance,
+}: {
+  cityId: string;
+  cityName: string;
+  distance: number;
+}) {
+  const { next, progress } = cityBadgeProgress(distance);
+  const earned = earnedCityBadges(cityId, cityName, distance);
+  const latest = earned.at(-1);
+
+  return (
+    <div
+      className={`city-quest-progress${next ? "" : " city-quest-progress--complete"}`}
+      aria-label={
+        next
+          ? `${formatDistance(distance)} of ${formatDistance(next.thresholdKm)} toward the ${next.title} badge in ${cityName}`
+          : `All city badges earned in ${cityName}`
+      }
+    >
+      <span className={`city-quest-progress__seal city-quest-progress__seal--${latest?.level ?? 0}`}>
+        {latest ? latest.level : "·"}
+      </span>
+      <span className="city-quest-progress__copy">
+        <span>
+          {next ? (
+            <>
+              Next: <strong>{next.title}</strong>
+            </>
+          ) : (
+            <strong>City Cartographer earned</strong>
+          )}
+        </span>
+        {next && (
+          <small>
+            {formatDistance(distance)} / {formatDistance(next.thresholdKm)}
+          </small>
+        )}
+      </span>
+      <span className="city-quest-progress__track" aria-hidden="true">
+        <span style={{ width: `${progress * 100}%` }} />
+      </span>
+    </div>
+  );
+}
+
 function createWalkId() {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -181,6 +233,15 @@ export default function App() {
     status: "Waiting for location",
   });
   const [reminderTestMessage, setReminderTestMessage] = useState("");
+  const [devToolsVisible, setDevToolsVisible] = useState(() => {
+    if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
+      return false;
+    try {
+      return localStorage.getItem(DEV_TOOLS_VISIBILITY_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   const [tracking, setTracking] = useState<TrackingState>("idle");
@@ -322,6 +383,15 @@ export default function App() {
   const devToolsEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
 
+  const setDevToolsOpen = (visible: boolean) => {
+    setDevToolsVisible(visible);
+    try {
+      localStorage.setItem(DEV_TOOLS_VISIBILITY_KEY, String(visible));
+    } catch {
+      /* The control still works for this session when storage is unavailable. */
+    }
+  };
+
   const updateInactivitySchedule = useCallback(
     (dueAt: number | null) => {
       if (inactivityDueAtRef.current === dueAt) return;
@@ -439,6 +509,18 @@ export default function App() {
     () =>
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
+  );
+  const achievementEvaluations = useMemo(
+    () =>
+      evaluatePersonalAchievements(
+        points,
+        cityProgresses.map(({ city }) => city),
+        cityProgresses.map(({ city, distance }) => ({
+          cityId: city.id,
+          discoveredKm: distance,
+        })),
+      ),
+    [cityProgresses, points],
   );
 
   useEffect(() => {
@@ -1925,12 +2007,22 @@ export default function App() {
         onZoomChange={onZoomChange}
         mapRef={mapRef}
       />
-      {devToolsEnabled && (
+      {devToolsEnabled && devToolsVisible && (
         <aside
           className="test-route-controls"
           aria-label="Development test tools"
         >
-          <strong>Test routes</strong>
+          <div className="test-route-controls__heading">
+            <strong>Test routes</strong>
+            <button
+              type="button"
+              onClick={() => setDevToolsOpen(false)}
+              aria-label="Hide development test tools"
+              title="Hide development test tools"
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => void runTestRoute("barcelona-exploration.gpx")}
@@ -2003,6 +2095,15 @@ export default function App() {
             <small role="status">{reminderTestMessage}</small>
           )}
         </aside>
+      )}
+      {devToolsEnabled && !devToolsVisible && (
+        <button
+          className="test-route-controls__restore"
+          type="button"
+          onClick={() => setDevToolsOpen(true)}
+        >
+          Dev tools
+        </button>
       )}
 
       <header className="topbar">
@@ -2222,6 +2323,13 @@ export default function App() {
                 <p className="discovery-sign-in">Sign in to start tracking</p>
               )}
             </div>
+            {accountUserId && summaryCity && (
+              <CityQuestProgress
+                cityId={summaryCity.id}
+                cityName={summaryCity.name}
+                distance={currentCityDistance}
+              />
+            )}
           </div>
           <button
             className={`discovery-control discovery-control--${tracking}`}
@@ -2289,28 +2397,78 @@ export default function App() {
               {accountUserId ? (
                 cityProgresses.length ? (
                   <ul>
-                    {cityProgresses.map(({ city, percentage, distance }) => (
-                      <li key={city.id}>
-                        <button
-                          type="button"
-                          onClick={() => focusDiscoveredCity(city)}
-                        >
-                          <span>{city.name}</span>
-                          <span className="discovered-cities__metrics">
-                            <small>{formatDistance(distance)}</small>
-                            <strong>
-                              {formatDiscoveryPercentage(percentage, false)}
-                            </strong>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+                    {cityProgresses.map(({ city, percentage, distance }) => {
+                      const earned = earnedCityBadges(
+                        city.id,
+                        city.name,
+                        distance,
+                      );
+                      const next = cityBadgeProgress(distance).next;
+                      return (
+                        <li key={city.id}>
+                          <button
+                            type="button"
+                            onClick={() => focusDiscoveredCity(city)}
+                          >
+                            <span className="discovered-cities__identity">
+                              <span>{city.name}</span>
+                              <small>
+                                {next
+                                  ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
+                                  : `${earned.at(-1)?.title} · all badges earned`}
+                              </small>
+                            </span>
+                            <span className="discovered-cities__metrics">
+                              <span className={`city-quest-progress__seal city-quest-progress__seal--${earned.at(-1)?.level ?? 0}`}>
+                                {earned.at(-1)?.level ?? "·"}
+                              </span>
+                              <strong>
+                                {formatDiscoveryPercentage(percentage, false)}
+                              </strong>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p>Start a walk to add your first city.</p>
                 )
               ) : (
                 <p>Sign in to see your cities and keep them in sync.</p>
+              )}
+              {accountUserId && (
+                <section
+                  className="personal-achievements"
+                  aria-labelledby="personal-achievements-title"
+                >
+                  <div className="personal-achievements__heading">
+                    <span id="personal-achievements-title">Achievements</span>
+                    <small>
+                      {achievementEvaluations.filter(({ earned }) => earned).length}
+                      {" / "}
+                      {achievementEvaluations.length} earned
+                    </small>
+                  </div>
+                  <ul>
+                    {achievementEvaluations.map(
+                      ({ definition, earned, progress, progressLabel }) => (
+                        <li
+                          key={definition.id}
+                          className={earned ? "personal-achievements__earned" : ""}
+                        >
+                          <AchievementCard
+                            achievement={definition}
+                            earned={earned}
+                            progress={progress}
+                            progressLabel={progressLabel}
+                            compact
+                          />
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
               )}
             </div>
           )}
