@@ -4,10 +4,10 @@ import { supabase } from './storage'
 
 const NATIVE_AUTH_CALLBACK = 'hecate://auth/callback'
 
-export function authRedirectUrl() {
+export function authRedirectUrl(webPath = '/') {
   return Capacitor.isNativePlatform()
     ? NATIVE_AUTH_CALLBACK
-    : new URL('/', window.location.origin).toString()
+    : new URL(webPath, window.location.origin).toString()
 }
 
 export async function handleAuthCallback(url: string) {

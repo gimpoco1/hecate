@@ -6,20 +6,28 @@ import { clearReminderPreference } from '../explorationReminder'
 import { INACTIVITY_RADIUS_M, INACTIVITY_REMINDER_MINUTES } from '../inactivityReminder'
 import { openLocationSettings } from '../location'
 import { isSyncConfigured, supabase } from '../storage'
-import { ChevronIcon, XIcon } from './Icons'
+import { CITY_MILESTONE_TIERS } from '../badges'
+import { AchievementArtwork } from './AchievementArtwork'
+import { CityLevelStars } from './CityLevelStars'
+import { ChevronIcon, InfoIcon, XIcon } from './Icons'
 
 type Props = {
   open: boolean
   onClose: () => void
   reminderEnabled: boolean
   nativeApp: boolean
+  cityProgress: {
+    cityId: string
+    cityName: string
+    discoveredKm: number
+  } | null
   onReminderChange: (enabled: boolean) => Promise<string | null>
 }
 type SignInMethod = 'password' | 'link'
 type PasswordIntent = 'signin' | 'signup'
 type MessageTone = 'success' | 'error'
 
-export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminderChange }: Props) {
+export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgress, onReminderChange }: Props) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -33,10 +41,12 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [reminderPending, setReminderPending] = useState(false)
   const [reminderError, setReminderError] = useState('')
+  const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setConfirmingDelete(false)
+      setCityMilestoneInfoOpen(false)
       return
     }
     if (!supabase) {
@@ -177,6 +187,9 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
   const accountName = user?.user_metadata?.full_name || user?.user_metadata?.name
   const accountEmail = user?.email ?? 'Signed-in account'
   const accountInitial = (accountName || accountEmail).trim().charAt(0).toUpperCase()
+  const cityMilestoneCount = cityProgress
+    ? CITY_MILESTONE_TIERS.filter(tier => cityProgress.discoveredKm >= tier.thresholdKm).length
+    : 0
   const beginAccountCreation = () => {
     setSignInMethod('password')
     setPasswordIntent('signup')
@@ -234,6 +247,57 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, onReminde
             </div>
           </details>}
           {reminderError && <div className="form-message form-message--error" role="alert">{reminderError}</div>}
+          {cityProgress && <section className="account-milestones" aria-labelledby="account-milestones-title">
+            <div className="account-milestones__heading">
+              <span>
+                <span className="account-milestones__title-row">
+                  <strong id="account-milestones-title">City milestones</strong>
+                  <button
+                    type="button"
+                    className="account-milestones__info-button"
+                    aria-label="Why these city milestones are shown"
+                    aria-expanded={cityMilestoneInfoOpen}
+                    aria-controls="account-milestones-explanation"
+                    onClick={() => setCityMilestoneInfoOpen(current => !current)}
+                  >
+                    <InfoIcon size={15} strokeWidth={1.9} />
+                  </button>
+                </span>
+                <small>Your progress in {cityProgress.cityName}</small>
+              </span>
+              <small>{cityMilestoneCount} / {CITY_MILESTONE_TIERS.length} earned</small>
+            </div>
+            {cityMilestoneInfoOpen && <p
+              className="account-milestones__explanation"
+              id="account-milestones-explanation"
+              role="note"
+            >
+              This is the city you are currently in. Hecate shows one city’s milestones at a time and updates this section when your current city changes.
+            </p>}
+            <div className="account-milestones__list">
+              {CITY_MILESTONE_TIERS.map(milestone => {
+                  const earned = cityProgress.discoveredKm >= milestone.thresholdKm
+                  const remainingKm = Math.max(0, milestone.thresholdKm - cityProgress.discoveredKm)
+                  return <article
+                    className={`account-milestone${earned ? '' : ' account-milestone--locked'}`}
+                    key={milestone.id}
+                    aria-label={earned
+                      ? `${milestone.title} earned in ${cityProgress.cityName}`
+                      : `${milestone.title} requires ${milestone.thresholdKm} kilometers in ${cityProgress.cityName}. ${remainingKm.toFixed(1)} kilometers remaining.`}
+                  >
+                    <AchievementArtwork image={milestone.image} title={milestone.title} size={48} />
+                    <strong>{milestone.title}</strong>
+                    {earned
+                      ? <span className="account-milestone__goal">Earned at {milestone.thresholdKm} km</span>
+                      : <span className="account-milestone__goal">
+                        <strong>{cityProgress.discoveredKm.toFixed(1)} / {milestone.thresholdKm} km</strong>
+                        <small>{remainingKm.toFixed(1)} km left</small>
+                      </span>}
+                    <CityLevelStars level={milestone.level} decorative />
+                  </article>
+              })}
+            </div>
+          </section>}
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
           {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>
             : <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">

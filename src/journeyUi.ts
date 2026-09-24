@@ -1,5 +1,10 @@
 const JOURNEY_DRAG_THRESHOLD_PX = 32
 
+/** Translate a full-height sheet so only the requested height remains visible. */
+export function journeySheetOffsetPx(expandedHeight: number, visibleHeight: number) {
+  return expandedHeight - visibleHeight
+}
+
 /** Keep the recap consistent with its whole-metre distance display. */
 export function shouldShowExplorationRecap(newGroundKm: number) {
   return Math.round(Math.max(0, newGroundKm) * 1_000) > 0

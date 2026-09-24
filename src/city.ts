@@ -267,11 +267,7 @@ export function discoveredCityDistanceKm(
   });
 }
 
-/**
- * City distance based on the persisted discovery-cell history. This is the
- * value shown in the app, so the map and its kilometre total stay in sync on
- * every device.
- */
+/** City movement reconstructed from the persisted discovery-cell history. */
 export function discoveredCityCellDistanceKm(
   cells: DiscoveryCell[],
   city: CityBoundary,

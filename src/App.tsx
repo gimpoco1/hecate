@@ -3,6 +3,19 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
+  evaluatePersonalAchievements,
+  isPersonalAchievementId,
+  PERSONAL_ACHIEVEMENTS,
+  personalAchievementDefinition,
+  type PersonalAchievementId,
+} from "./achievements";
+import {
+  dismissAchievementUnlock,
+  reconcileAchievementUnlocks,
+} from "./achievementUnlocks";
+import { reconcileDiscoveryAchievementUnlocks } from "./achievementDelivery";
+import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
+import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
   discoveredCityDistanceKm,
@@ -13,10 +26,15 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { AchievementCard } from "./components/AchievementCard";
+import { AchievementCelebration } from "./components/AchievementCelebration";
+import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
+import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
   ChevronIcon,
   HecateMark,
+  InfoIcon,
   LocateIcon,
   MapIcon,
   PerspectiveIcon,
@@ -49,7 +67,9 @@ import {
   type ReminderKind,
 } from "./explorationReminder";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
+import { ensureNotificationPermission } from "./notificationPermissions";
 import {
+  journeySheetOffsetPx,
   shouldExpandJourneySheet,
   shouldShowExplorationRecap,
   shouldStartJourneyDrag,
@@ -99,6 +119,8 @@ const REMINDER_NOTIFICATION_ID = 1042;
 const INACTIVITY_NOTIFICATION_ID = 1043;
 const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
 const REMINDER_TEST_NOTIFICATION_ID = 1045;
+const ACHIEVEMENT_NOTIFICATION_ID_START = 1100;
+const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 
 function reminderMessage() {
   return "You have been moving through new areas for 5 minutes. Start recording your journey?";
@@ -122,9 +144,47 @@ async function sendReminderNotification(
   });
 }
 
+async function sendAchievementNotification(
+  achievementId: PersonalAchievementId,
+  userId: string,
+  test = false,
+) {
+  if (!await ensureNotificationPermission()) return false;
+  const achievement = personalAchievementDefinition(achievementId);
+  const notificationIndex = Math.max(
+    0,
+    PERSONAL_ACHIEVEMENTS.findIndex(({ id }) => id === achievementId),
+  );
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: test
+          ? ACHIEVEMENT_NOTIFICATION_ID_START + PERSONAL_ACHIEVEMENTS.length
+          : ACHIEVEMENT_NOTIFICATION_ID_START + notificationIndex,
+        title: `Achievement unlocked: ${achievement.title}`,
+        body: achievement.description,
+        sound: "default",
+        schedule: { at: new Date(Date.now() + 500) },
+        extra: {
+          kind: test ? "achievement-test" : "achievement",
+          achievementId,
+          userId,
+        },
+        threadIdentifier: "hecate-achievements",
+      },
+    ],
+  });
+  return true;
+}
+
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`;
   return `${distance.toFixed(distance >= 10 ? 1 : 2)} km`;
+}
+
+function formatRemainingDistance(distance: number) {
+  if (distance < 1) return `${Math.round(distance * 1000)} m`;
+  return `${distance.toFixed(1)} km`;
 }
 
 function formatDiscoveryPercentage(
@@ -171,6 +231,8 @@ export default function App() {
   const [passiveLocationStatus, setPassiveLocationStatus] =
     useState<PassiveLocationStatus>("idle");
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [notificationPermissionReady, setNotificationPermissionReady] =
+    useState<boolean | null>(() => isNativeApp() ? null : true);
   const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(
     null,
   );
@@ -181,6 +243,16 @@ export default function App() {
     status: "Waiting for location",
   });
   const [reminderTestMessage, setReminderTestMessage] = useState("");
+  const [achievementTestMessage, setAchievementTestMessage] = useState("");
+  const [devToolsVisible, setDevToolsVisible] = useState(() => {
+    if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
+      return false;
+    try {
+      return localStorage.getItem(DEV_TOOLS_VISIBILITY_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   const [tracking, setTracking] = useState<TrackingState>("idle");
@@ -207,6 +279,11 @@ export default function App() {
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
+  const [achievementCelebrations, setAchievementCelebrations] = useState<
+    PersonalAchievementId[]
+  >([]);
+  const [achievementTestPreview, setAchievementTestPreview] =
+    useState<PersonalAchievementId | null>(null);
   const [testRouteRunning, setTestRouteRunning] = useState(false);
   const mapRef = useRef<MapLibreMap | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
@@ -221,6 +298,11 @@ export default function App() {
   const inactivityNotificationQueueRef = useRef<Promise<void>>(
     Promise.resolve(),
   );
+  const achievementTestIndexRef = useRef(0);
+  const achievementCitiesRef = useRef<CityBoundary[]>([]);
+  const citiesLoadedUserIdRef = useRef<string | null>(null);
+  const testRouteRunningRef = useRef(false);
+  const lastBackgroundAchievementCheckRef = useRef(0);
   const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(
     null,
   );
@@ -308,6 +390,13 @@ export default function App() {
         : discoveryDistance,
     [discoveryDistance, points, summaryCity],
   );
+  const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
+  const currentCityMilestoneRemaining = currentCityMilestone.next
+    ? Math.max(0, currentCityMilestone.next.thresholdKm - currentCityDistance)
+    : 0;
+  const currentCityMilestoneLevel = currentCityMilestone.next
+    ? currentCityMilestone.next.level - 1
+    : 3;
   const summaryCityPercentage = useMemo(
     () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
     [cells, summaryCity],
@@ -321,6 +410,15 @@ export default function App() {
   const nativeApp = isNativeApp();
   const devToolsEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
+
+  const setDevToolsOpen = (visible: boolean) => {
+    setDevToolsVisible(visible);
+    try {
+      localStorage.setItem(DEV_TOOLS_VISIBILITY_KEY, String(visible));
+    } catch {
+      /* The control still works for this session when storage is unavailable. */
+    }
+  };
 
   const updateInactivitySchedule = useCallback(
     (dueAt: number | null) => {
@@ -363,11 +461,9 @@ export default function App() {
               generation !== inactivityGenerationRef.current
             )
               return;
-            let permission = await LocalNotifications.checkPermissions();
-            if (permission.display !== "granted")
-              permission = await LocalNotifications.requestPermissions();
+            const notificationAllowed = await ensureNotificationPermission();
             if (generation !== inactivityGenerationRef.current) return;
-            if (permission.display !== "granted") {
+            if (!notificationAllowed) {
               inactivityTimerRef.current = window.setTimeout(
                 showInAppReminder,
                 Math.max(0, dueAt - Date.now()),
@@ -421,7 +517,6 @@ export default function App() {
     pointsRef.current = points;
   }, [points]);
   const cityProgresses = useMemo(() => {
-    if (!citiesExpanded) return [];
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
     return [...unique.values()]
@@ -434,12 +529,71 @@ export default function App() {
         (a, b) =>
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
-  }, [citiesExpanded, cityBoundary, discoveredCities, cells, points]);
+  }, [cityBoundary, discoveredCities, cells, points]);
+  achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
+  citiesLoadedUserIdRef.current = citiesLoadedUserId;
+  testRouteRunningRef.current = testRouteRunning;
   const totalCityDistance = useMemo(
     () =>
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
   );
+  const accountCityProgress = activeCity
+    ? {
+        cityId: activeCity.id,
+        cityName: activeCity.name,
+        discoveredKm: discoveredCityDistanceKm(points, activeCity),
+      }
+    : null;
+  const achievementEvaluations = useMemo(
+    () =>
+      evaluatePersonalAchievements(
+        points,
+        cityProgresses.map(({ city }) => city),
+        cityProgresses.map(({ city, distance }) => ({
+          cityId: city.id,
+          discoveredKm: distance,
+        })),
+      ),
+    [cityProgresses, points],
+  );
+  const activeAchievementCelebration = achievementTestPreview
+    ? personalAchievementDefinition(achievementTestPreview)
+    : achievementCelebrations[0]
+      ? personalAchievementDefinition(achievementCelebrations[0])
+      : null;
+
+  useEffect(() => {
+    if (!accountUserId) {
+      setAchievementCelebrations([]);
+      return;
+    }
+    if (
+      testRouteRunning ||
+      activeWalkRef.current?.isTest ||
+      !discoveryHistoryReadyRef.current ||
+      citiesLoadedUserId !== accountUserId
+    )
+      return;
+    const earned = achievementEvaluations
+      .filter(({ earned: isEarned }) => isEarned)
+      .map(({ definition }) => definition.id);
+    const unlocks = reconcileAchievementUnlocks(accountUserId, earned);
+    setAchievementCelebrations(unlocks.pending);
+    if (nativeApp) {
+      unlocks.newlyEarned.forEach((achievementId) => {
+        void sendAchievementNotification(achievementId, accountUserId).catch(
+          (error) => console.warn("Could not show achievement notification", error),
+        );
+      });
+    }
+  }, [
+    accountUserId,
+    achievementEvaluations,
+    citiesLoadedUserId,
+    nativeApp,
+    testRouteRunning,
+  ]);
 
   useEffect(() => {
     purgeLegacyDiscoveryCache();
@@ -448,14 +602,20 @@ export default function App() {
     const client = supabase;
     void client.auth.getSession().then(({ data }) => {
       if (!active) return;
-      setAccountUserId(data.session?.user.id ?? null);
+      const nextUserId = data.session?.user.id ?? null;
+      if (nextUserId !== accountUserIdRef.current)
+        setDiscoveryLoading(Boolean(nextUserId));
+      setAccountUserId(nextUserId);
       setAuthReady(true);
     });
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      setAccountUserId(session?.user.id ?? null);
+      const nextUserId = session?.user.id ?? null;
+      if (nextUserId !== accountUserIdRef.current)
+        setDiscoveryLoading(Boolean(nextUserId));
+      setAccountUserId(nextUserId);
       setAuthReady(true);
     });
     return () => {
@@ -465,6 +625,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!nativeApp) return;
+    let active = true;
+    void ensureNotificationPermission()
+      .then((allowed) => {
+        if (active) setNotificationPermissionReady(allowed);
+      })
+      .catch(() => {
+        if (active) setNotificationPermissionReady(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [nativeApp]);
+
+  useEffect(() => {
     const preference = accountUserId
       ? loadReminderPreference(accountUserId)
       : { enabled: false, promptedAt: 0, pausedUntil: 0 };
@@ -472,9 +647,18 @@ export default function App() {
       preference.promptedAt,
       preference.pausedUntil,
     );
-    setReminderEnabled(preference.enabled);
+    const enabled = preference.enabled && notificationPermissionReady !== false;
+    setReminderEnabled(enabled);
+    if (accountUserId && preference.enabled && !enabled) {
+      saveReminderPreference(
+        accountUserId,
+        false,
+        preference.promptedAt,
+        preference.pausedUntil,
+      );
+    }
     setReminderPrompt(null);
-  }, [accountUserId]);
+  }, [accountUserId, notificationPermissionReady]);
 
   useEffect(() => {
     if (!nativeApp) return;
@@ -490,6 +674,33 @@ export default function App() {
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
       (event) => {
+        if (
+          event.notification.extra?.kind === "achievement-test" &&
+          isPersonalAchievementId(event.notification.extra.achievementId)
+        ) {
+          setAchievementTestPreview(event.notification.extra.achievementId);
+          setShowIntro(false);
+          return;
+        }
+        if (
+          event.notification.extra?.kind === "achievement" &&
+          isPersonalAchievementId(event.notification.extra.achievementId)
+        ) {
+          const notifiedUserId = event.notification.extra.userId;
+          if (
+            typeof notifiedUserId === "string" &&
+            notifiedUserId !== accountUserIdRef.current
+          )
+            return;
+          const achievementId = event.notification.extra.achievementId;
+          setAchievementCelebrations((current) =>
+            current.includes(achievementId)
+              ? current
+              : [achievementId, ...current],
+          );
+          setShowIntro(false);
+          return;
+        }
         if (
           event.notification.id === INACTIVITY_NOTIFICATION_ID ||
           event.notification.id === INACTIVITY_TEST_NOTIFICATION_ID
@@ -796,6 +1007,7 @@ export default function App() {
 
   useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
+    if (nativeApp && notificationPermissionReady === null) return;
     const backgroundReminder =
       nativeApp && reminderEnabled && Boolean(accountUserId);
     let disposed = false;
@@ -947,7 +1159,14 @@ export default function App() {
       if (appStateListener) void appStateListener.remove();
       stop();
     };
-  }, [accountUserId, devToolsEnabled, nativeApp, reminderEnabled, tracking]);
+  }, [
+    accountUserId,
+    devToolsEnabled,
+    nativeApp,
+    notificationPermissionReady,
+    reminderEnabled,
+    tracking,
+  ]);
 
   useEffect(() => () => cityLookupAbortRef.current?.abort(), []);
 
@@ -1081,9 +1300,8 @@ export default function App() {
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), []);
   const onViewChange = useCallback(
-    (center: { lng: number; lat: number }, nextZoom: number) => {
+    (center: { lng: number; lat: number }) => {
       setViewCenter(center);
-      setZoom(nextZoom);
     },
     [],
   );
@@ -1211,6 +1429,28 @@ export default function App() {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
       deferredLocationUiRef.current = true;
+      const walkOwner = trackingUserRef.current;
+      if (
+        walkOwner &&
+        nativeApp &&
+        !activeWalkRef.current?.isTest &&
+        !testRouteRunningRef.current &&
+        discoveryHistoryReadyRef.current &&
+        citiesLoadedUserIdRef.current === walkOwner &&
+        recordedPoint.recordedAt - lastBackgroundAchievementCheckRef.current >= 10_000
+      ) {
+        lastBackgroundAchievementCheckRef.current = recordedPoint.recordedAt;
+        const unlocks = reconcileDiscoveryAchievementUnlocks(
+          walkOwner,
+          pointsRef.current,
+          achievementCitiesRef.current,
+        );
+        unlocks.newlyEarned.forEach((achievementId) => {
+          void sendAchievementNotification(achievementId, walkOwner).catch(
+            (error) => console.warn("Could not show achievement notification", error),
+          );
+        });
+      }
     }
   };
 
@@ -1409,10 +1649,9 @@ export default function App() {
     if (!accountUserId) return "Sign in before enabling discovery reminders.";
     if (enabled && nativeApp) {
       try {
-        let permission = await LocalNotifications.checkPermissions();
-        if (permission.display !== "granted")
-          permission = await LocalNotifications.requestPermissions();
-        if (permission.display !== "granted")
+        const notificationAllowed = await ensureNotificationPermission();
+        setNotificationPermissionReady(notificationAllowed);
+        if (!notificationAllowed)
           return "Allow notifications in iPhone Settings to enable discovery reminders.";
       } catch {
         return "Notifications are unavailable right now. Try again later.";
@@ -1478,10 +1717,7 @@ export default function App() {
       return;
     }
     try {
-      let permission = await LocalNotifications.checkPermissions();
-      if (permission.display !== "granted")
-        permission = await LocalNotifications.requestPermissions();
-      if (permission.display !== "granted") {
+      if (!await ensureNotificationPermission()) {
         setReminderTestMessage(
           "Allow notifications in iPhone Settings, then try the stop reminder test again.",
         );
@@ -1502,6 +1738,38 @@ export default function App() {
       );
     } catch {
       setReminderTestMessage("Could not schedule the test stop reminder.");
+    }
+  };
+
+  const simulateAchievementUnlock = async () => {
+    const achievement =
+      PERSONAL_ACHIEVEMENTS[
+        achievementTestIndexRef.current % PERSONAL_ACHIEVEMENTS.length
+      ];
+    achievementTestIndexRef.current += 1;
+    setAchievementTestPreview(achievement.id);
+    setShowIntro(false);
+    if (!nativeApp) {
+      setAchievementTestMessage(
+        `Showing ${achievement.title}. Native notifications are only available in the iPhone app.`,
+      );
+      return;
+    }
+    try {
+      const scheduled = await sendAchievementNotification(
+        achievement.id,
+        accountUserId ?? "development-preview",
+        true,
+      );
+      setAchievementTestMessage(
+        scheduled
+          ? `${achievement.title} notification scheduled. The next test uses another badge.`
+          : "Celebration shown. Allow notifications in iPhone Settings to test the notification too.",
+      );
+    } catch {
+      setAchievementTestMessage(
+        "Celebration shown, but the test notification could not be scheduled.",
+      );
     }
   };
 
@@ -1538,6 +1806,7 @@ export default function App() {
       focusFirstTrackingPointRef.current = true;
     }
     setPassiveLocationStatus("idle");
+    lastBackgroundAchievementCheckRef.current = 0;
     const foregroundTracker = foregroundTrackerRef.current;
     foregroundTrackerRef.current = null;
     try {
@@ -1616,50 +1885,61 @@ export default function App() {
     return { collapsed, expanded: viewportHeight * 0.7 };
   };
 
+  const journeyVisibleHeight = (card: HTMLElement) => {
+    const { collapsed, expanded } = journeyBounds(card);
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    return Math.max(
+      collapsed,
+      Math.min(expanded, viewportHeight - card.getBoundingClientRect().top),
+    );
+  };
+
+  const setJourneyVisibleHeight = (card: HTMLElement, height: number) => {
+    const { expanded } = journeyBounds(card);
+    card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
+  };
+
   const settleJourneySheet = (expanded: boolean, fromHeight?: number) => {
     const card = journeyCardRef.current;
     if (!card) return;
     const { collapsed, expanded: expandedHeight } = journeyBounds(card);
     const targetHeight = expanded ? expandedHeight : collapsed;
-    const startHeight = fromHeight ?? card.getBoundingClientRect().height;
+    const startHeight = fromHeight ?? journeyVisibleHeight(card);
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
     journeyAnimationRef.current?.cancel();
-    card.style.height = `${startHeight}px`;
+    card.style.transform = "";
     setCitiesExpanded(expanded);
 
-    if (reducedMotion) {
-      card.style.height = "";
-      return;
-    }
+    if (reducedMotion) return;
 
-    requestAnimationFrame(() => {
-      const overshoot = expanded
-        ? Math.min(expandedHeight + 24, expandedHeight * 1.045)
-        : Math.max(collapsed - 14, collapsed * 0.86);
-      const animation = card.animate(
-        [
-          { height: `${startHeight}px` },
-          { height: `${overshoot}px`, offset: 0.7 },
-          { height: `${targetHeight}px` },
-        ],
-        {
-          duration: 480,
-          easing: "cubic-bezier(.18, .9, .24, 1)",
-          fill: "forwards",
-        },
-      );
-      journeyAnimationRef.current = animation;
-      void animation.finished
-        .catch(() => undefined)
-        .then(() => {
-          if (journeyAnimationRef.current !== animation) return;
-          card.style.height = "";
-          journeyAnimationRef.current = null;
-        });
-    });
+    const overshootHeight = expanded
+      ? Math.min(expandedHeight + 14, expandedHeight * 1.025)
+      : Math.max(collapsed - 10, collapsed * 0.9);
+    const offsetForHeight = (height: number) =>
+      `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
+    const animation = card.animate(
+      [
+        { transform: offsetForHeight(startHeight) },
+        { transform: offsetForHeight(overshootHeight), offset: 0.76 },
+        { transform: offsetForHeight(targetHeight) },
+      ],
+      {
+        duration: 420,
+        easing: "cubic-bezier(.18, .9, .24, 1)",
+        fill: "both",
+      },
+    );
+    journeyAnimationRef.current = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (journeyAnimationRef.current !== animation) return;
+        journeyAnimationRef.current = null;
+        animation.cancel();
+      });
   };
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
@@ -1675,9 +1955,10 @@ export default function App() {
       return;
     const card = journeyCardRef.current;
     if (!card) return;
+    const startHeight = journeyVisibleHeight(card);
+    setJourneyVisibleHeight(card, startHeight);
     journeyAnimationRef.current?.cancel();
-    const startHeight = card.getBoundingClientRect().height;
-    card.style.height = `${startHeight}px`;
+    journeyAnimationRef.current = null;
     card.classList.add("journey-card--dragging");
     event.currentTarget.setPointerCapture(event.pointerId);
     journeyDragRef.current = {
@@ -1708,7 +1989,7 @@ export default function App() {
     if (journeyDragFrameRef.current !== null) return;
     journeyDragFrameRef.current = requestAnimationFrame(() => {
       if (journeyDragRef.current)
-        card.style.height = `${journeyDragRef.current.currentHeight}px`;
+        setJourneyVisibleHeight(card, journeyDragRef.current.currentHeight);
       journeyDragFrameRef.current = null;
     });
   };
@@ -1726,7 +2007,7 @@ export default function App() {
     }
     if (!drag.moved) {
       card.classList.remove("journey-card--dragging");
-      card.style.height = "";
+      card.style.transform = "";
       journeyDragRef.current = null;
       return;
     }
@@ -1767,7 +2048,8 @@ export default function App() {
       journeyDragFrameRef.current = null;
     }
     card.classList.remove("journey-card--dragging");
-    card.style.height = "";
+    card.style.transform = "";
+    settleJourneySheet(drag.startedExpanded, drag.currentHeight);
     journeyDragRef.current = null;
   };
 
@@ -1904,9 +2186,14 @@ export default function App() {
         ? "Location access disabled · Open Settings"
         : "Location access disabled · Check browser settings"
       : "Location temporarily unavailable";
+  const accountDataLoading = !authReady || Boolean(accountUserId && discoveryLoading);
 
   return (
-    <main className={`app-shell ${introVisible ? "app-shell--intro" : ""}`}>
+    <main
+      className={`app-shell ${introVisible ? "app-shell--intro" : ""}`}
+      aria-busy={accountDataLoading}
+    >
+      <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
         points={points}
@@ -1925,12 +2212,22 @@ export default function App() {
         onZoomChange={onZoomChange}
         mapRef={mapRef}
       />
-      {devToolsEnabled && (
+      {devToolsEnabled && devToolsVisible && (
         <aside
           className="test-route-controls"
           aria-label="Development test tools"
         >
-          <strong>Test routes</strong>
+          <div className="test-route-controls__heading">
+            <strong>Test routes</strong>
+            <button
+              type="button"
+              onClick={() => setDevToolsOpen(false)}
+              aria-label="Hide development test tools"
+              title="Hide development test tools"
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => void runTestRoute("barcelona-exploration.gpx")}
@@ -1999,10 +2296,33 @@ export default function App() {
               Test stop reminder
             </button>
           )}
+          <strong>Achievements</strong>
+          <small>
+            Opens the real celebration and, in the native app, schedules the
+            same local notification. Each press cycles to another badge.
+          </small>
+          <button
+            type="button"
+            onClick={() => void simulateAchievementUnlock()}
+          >
+            Test achievement unlock
+          </button>
+          {achievementTestMessage && (
+            <small role="status">{achievementTestMessage}</small>
+          )}
           {reminderTestMessage && (
             <small role="status">{reminderTestMessage}</small>
           )}
         </aside>
+      )}
+      {devToolsEnabled && !devToolsVisible && (
+        <button
+          className="test-route-controls__restore"
+          type="button"
+          onClick={() => setDevToolsOpen(true)}
+        >
+          Dev tools
+        </button>
       )}
 
       <header className="topbar">
@@ -2149,6 +2469,35 @@ export default function App() {
         )}
 
       <nav className="map-actions" aria-label="Map controls">
+        {accountUserId && summaryCity && isCityScale && (
+          <button
+            className="map-milestone"
+            type="button"
+            onClick={() => settleJourneySheet(true)}
+            aria-label={
+              currentCityMilestone.next
+                ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
+                : `All 3 city stars earned in ${summaryCity.name}. Open city progress.`
+            }
+            title={
+              currentCityMilestone.next
+                ? `Next city star at ${formatDistance(currentCityMilestone.next.thresholdKm)}`
+                : "All 3 city stars earned"
+            }
+          >
+            <CityLevelStars level={currentCityMilestoneLevel} />
+            <span className="map-milestone__track" aria-hidden="true">
+              <span
+                style={{ width: `${currentCityMilestone.progress * 100}%` }}
+              />
+            </span>
+            <small>
+              {currentCityMilestone.next
+                ? `${formatRemainingDistance(currentCityMilestoneRemaining)} left`
+                : "Complete"}
+            </small>
+          </button>
+        )}
         <button
           className="location-control"
           onClick={locate}
@@ -2214,7 +2563,9 @@ export default function App() {
                     >
                       <strong>{discoveryLabel}</strong>
                       <span>of {summaryCity.name}</span>
-                      <span className="city-progress__info">i</span>
+                      <span className="city-progress__info">
+                        <InfoIcon size={18} strokeWidth={1.7} />
+                      </span>
                     </button>
                   )}
                 </>
@@ -2289,28 +2640,76 @@ export default function App() {
               {accountUserId ? (
                 cityProgresses.length ? (
                   <ul>
-                    {cityProgresses.map(({ city, percentage, distance }) => (
-                      <li key={city.id}>
-                        <button
-                          type="button"
-                          onClick={() => focusDiscoveredCity(city)}
-                        >
-                          <span>{city.name}</span>
-                          <span className="discovered-cities__metrics">
-                            <small>{formatDistance(distance)}</small>
-                            <strong>
-                              {formatDiscoveryPercentage(percentage, false)}
-                            </strong>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+                    {cityProgresses.map(({ city, percentage, distance }) => {
+                      const earned = earnedCityMilestones(
+                        city.id,
+                        city.name,
+                        distance,
+                      );
+                      const next = cityMilestoneProgress(distance).next;
+                      return (
+                        <li key={city.id}>
+                          <button
+                            type="button"
+                            onClick={() => focusDiscoveredCity(city)}
+                          >
+                            <span className="discovered-cities__identity">
+                              <span>{city.name}</span>
+                              <small>
+                                {next
+                                  ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
+                                  : `${earned.at(-1)?.title} · all 3 stars earned`}
+                              </small>
+                            </span>
+                            <span className="discovered-cities__metrics">
+                              <CityLevelStars level={earned.length} />
+                              <strong>
+                                {formatDiscoveryPercentage(percentage, false)}
+                              </strong>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p>Start a walk to add your first city.</p>
                 )
               ) : (
                 <p>Sign in to see your cities and keep them in sync.</p>
+              )}
+              {accountUserId && (
+                <section
+                  className="personal-achievements"
+                  aria-labelledby="personal-achievements-title"
+                >
+                  <div className="personal-achievements__heading">
+                    <span id="personal-achievements-title">Achievements</span>
+                    <small>
+                      {achievementEvaluations.filter(({ earned }) => earned).length}
+                      {" / "}
+                      {achievementEvaluations.length} earned
+                    </small>
+                  </div>
+                  <ul>
+                    {achievementEvaluations.map(
+                      ({ definition, earned, progress, progressLabel }) => (
+                        <li
+                          key={definition.id}
+                          className={earned ? "personal-achievements__earned" : ""}
+                        >
+                          <AchievementCard
+                            achievement={definition}
+                            earned={earned}
+                            progress={progress}
+                            progressLabel={progressLabel}
+                            compact
+                          />
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </section>
               )}
             </div>
           )}
@@ -2357,6 +2756,7 @@ export default function App() {
         onClose={() => setSyncOpen(false)}
         reminderEnabled={reminderEnabled}
         nativeApp={nativeApp}
+        cityProgress={accountCityProgress}
         onReminderChange={updateReminderEnabled}
       />
       {explorationSummary && (
@@ -2434,6 +2834,24 @@ export default function App() {
             </div>
           </section>
         </div>
+      )}
+      {activeAchievementCelebration && !explorationSummary && (
+        <AchievementCelebration
+          achievement={activeAchievementCelebration}
+          remaining={Math.max(0, achievementCelebrations.length - 1)}
+          onDismiss={() => {
+            if (achievementTestPreview) {
+              setAchievementTestPreview(null);
+              return;
+            }
+            if (accountUserId)
+              dismissAchievementUnlock(
+                accountUserId,
+                activeAchievementCelebration.id,
+              );
+            setAchievementCelebrations((current) => current.slice(1));
+          }}
+        />
       )}
     </main>
   );

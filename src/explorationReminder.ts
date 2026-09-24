@@ -11,8 +11,12 @@ export const REMINDER_TAP_PAUSE_MS = 30 * 60_000
 export type ReminderKind = 'unmapped'
 
 export function isUnmappedArea(point: Coordinate, knownCells: Set<string>) {
-  return discoveryFootprintCells(pointToDiscoveryCell(point))
-    .some(cell => !knownCells.has(discoveryCellKey(cell)))
+  // Stored discovery cells are the centres of the 35 m areas already revealed
+  // on the map. If any stored centre overlaps the current reveal footprint,
+  // the user's actual position is familiar ground even when unknown cells sit
+  // around its edge.
+  return !discoveryFootprintCells(pointToDiscoveryCell(point))
+    .some(cell => knownCells.has(discoveryCellKey(cell)))
 }
 
 /** Runs the production detector on synthetic points without altering app data. */
@@ -38,14 +42,15 @@ const keyForUser = (userId: string) => `hecate:exploration-reminders:v1:${userId
 
 export function loadReminderPreference(userId: string) {
   try {
-    const value = JSON.parse(localStorage.getItem(keyForUser(userId)) || '{}') as { enabled?: boolean; promptedAt?: number; pausedUntil?: number }
+    const stored = localStorage.getItem(keyForUser(userId))
+    const value = JSON.parse(stored || '{}') as { enabled?: boolean; promptedAt?: number; pausedUntil?: number }
     return {
-      enabled: value.enabled === true,
+      enabled: stored === null ? true : value.enabled !== false,
       promptedAt: Number.isFinite(value.promptedAt) ? value.promptedAt! : 0,
       pausedUntil: Number.isFinite(value.pausedUntil) ? value.pausedUntil! : 0,
     }
   } catch {
-    return { enabled: false, promptedAt: 0, pausedUntil: 0 }
+    return { enabled: true, promptedAt: 0, pausedUntil: 0 }
   }
 }
 

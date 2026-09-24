@@ -28,8 +28,16 @@ describe('native location lifecycle', () => {
 
     await tracker.start(onPoint, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.not.objectContaining({ backgroundMessage: expect.anything(), backgroundTitle: expect.anything() }),
+      expect.objectContaining({
+        requestPermissions: true,
+      }),
       expect.any(Function),
+    )
+    expect(native.addWatcher.mock.calls[0][0]).not.toEqual(
+      expect.objectContaining({
+        backgroundMessage: expect.anything(),
+        backgroundTitle: expect.anything(),
+      }),
     )
     native.addWatcher.mock.calls[0][1]({ longitude: 2.17, latitude: 41.38, accuracy: 25, time: Date.now() })
     expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38 }))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { discoveredAreaKm2, discoveredCellDistanceKm, discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
+import { discoveredAreaKm2, discoveredCellDistanceKm, discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, discoveryJourneyMetricsByRegion, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from './geo'
 
 describe('discovery route geometry', () => {
   const a = { lng: 2.17, lat: 41.38, recordedAt: 1_000, accuracy: 5 }
@@ -21,6 +21,19 @@ describe('discovery route geometry', () => {
   it('calculates new-ground distance from the persistent cell history', () => {
     const cells = discoveryCellsFromPoints([a, b])
     expect(discoveredCellDistanceKm(cells)).toBeGreaterThan(.05)
+  })
+
+  it('attributes each new-ground sample to the region where it was unlocked', () => {
+    const metrics = discoveryJourneyMetricsByRegion(
+      [a, b, { ...b, lng: 2.172, recordedAt: 40_000 }],
+      point => point.lng < 2.1715 ? 'west' : 'east',
+    )
+    const attributed = metrics[0].newGroundKmByRegion ?? {}
+
+    expect(attributed.west).toBeGreaterThan(0)
+    expect(attributed.east).toBeGreaterThan(0)
+    expect((attributed.west ?? 0) + (attributed.east ?? 0))
+      .toBeCloseTo(metrics[0].newGroundKm)
   })
 
   it('does not add new-way distance for a repeated discovery cell', () => {
