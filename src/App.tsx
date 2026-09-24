@@ -28,6 +28,7 @@ import {
 import { DiscoveryMap } from "./components/DiscoveryMap";
 import { AchievementCard } from "./components/AchievementCard";
 import { AchievementCelebration } from "./components/AchievementCelebration";
+import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
@@ -68,6 +69,7 @@ import {
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
+  journeySheetOffsetPx,
   shouldExpandJourneySheet,
   shouldShowExplorationRecap,
   shouldStartJourneyDrag,
@@ -600,14 +602,20 @@ export default function App() {
     const client = supabase;
     void client.auth.getSession().then(({ data }) => {
       if (!active) return;
-      setAccountUserId(data.session?.user.id ?? null);
+      const nextUserId = data.session?.user.id ?? null;
+      if (nextUserId !== accountUserIdRef.current)
+        setDiscoveryLoading(Boolean(nextUserId));
+      setAccountUserId(nextUserId);
       setAuthReady(true);
     });
     const {
       data: { subscription },
     } = client.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
-      setAccountUserId(session?.user.id ?? null);
+      const nextUserId = session?.user.id ?? null;
+      if (nextUserId !== accountUserIdRef.current)
+        setDiscoveryLoading(Boolean(nextUserId));
+      setAccountUserId(nextUserId);
       setAuthReady(true);
     });
     return () => {
@@ -1292,9 +1300,8 @@ export default function App() {
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), []);
   const onViewChange = useCallback(
-    (center: { lng: number; lat: number }, nextZoom: number) => {
+    (center: { lng: number; lat: number }) => {
       setViewCenter(center);
-      setZoom(nextZoom);
     },
     [],
   );
@@ -1878,50 +1885,61 @@ export default function App() {
     return { collapsed, expanded: viewportHeight * 0.7 };
   };
 
+  const journeyVisibleHeight = (card: HTMLElement) => {
+    const { collapsed, expanded } = journeyBounds(card);
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    return Math.max(
+      collapsed,
+      Math.min(expanded, viewportHeight - card.getBoundingClientRect().top),
+    );
+  };
+
+  const setJourneyVisibleHeight = (card: HTMLElement, height: number) => {
+    const { expanded } = journeyBounds(card);
+    card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
+  };
+
   const settleJourneySheet = (expanded: boolean, fromHeight?: number) => {
     const card = journeyCardRef.current;
     if (!card) return;
     const { collapsed, expanded: expandedHeight } = journeyBounds(card);
     const targetHeight = expanded ? expandedHeight : collapsed;
-    const startHeight = fromHeight ?? card.getBoundingClientRect().height;
+    const startHeight = fromHeight ?? journeyVisibleHeight(card);
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
     journeyAnimationRef.current?.cancel();
-    card.style.height = `${startHeight}px`;
+    card.style.transform = "";
     setCitiesExpanded(expanded);
 
-    if (reducedMotion) {
-      card.style.height = "";
-      return;
-    }
+    if (reducedMotion) return;
 
-    requestAnimationFrame(() => {
-      const overshoot = expanded
-        ? Math.min(expandedHeight + 24, expandedHeight * 1.045)
-        : Math.max(collapsed - 14, collapsed * 0.86);
-      const animation = card.animate(
-        [
-          { height: `${startHeight}px` },
-          { height: `${overshoot}px`, offset: 0.7 },
-          { height: `${targetHeight}px` },
-        ],
-        {
-          duration: 480,
-          easing: "cubic-bezier(.18, .9, .24, 1)",
-          fill: "forwards",
-        },
-      );
-      journeyAnimationRef.current = animation;
-      void animation.finished
-        .catch(() => undefined)
-        .then(() => {
-          if (journeyAnimationRef.current !== animation) return;
-          card.style.height = "";
-          journeyAnimationRef.current = null;
-        });
-    });
+    const overshootHeight = expanded
+      ? Math.min(expandedHeight + 14, expandedHeight * 1.025)
+      : Math.max(collapsed - 10, collapsed * 0.9);
+    const offsetForHeight = (height: number) =>
+      `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
+    const animation = card.animate(
+      [
+        { transform: offsetForHeight(startHeight) },
+        { transform: offsetForHeight(overshootHeight), offset: 0.76 },
+        { transform: offsetForHeight(targetHeight) },
+      ],
+      {
+        duration: 420,
+        easing: "cubic-bezier(.18, .9, .24, 1)",
+        fill: "both",
+      },
+    );
+    journeyAnimationRef.current = animation;
+    void animation.finished
+      .catch(() => undefined)
+      .then(() => {
+        if (journeyAnimationRef.current !== animation) return;
+        journeyAnimationRef.current = null;
+        animation.cancel();
+      });
   };
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
@@ -1937,9 +1955,10 @@ export default function App() {
       return;
     const card = journeyCardRef.current;
     if (!card) return;
+    const startHeight = journeyVisibleHeight(card);
+    setJourneyVisibleHeight(card, startHeight);
     journeyAnimationRef.current?.cancel();
-    const startHeight = card.getBoundingClientRect().height;
-    card.style.height = `${startHeight}px`;
+    journeyAnimationRef.current = null;
     card.classList.add("journey-card--dragging");
     event.currentTarget.setPointerCapture(event.pointerId);
     journeyDragRef.current = {
@@ -1970,7 +1989,7 @@ export default function App() {
     if (journeyDragFrameRef.current !== null) return;
     journeyDragFrameRef.current = requestAnimationFrame(() => {
       if (journeyDragRef.current)
-        card.style.height = `${journeyDragRef.current.currentHeight}px`;
+        setJourneyVisibleHeight(card, journeyDragRef.current.currentHeight);
       journeyDragFrameRef.current = null;
     });
   };
@@ -1988,7 +2007,7 @@ export default function App() {
     }
     if (!drag.moved) {
       card.classList.remove("journey-card--dragging");
-      card.style.height = "";
+      card.style.transform = "";
       journeyDragRef.current = null;
       return;
     }
@@ -2029,7 +2048,8 @@ export default function App() {
       journeyDragFrameRef.current = null;
     }
     card.classList.remove("journey-card--dragging");
-    card.style.height = "";
+    card.style.transform = "";
+    settleJourneySheet(drag.startedExpanded, drag.currentHeight);
     journeyDragRef.current = null;
   };
 
@@ -2166,9 +2186,14 @@ export default function App() {
         ? "Location access disabled · Open Settings"
         : "Location access disabled · Check browser settings"
       : "Location temporarily unavailable";
+  const accountDataLoading = !authReady || Boolean(accountUserId && discoveryLoading);
 
   return (
-    <main className={`app-shell ${introVisible ? "app-shell--intro" : ""}`}>
+    <main
+      className={`app-shell ${introVisible ? "app-shell--intro" : ""}`}
+      aria-busy={accountDataLoading}
+    >
+      <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
         points={points}

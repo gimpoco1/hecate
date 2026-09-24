@@ -9,7 +9,7 @@ import { isSyncConfigured, supabase } from '../storage'
 import { CITY_MILESTONE_TIERS } from '../badges'
 import { AchievementArtwork } from './AchievementArtwork'
 import { CityLevelStars } from './CityLevelStars'
-import { ChevronIcon, XIcon } from './Icons'
+import { ChevronIcon, InfoIcon, XIcon } from './Icons'
 
 type Props = {
   open: boolean
@@ -41,10 +41,12 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [reminderPending, setReminderPending] = useState(false)
   const [reminderError, setReminderError] = useState('')
+  const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false)
 
   useEffect(() => {
     if (!open) {
       setConfirmingDelete(false)
+      setCityMilestoneInfoOpen(false)
       return
     }
     if (!supabase) {
@@ -248,11 +250,30 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
           {cityProgress && <section className="account-milestones" aria-labelledby="account-milestones-title">
             <div className="account-milestones__heading">
               <span>
-                <strong id="account-milestones-title">City milestones</strong>
+                <span className="account-milestones__title-row">
+                  <strong id="account-milestones-title">City milestones</strong>
+                  <button
+                    type="button"
+                    className="account-milestones__info-button"
+                    aria-label="Why these city milestones are shown"
+                    aria-expanded={cityMilestoneInfoOpen}
+                    aria-controls="account-milestones-explanation"
+                    onClick={() => setCityMilestoneInfoOpen(current => !current)}
+                  >
+                    <InfoIcon size={15} strokeWidth={1.9} />
+                  </button>
+                </span>
                 <small>Your progress in {cityProgress.cityName}</small>
               </span>
               <small>{cityMilestoneCount} / {CITY_MILESTONE_TIERS.length} earned</small>
             </div>
+            {cityMilestoneInfoOpen && <p
+              className="account-milestones__explanation"
+              id="account-milestones-explanation"
+              role="note"
+            >
+              This is the city you are currently in. Hecate shows one city’s milestones at a time and updates this section when your current city changes.
+            </p>}
             <div className="account-milestones__list">
               {CITY_MILESTONE_TIERS.map(milestone => {
                   const earned = cityProgress.discoveredKm >= milestone.thresholdKm
