@@ -13,6 +13,7 @@ import {
   dismissAchievementUnlock,
   reconcileAchievementUnlocks,
 } from "./achievementUnlocks";
+import { reconcileDiscoveryAchievementUnlocks } from "./achievementDelivery";
 import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
 import {
   canonicalCityForStoredBoundary,
@@ -65,6 +66,7 @@ import {
   type ReminderKind,
 } from "./explorationReminder";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
+import { ensureNotificationPermission } from "./notificationPermissions";
 import {
   shouldExpandJourneySheet,
   shouldShowExplorationRecap,
@@ -145,10 +147,7 @@ async function sendAchievementNotification(
   userId: string,
   test = false,
 ) {
-  let permission = await LocalNotifications.checkPermissions();
-  if (permission.display === "prompt" || permission.display === "prompt-with-rationale")
-    permission = await LocalNotifications.requestPermissions();
-  if (permission.display !== "granted") return false;
+  if (!await ensureNotificationPermission()) return false;
   const achievement = personalAchievementDefinition(achievementId);
   const notificationIndex = Math.max(
     0,
@@ -230,6 +229,8 @@ export default function App() {
   const [passiveLocationStatus, setPassiveLocationStatus] =
     useState<PassiveLocationStatus>("idle");
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [notificationPermissionReady, setNotificationPermissionReady] =
+    useState<boolean | null>(() => isNativeApp() ? null : true);
   const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(
     null,
   );
@@ -296,6 +297,10 @@ export default function App() {
     Promise.resolve(),
   );
   const achievementTestIndexRef = useRef(0);
+  const achievementCitiesRef = useRef<CityBoundary[]>([]);
+  const citiesLoadedUserIdRef = useRef<string | null>(null);
+  const testRouteRunningRef = useRef(false);
+  const lastBackgroundAchievementCheckRef = useRef(0);
   const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(
     null,
   );
@@ -454,11 +459,9 @@ export default function App() {
               generation !== inactivityGenerationRef.current
             )
               return;
-            let permission = await LocalNotifications.checkPermissions();
-            if (permission.display !== "granted")
-              permission = await LocalNotifications.requestPermissions();
+            const notificationAllowed = await ensureNotificationPermission();
             if (generation !== inactivityGenerationRef.current) return;
-            if (permission.display !== "granted") {
+            if (!notificationAllowed) {
               inactivityTimerRef.current = window.setTimeout(
                 showInAppReminder,
                 Math.max(0, dueAt - Date.now()),
@@ -525,6 +528,9 @@ export default function App() {
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
   }, [cityBoundary, discoveredCities, cells, points]);
+  achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
+  citiesLoadedUserIdRef.current = citiesLoadedUserId;
+  testRouteRunningRef.current = testRouteRunning;
   const totalCityDistance = useMemo(
     () =>
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
@@ -611,6 +617,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!nativeApp) return;
+    let active = true;
+    void ensureNotificationPermission()
+      .then((allowed) => {
+        if (active) setNotificationPermissionReady(allowed);
+      })
+      .catch(() => {
+        if (active) setNotificationPermissionReady(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [nativeApp]);
+
+  useEffect(() => {
     const preference = accountUserId
       ? loadReminderPreference(accountUserId)
       : { enabled: false, promptedAt: 0, pausedUntil: 0 };
@@ -618,9 +639,18 @@ export default function App() {
       preference.promptedAt,
       preference.pausedUntil,
     );
-    setReminderEnabled(preference.enabled);
+    const enabled = preference.enabled && notificationPermissionReady !== false;
+    setReminderEnabled(enabled);
+    if (accountUserId && preference.enabled && !enabled) {
+      saveReminderPreference(
+        accountUserId,
+        false,
+        preference.promptedAt,
+        preference.pausedUntil,
+      );
+    }
     setReminderPrompt(null);
-  }, [accountUserId]);
+  }, [accountUserId, notificationPermissionReady]);
 
   useEffect(() => {
     if (!nativeApp) return;
@@ -969,6 +999,7 @@ export default function App() {
 
   useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
+    if (nativeApp && notificationPermissionReady === null) return;
     const backgroundReminder =
       nativeApp && reminderEnabled && Boolean(accountUserId);
     let disposed = false;
@@ -1120,7 +1151,14 @@ export default function App() {
       if (appStateListener) void appStateListener.remove();
       stop();
     };
-  }, [accountUserId, devToolsEnabled, nativeApp, reminderEnabled, tracking]);
+  }, [
+    accountUserId,
+    devToolsEnabled,
+    nativeApp,
+    notificationPermissionReady,
+    reminderEnabled,
+    tracking,
+  ]);
 
   useEffect(() => () => cityLookupAbortRef.current?.abort(), []);
 
@@ -1384,6 +1422,28 @@ export default function App() {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
       deferredLocationUiRef.current = true;
+      const walkOwner = trackingUserRef.current;
+      if (
+        walkOwner &&
+        nativeApp &&
+        !activeWalkRef.current?.isTest &&
+        !testRouteRunningRef.current &&
+        discoveryHistoryReadyRef.current &&
+        citiesLoadedUserIdRef.current === walkOwner &&
+        recordedPoint.recordedAt - lastBackgroundAchievementCheckRef.current >= 10_000
+      ) {
+        lastBackgroundAchievementCheckRef.current = recordedPoint.recordedAt;
+        const unlocks = reconcileDiscoveryAchievementUnlocks(
+          walkOwner,
+          pointsRef.current,
+          achievementCitiesRef.current,
+        );
+        unlocks.newlyEarned.forEach((achievementId) => {
+          void sendAchievementNotification(achievementId, walkOwner).catch(
+            (error) => console.warn("Could not show achievement notification", error),
+          );
+        });
+      }
     }
   };
 
@@ -1582,10 +1642,9 @@ export default function App() {
     if (!accountUserId) return "Sign in before enabling discovery reminders.";
     if (enabled && nativeApp) {
       try {
-        let permission = await LocalNotifications.checkPermissions();
-        if (permission.display !== "granted")
-          permission = await LocalNotifications.requestPermissions();
-        if (permission.display !== "granted")
+        const notificationAllowed = await ensureNotificationPermission();
+        setNotificationPermissionReady(notificationAllowed);
+        if (!notificationAllowed)
           return "Allow notifications in iPhone Settings to enable discovery reminders.";
       } catch {
         return "Notifications are unavailable right now. Try again later.";
@@ -1651,10 +1710,7 @@ export default function App() {
       return;
     }
     try {
-      let permission = await LocalNotifications.checkPermissions();
-      if (permission.display !== "granted")
-        permission = await LocalNotifications.requestPermissions();
-      if (permission.display !== "granted") {
+      if (!await ensureNotificationPermission()) {
         setReminderTestMessage(
           "Allow notifications in iPhone Settings, then try the stop reminder test again.",
         );
@@ -1743,6 +1799,7 @@ export default function App() {
       focusFirstTrackingPointRef.current = true;
     }
     setPassiveLocationStatus("idle");
+    lastBackgroundAchievementCheckRef.current = 0;
     const foregroundTracker = foregroundTrackerRef.current;
     foregroundTrackerRef.current = null;
     try {

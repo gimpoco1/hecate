@@ -42,14 +42,15 @@ const keyForUser = (userId: string) => `hecate:exploration-reminders:v1:${userId
 
 export function loadReminderPreference(userId: string) {
   try {
-    const value = JSON.parse(localStorage.getItem(keyForUser(userId)) || '{}') as { enabled?: boolean; promptedAt?: number; pausedUntil?: number }
+    const stored = localStorage.getItem(keyForUser(userId))
+    const value = JSON.parse(stored || '{}') as { enabled?: boolean; promptedAt?: number; pausedUntil?: number }
     return {
-      enabled: value.enabled === true,
+      enabled: stored === null ? true : value.enabled !== false,
       promptedAt: Number.isFinite(value.promptedAt) ? value.promptedAt! : 0,
       pausedUntil: Number.isFinite(value.pausedUntil) ? value.pausedUntil! : 0,
     }
   } catch {
-    return { enabled: false, promptedAt: 0, pausedUntil: 0 }
+    return { enabled: true, promptedAt: 0, pausedUntil: 0 }
   }
 }
 

@@ -1,6 +1,6 @@
 import { isPointInCity, type CityBoundary } from "./city";
 import {
-  discoveryJourneyMetrics,
+  discoveryJourneyMetricsByRegion,
   distanceKm,
   type DiscoveryJourneyMetric,
 } from "./geo";
@@ -113,7 +113,9 @@ export type AchievementCityDistance = {
   discoveredKm: number;
 };
 
-type JourneyWithCity = DiscoveryJourneyMetric & { cityId: string | null };
+type JourneyWithCityDistances = DiscoveryJourneyMetric & {
+  newGroundKmByRegion: Record<string, number>;
+};
 
 export function isPersonalAchievementId(
   value: unknown,
@@ -154,24 +156,8 @@ function mostDaysWithinWindow(days: number[], windowDays: number) {
   return best;
 }
 
-function journeyCity(
-  journey: DiscoveryJourneyMetric,
-  cities: CityBoundary[],
-) {
-  let best: CityBoundary | null = null;
-  let bestCount = 0;
-  for (const city of cities) {
-    const count = journey.points.filter((point) => isPointInCity(point, city)).length;
-    if (count > bestCount) {
-      best = city;
-      bestCount = count;
-    }
-  }
-  return best?.id ?? null;
-}
-
 export function evaluateAchievementsFromJourneys(
-  journeys: JourneyWithCity[],
+  journeys: JourneyWithCityDistances[],
   cityDistances: AchievementCityDistance[],
 ): AchievementEvaluation[] {
   const longestNewWalk = Math.max(0, ...journeys.map(({ newGroundKm }) => newGroundKm));
@@ -183,7 +169,7 @@ export function evaluateAchievementsFromJourneys(
       const progress = Math.min(journey.travelledKm / 5, ratio / 0.8);
       return progress > best.progress ? { journey, ratio, progress } : best;
     },
-    { journey: null as JourneyWithCity | null, ratio: 0, progress: 0 },
+    { journey: null as JourneyWithCityDistances | null, ratio: 0, progress: 0 },
   );
   const fullCircle = journeys.reduce(
     (best, journey) => {
@@ -208,15 +194,21 @@ export function evaluateAchievementsFromJourneys(
   const consecutiveDays = longestConsecutiveRun(qualifyingDays);
   const momentumDays = mostDaysWithinWindow(qualifyingDays, 14);
 
-  const cityDays = new Map<string, Set<number>>();
-  journeys
-    .filter((journey) => journey.cityId && journey.newGroundKm >= QUALIFYING_DAY_KM)
-    .forEach((journey) => {
-      const days = cityDays.get(journey.cityId!) ?? new Set<number>();
-      days.add(localDayOrdinal(journey.finishedAt));
-      cityDays.set(journey.cityId!, days);
+  const cityDailyDistance = new Map<string, Map<number, number>>();
+  journeys.forEach((journey) => {
+    const day = localDayOrdinal(journey.finishedAt);
+    Object.entries(journey.newGroundKmByRegion).forEach(([cityId, distance]) => {
+      const dailyDistance = cityDailyDistance.get(cityId) ?? new Map<number, number>();
+      dailyDistance.set(day, (dailyDistance.get(day) ?? 0) + distance);
+      cityDailyDistance.set(cityId, dailyDistance);
     });
-  const localRitualDays = Math.max(0, ...[...cityDays.values()].map((days) => days.size));
+  });
+  const localRitualDays = Math.max(
+    0,
+    ...[...cityDailyDistance.values()].map(
+      (days) => [...days.values()].filter((distance) => distance >= QUALIFYING_DAY_KM).length,
+    ),
+  );
   const qualifyingCities = cityDistances.filter(({ discoveredKm }) => discoveredKm >= 2).length;
   const againstFamiliar = journeys.reduce(
     (best, journey) => {
@@ -234,7 +226,7 @@ export function evaluateAchievementsFromJourneys(
         : best;
     },
     {
-      journey: null as JourneyWithCity | null,
+      journey: null as JourneyWithCityDistances | null,
       familiarRatio: 0,
       progress: 0,
     },
@@ -307,9 +299,13 @@ export function evaluatePersonalAchievements(
   cities: CityBoundary[],
   cityDistances: AchievementCityDistance[],
 ) {
-  const journeys: JourneyWithCity[] = discoveryJourneyMetrics(points).map(
-    (journey) => ({ ...journey, cityId: journeyCity(journey, cities) }),
-  );
+  const journeys = discoveryJourneyMetricsByRegion(
+    points,
+    (point) => cities.find((city) => isPointInCity(point, city))?.id ?? null,
+  ).map((journey): JourneyWithCityDistances => ({
+    ...journey,
+    newGroundKmByRegion: journey.newGroundKmByRegion ?? {},
+  }));
   return evaluateAchievementsFromJourneys(journeys, cityDistances);
 }
 

@@ -54,11 +54,13 @@ export type DiscoveryJourneyMetric = {
   finishedAt: number
   travelledKm: number
   newGroundKm: number
+  newGroundKmByRegion?: Record<string, number>
 }
 
 function discoveryJourneyMetricsForFootprints(
   points: Coordinate[],
   footprintForPoint: (point: Coordinate) => DiscoveryCell[],
+  regionForPoint?: (point: Coordinate) => string | null,
 ) {
   const revealed = new Set<string>()
   const metrics = new Map<string, DiscoveryJourneyMetric>()
@@ -68,6 +70,7 @@ function discoveryJourneyMetricsForFootprints(
     if (!firstPoint) continue
     const journeyId = firstPoint.walkId ?? `journey-${segmentIndex}`
     let newGroundKm = 0
+    const newGroundKmByRegion: Record<string, number> = {}
     let travelledKm = 0
     footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)))
     let distanceSinceLastUnlockKm = 0
@@ -94,7 +97,12 @@ function discoveryJourneyMetricsForFootprints(
           // A cell unlock represents the last small stretch of newly revealed
           // ground. Cap the credit at the reveal radius so a sparse GPS jump
           // cannot claim a long, already-known street before its endpoint.
-          newGroundKm += Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
+          const creditedKm = Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
+          newGroundKm += creditedKm
+          const regionId = regionForPoint?.(sample)
+          if (regionId) {
+            newGroundKmByRegion[regionId] = (newGroundKmByRegion[regionId] ?? 0) + creditedKm
+          }
           distanceSinceLastUnlockKm = 0
         }
         footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
@@ -109,6 +117,13 @@ function discoveryJourneyMetricsForFootprints(
       finishedAt: Math.max(existing.finishedAt, segment.at(-1)?.recordedAt ?? firstPoint.recordedAt),
       travelledKm: existing.travelledKm + travelledKm,
       newGroundKm: existing.newGroundKm + newGroundKm,
+      newGroundKmByRegion: Object.entries(newGroundKmByRegion).reduce(
+        (totals, [regionId, distance]) => ({
+          ...totals,
+          [regionId]: (totals[regionId] ?? 0) + distance,
+        }),
+        { ...(existing.newGroundKmByRegion ?? {}) },
+      ),
     } : {
       journeyId,
       points: segment,
@@ -116,6 +131,7 @@ function discoveryJourneyMetricsForFootprints(
       finishedAt: segment.at(-1)?.recordedAt ?? firstPoint.recordedAt,
       travelledKm,
       newGroundKm,
+      newGroundKmByRegion,
     })
   }
   return [...metrics.values()]
@@ -126,6 +142,18 @@ export function discoveryJourneyMetrics(points: Coordinate[]) {
   return discoveryJourneyMetricsForFootprints(
     points,
     point => discoveryFootprintCells(pointToDiscoveryCell(point)),
+  )
+}
+
+/** Per-recording discovery totals attributed to the region containing each unlock. */
+export function discoveryJourneyMetricsByRegion(
+  points: Coordinate[],
+  regionForPoint: (point: Coordinate) => string | null,
+) {
+  return discoveryJourneyMetricsForFootprints(
+    points,
+    point => discoveryFootprintCells(pointToDiscoveryCell(point)),
+    regionForPoint,
   )
 }
 

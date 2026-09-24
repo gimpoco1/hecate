@@ -1,14 +1,21 @@
 import { StarIcon } from "./Icons";
 
-export function CityLevelStars({ level }: { level: number }) {
+export function CityLevelStars({
+  level,
+  decorative = false,
+}: {
+  level: number;
+  decorative?: boolean;
+}) {
   return (
     <span
       className="city-level-stars"
-      aria-label={
-        level > 0
+      aria-hidden={decorative || undefined}
+      aria-label={decorative
+        ? undefined
+        : level > 0
           ? `${level} of 3 city stars earned`
-          : "No city stars earned yet"
-      }
+          : "No city stars earned yet"}
     >
       {[1, 2, 3].map((star) => (
         <span

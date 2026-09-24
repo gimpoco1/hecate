@@ -7,10 +7,10 @@ import type { DiscoveryJourneyMetric } from "./geo";
 
 function journey(
   day: number,
-  overrides: Partial<DiscoveryJourneyMetric & { cityId: string | null }> = {},
+  overrides: Partial<DiscoveryJourneyMetric> = {},
 ) {
   const startedAt = Date.UTC(2026, 8, day, 10);
-  return {
+  const result = {
     journeyId: `walk-${day}`,
     points: [
       { lng: 2, lat: 41, recordedAt: startedAt },
@@ -20,8 +20,13 @@ function journey(
     finishedAt: startedAt + 60_000,
     travelledKm: 1,
     newGroundKm: 0.25,
-    cityId: "barcelona",
     ...overrides,
+  };
+  return {
+    ...result,
+    newGroundKmByRegion: overrides.newGroundKmByRegion ?? {
+      barcelona: result.newGroundKm,
+    },
   };
 }
 
@@ -109,5 +114,40 @@ describe("personal achievements", () => {
 
     expect(results["local-ritual"].earned).toBe(true);
     expect(results["city-hopper"].earned).toBe(true);
+  });
+
+  it("requires the qualifying daily distance to be inside the same city", () => {
+    const results = byId(
+      evaluateAchievementsFromJourneys(
+        Array.from({ length: 10 }, (_, index) =>
+          journey(index + 1, {
+            newGroundKm: 0.6,
+            newGroundKmByRegion: { barcelona: 0.2, badalona: 0.4 },
+          }),
+        ),
+        [],
+      ),
+    );
+
+    expect(results["local-ritual"].earned).toBe(false);
+    expect(results["local-ritual"].progressLabel).toBe("0 / 10 days in one city");
+  });
+
+  it("combines multiple discoveries in the same city on the same day", () => {
+    const journeys = Array.from({ length: 10 }, (_, index) => [
+      journey(index + 1, {
+        journeyId: `walk-${index + 1}-a`,
+        newGroundKm: 0.3,
+        newGroundKmByRegion: { barcelona: 0.3 },
+      }),
+      journey(index + 1, {
+        journeyId: `walk-${index + 1}-b`,
+        newGroundKm: 0.3,
+        newGroundKmByRegion: { barcelona: 0.3 },
+      }),
+    ]).flat();
+
+    const results = byId(evaluateAchievementsFromJourneys(journeys, []));
+    expect(results["local-ritual"].earned).toBe(true);
   });
 });

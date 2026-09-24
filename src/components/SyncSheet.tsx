@@ -272,7 +272,7 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
                         <strong>{cityProgress.discoveredKm.toFixed(1)} / {milestone.thresholdKm} km</strong>
                         <small>{remainingKm.toFixed(1)} km left</small>
                       </span>}
-                    <CityLevelStars level={milestone.level} />
+                    <CityLevelStars level={milestone.level} decorative />
                   </article>
               })}
             </div>

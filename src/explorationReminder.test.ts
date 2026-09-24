@@ -83,6 +83,8 @@ describe('private exploration reminders', () => {
     try {
       saveReminderPreference('person-one', true, 123_000)
       expect(loadReminderPreference('person-one')).toEqual({ enabled: true, promptedAt: 123_000, pausedUntil: 0 })
+      expect(loadReminderPreference('person-two').enabled).toBe(true)
+      saveReminderPreference('person-two', false, 0)
       expect(loadReminderPreference('person-two').enabled).toBe(false)
       const tappedAt = 200_000
       expect(pauseReminderAfterTap('person-one', tappedAt)).toEqual({ enabled: true, promptedAt: 0, pausedUntil: tappedAt + REMINDER_TAP_PAUSE_MS })

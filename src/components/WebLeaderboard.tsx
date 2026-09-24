@@ -23,6 +23,7 @@ import {
   type LeaderboardProfile,
   type LeaderboardSnapshot,
 } from "../leaderboard";
+import { createRequestGuard } from "../requestGuard";
 import { isSyncConfigured, supabase } from "../storage";
 import { ChevronIcon, HecateMark, UserIcon, XIcon } from "./Icons";
 
@@ -225,9 +226,11 @@ function LeaderboardAccountPanel({
   const displayNameDirty = useRef(false);
   const citySelectionDirty = useRef(false);
   const achievementSelectionDirty = useRef(false);
+  const snapshotRequestGuard = useRef(createRequestGuard());
 
   useEffect(() => {
     if (!open) {
+      snapshotRequestGuard.current.invalidate();
       setSnapshot(null);
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
@@ -253,15 +256,22 @@ function LeaderboardAccountPanel({
       return;
     setLoadingSnapshot(true);
     setMessage("");
+    const isCurrentRequest = snapshotRequestGuard.current.begin();
     void buildLeaderboardSnapshot(user.id)
-      .then(setSnapshot)
+      .then((nextSnapshot) => {
+        if (isCurrentRequest()) setSnapshot(nextSnapshot);
+      })
       .catch(() => {
+        if (!isCurrentRequest()) return;
         setError(true);
         setMessage(
           "Your private discovery data could not be loaded. Try again in a moment.",
         );
       })
-      .finally(() => setLoadingSnapshot(false));
+      .finally(() => {
+        if (isCurrentRequest()) setLoadingSnapshot(false);
+      });
+    return () => snapshotRequestGuard.current.invalidate();
   }, [open, snapshot?.calculationVersion, user]);
 
   useEffect(() => {
