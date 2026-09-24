@@ -69,6 +69,11 @@ describe('private exploration reminders', () => {
     expect(simulateUnmappedWalk(known, 2_000_000)).toBe('unmapped')
   })
 
+  it('does not call a revealed position new merely because unknown cells border its footprint', () => {
+    const known = new Set([discoveryCellKey(pointToDiscoveryCell(start))])
+    expect(isUnmappedArea(start, known)).toBe(false)
+  })
+
   it('stores only the per-account switch and cooldown locally', () => {
     const entries = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -78,6 +83,8 @@ describe('private exploration reminders', () => {
     try {
       saveReminderPreference('person-one', true, 123_000)
       expect(loadReminderPreference('person-one')).toEqual({ enabled: true, promptedAt: 123_000, pausedUntil: 0 })
+      expect(loadReminderPreference('person-two').enabled).toBe(true)
+      saveReminderPreference('person-two', false, 0)
       expect(loadReminderPreference('person-two').enabled).toBe(false)
       const tappedAt = 200_000
       expect(pauseReminderAfterTap('person-one', tappedAt)).toEqual({ enabled: true, promptedAt: 0, pausedUntil: tappedAt + REMINDER_TAP_PAUSE_MS })

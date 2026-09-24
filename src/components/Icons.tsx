@@ -8,6 +8,8 @@ export const LocationOffIcon = ({ size, strokeWidth }: IconProps) => <svg {...ba
 export const RouteIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7"/></svg>
 export const PerspectiveIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m3 8 9-5 9 5-9 5-9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg>
 export const UserIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>
+export const InfoIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+export const StarIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg>
 export const XIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m6 6 12 12M18 6 6 18"/></svg>
 export const ChevronIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m9 18 6-6-6-6"/></svg>
 

@@ -9,6 +9,7 @@ const nativePlatform = Capacitor.isNativePlatform()
 const redirectingBrowser = shouldRedirectBrowserToLeaderboard(
   window.location.pathname,
   nativePlatform,
+  import.meta.env.DEV,
 )
 if (redirectingBrowser) {
   window.location.replace(`/leaderboard${window.location.search}${window.location.hash}`)

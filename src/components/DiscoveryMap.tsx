@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -22,13 +22,19 @@ type Props = {
   initialZoom?: number
 }
 
+type MistGeometry = {
+  routeSegments: Coordinate[][]
+  cellCenters: [number, number][]
+}
+
 function userMarkerClassName(locationState: NonNullable<Props['locationState']>) {
   return `user-marker user-marker--${locationState}`
 }
 
-function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinate[], cells: DiscoveryCell[], mode: MapMode) {
+function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeometry, mode: MapMode) {
   const rect = canvas.getBoundingClientRect()
-  const ratio = Math.min(window.devicePixelRatio || 1, 2)
+  const moving = map.isMoving()
+  const ratio = Math.min(window.devicePixelRatio || 1, moving ? 1.35 : 2)
   const width = Math.round(rect.width * ratio)
   const height = Math.round(rect.height * ratio)
   if (canvas.width !== width || canvas.height !== height) {
@@ -48,7 +54,7 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
   context.fillStyle = fogColor
   context.fillRect(0, 0, rect.width, rect.height)
 
-  if (points.length === 0 && cells.length === 0) {
+  if (geometry.routeSegments.length === 0 && geometry.cellCenters.length === 0) {
     context.fillStyle = `rgba(35, 58, 49, ${0.12 * zoomFade})`
     context.font = '600 13px system-ui'
     context.textAlign = 'center'
@@ -56,23 +62,21 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
     return
   }
 
-  const projectedSegments = splitRoute(points).map(segment => segment.map(point => map.project([point.lng, point.lat])))
-  const projectedCells = cells
-    .map(cell => map.project(discoveryCellCenter(cell)))
+  const projectedSegments = geometry.routeSegments.map(segment => segment.map(point => map.project([point.lng, point.lat])))
+  const projectedCells = geometry.cellCenters
+    .map(center => map.project(center))
     .filter(point => point.x > -200 && point.x < rect.width + 200 && point.y > -200 && point.y < rect.height + 200)
-  const path = () => {
-    context.beginPath()
-    projectedSegments.forEach(projected => projected.forEach((point, index) => {
+  const path = new Path2D()
+  projectedSegments.forEach(projected => projected.forEach((point, index) => {
       if (index === 0) {
-        context.moveTo(point.x, point.y)
-        if (projected.length === 1) context.lineTo(point.x + 0.01, point.y)
-      } else context.lineTo(point.x, point.y)
+        path.moveTo(point.x, point.y)
+        if (projected.length === 1) path.lineTo(point.x + 0.01, point.y)
+      } else path.lineTo(point.x, point.y)
     }))
-    projectedCells.forEach(point => {
-      context.moveTo(point.x, point.y)
-      context.lineTo(point.x + 0.01, point.y)
-    })
-  }
+  projectedCells.forEach(point => {
+    path.moveTo(point.x, point.y)
+    path.lineTo(point.x + 0.01, point.y)
+  })
 
   context.lineCap = 'round'
   context.lineJoin = 'round'
@@ -84,52 +88,55 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, points: Coordinat
 
   // Thin nested boundaries make the surrounding mist read like topographic
   // contours instead of a generic blur. Their spacing stays constant on earth.
-  ;[3, 2.8, 2.6, 2.4, 2.2, 2, 1.8, 1.6, 1.4, 1.2].map(scale => revealDiameterM * scale).forEach((widthM, index) => {
+  const contourScales = moving
+    ? [3, 2.6, 2.2, 1.8, 1.4]
+    : [3, 2.8, 2.6, 2.4, 2.2, 2, 1.8, 1.6, 1.4, 1.2]
+  contourScales.map(scale => revealDiameterM * scale).forEach((widthM, index) => {
     const outerWidth = widthForMeters(widthM)
     if (outerWidth < 1.5) return
-    path()
     context.globalCompositeOperation = 'source-over'
     context.lineWidth = outerWidth
     context.strokeStyle = `rgba(66, 81, 74, ${(0.09 + index * 0.004) * zoomFade})`
-    context.stroke()
+    context.stroke(path)
 
     // Cut out the middle of the broad stroke and restore fog there, leaving
     // only a fine boundary on each side of the explored shape.
     const innerWidth = Math.max(0.5, outerWidth - Math.min(1.4, outerWidth * 0.2))
-    path()
     context.globalCompositeOperation = 'destination-out'
     context.lineWidth = innerWidth
     context.strokeStyle = '#000'
-    context.stroke()
-    path()
+    context.stroke(path)
     context.globalCompositeOperation = 'source-over'
     context.lineWidth = innerWidth
     context.strokeStyle = fogColor
-    context.stroke()
+    context.stroke(path)
   })
 
   // A layered erase exposes the actual map with a luminous, feathered edge.
   context.globalCompositeOperation = 'destination-out'
-  ;[
+  const revealLayers = moving ? [
+    { widthM: revealDiameterM * 1.62, alpha: 0.2 },
+    { widthM: revealDiameterM * 1.18, alpha: 0.54 },
+    { widthM: revealDiameterM, alpha: 0.94 },
+  ] : [
     { widthM: revealDiameterM * 1.87, alpha: 0.12 },
     { widthM: revealDiameterM * 1.62, alpha: 0.2 },
     { widthM: revealDiameterM * 1.38, alpha: 0.32 },
     { widthM: revealDiameterM * 1.18, alpha: 0.54 },
     { widthM: revealDiameterM, alpha: 0.94 },
-  ].forEach(layer => {
-    path()
+  ]
+  revealLayers.forEach(layer => {
     context.lineWidth = widthForMeters(layer.widthM)
     context.strokeStyle = `rgba(0, 0, 0, ${layer.alpha * zoomFade})`
-    context.stroke()
+    context.stroke(path)
   })
 
   // The reference carries a subtle yellow-green glow in explored territory,
   // while streets and labels remain the map's own artwork underneath.
   context.globalCompositeOperation = 'source-over'
-  path()
   context.lineWidth = widthForMeters(revealDiameterM * 0.97)
   context.strokeStyle = `rgba(190, 224, 74, ${0.13 * zoomFade})`
-  context.stroke()
+  context.stroke(path)
 }
 
 export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, onViewChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
@@ -140,9 +147,14 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   const locationStateRef = useRef(locationState)
   const onMapClickRef = useRef(onMapClick)
   const onViewChangeRef = useRef(onViewChange)
-  const stateRef = useRef({ mode, points, cells })
+  const redrawRef = useRef<((force?: boolean) => void) | null>(null)
+  const geometry = useMemo<MistGeometry>(() => ({
+    routeSegments: splitRoute(points),
+    cellCenters: cells.map(cell => discoveryCellCenter(cell)),
+  }), [points, cells])
+  const stateRef = useRef({ mode, geometry })
 
-  useEffect(() => { stateRef.current = { mode, points, cells } }, [mode, points, cells])
+  useEffect(() => { stateRef.current = { mode, geometry } }, [mode, geometry])
   useEffect(() => { currentPointRef.current = currentPoint }, [currentPoint])
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
   useEffect(() => { onViewChangeRef.current = onViewChange }, [onViewChange])
@@ -163,6 +175,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       bearing: 0,
       attributionControl: false,
       maxZoom: 19,
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
       renderWorldCopies: false,
     })
     mapRef.current = map
@@ -184,18 +197,30 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       }
     })
 
-    const redraw = () => {
-      if (canvasRef.current) drawMist(canvasRef.current, map, stateRef.current.points, stateRef.current.cells, stateRef.current.mode)
+    let lastInteractionDrawAt = 0
+    const redraw = (force = false) => {
+      if (!canvasRef.current) return
+      const now = performance.now()
+      if (!force && map.isMoving() && now - lastInteractionDrawAt < 34) return
+      lastInteractionDrawAt = now
+      drawMist(canvasRef.current, map, stateRef.current.geometry, stateRef.current.mode)
     }
-    map.on('render', redraw)
-    map.on('click', () => onMapClickRef.current?.())
-    map.on('zoom', () => onZoomChange(map.getZoom()))
-    map.on('moveend', () => {
+    redrawRef.current = redraw
+    const handleMove = () => redraw()
+    const handleMoveEnd = () => {
+      redraw(true)
       const center = map.getCenter()
-      onViewChangeRef.current?.({ lng: center.lng, lat: center.lat }, map.getZoom())
-    })
-    map.on('resize', redraw)
+      const settledZoom = map.getZoom()
+      onZoomChange(settledZoom)
+      onViewChangeRef.current?.({ lng: center.lng, lat: center.lat }, settledZoom)
+    }
+    const handleResize = () => redraw(true)
+    map.on('move', handleMove)
+    map.on('click', () => onMapClickRef.current?.())
+    map.on('moveend', handleMoveEnd)
+    map.on('resize', handleResize)
     return () => {
+      redrawRef.current = null
       markerRef.current?.remove()
       map.remove()
       mapRef.current = null
@@ -205,9 +230,9 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    stateRef.current = { mode, points, cells }
-    map.triggerRepaint()
-  }, [mapRef, mode, points, cells])
+    stateRef.current = { mode, geometry }
+    redrawRef.current?.(true)
+  }, [mapRef, mode, geometry])
 
   useEffect(() => {
     const map = mapRef.current

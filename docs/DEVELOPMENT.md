@@ -7,7 +7,9 @@ npm install
 npm run dev
 ```
 
-Every browser redirects from `/` to the public leaderboard at `/leaderboard`. Only the installed Capacitor app exposes the private discovery map and live position. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
+In production, every browser redirects from `/` to the public leaderboard at `/leaderboard`. During `npm run dev`, `/` intentionally renders the private app experience in the browser so its map, tracking, journey drawer, and achievements can be tested locally; `/leaderboard` remains available for the public experience. The installed Capacitor app always opens the private app. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
+
+The development test-routes panel can be hidden with its close button. That preference is stored locally under `hecate:dev-tools-visible`; the small **Dev tools** control restores the panel. Neither control is rendered in production.
 
 ## Cross-device sync
 
@@ -30,6 +32,14 @@ It also installs the public leaderboard tables and the `publish_leaderboard_snap
 
 Existing hosted projects must also run `scripts/install-leaderboard-sharing-controls.sql`. It reserves public names case-insensitively in a private profile table, allows one rename per account even across unpublishing, and installs the profile RPC used by the sharing panel. Users choose which city aggregates to include; unselected cities and their distance are omitted from the public snapshot.
 
+Named city milestones use the same canonical discovered-city distance: First Footprint and one star at 5 km, Pathfinder and two stars at 25 km, and City Cartographer and three stars at 100 km. Private progress stays in the installed app. The public explorer profile derives earned milestones only from city totals the user explicitly published, so an unshared city cannot reveal a milestone or progress. Artwork is mapped to `public/achievements/first-footprint.png`, `pathfinder.png`, and `city-cartographer.png`.
+
+Personal achievements are recomputed from synchronized route history with the same new-ground algorithm used by the map. `scripts/install-leaderboard-achievements.sql` adds the public achievement-ID table and updates the publishing RPC. The public snapshot contains only achievement IDs selected by the user—never the qualifying route, date, activity history, or location. Artwork lives in `public/achievements/<achievement-id>.png`; a Hecate fallback is rendered until a PNG is supplied.
+
+The achievement catalog deliberately mixes approachable and long-term goals. Current thresholds are: 8 km of new ground in one walk; a 5 km walk that is at least 80% new; a 5 km loop with 2 km new ground; 500 m on three consecutive days; 500 m on seven days within two weeks; 500 m in one city on ten days; 2 km in five cities; and an 8 km walk with 3 km new ground that remains at least 50% familiar.
+
+The first complete history load on a device establishes its achievement baseline. Later unlocks are stored per account on that device, trigger a native local notification when permission is available, and remain in an in-app celebration queue until dismissed. This lets an unlock earned before backgrounding reappear when the app is opened without replaying every historical badge after an update.
+
 Completed walks retain every accepted route sample in PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 
 ## iOS and background tracking
@@ -39,6 +49,8 @@ Browsers can run the discovery experience while the page remains active, but the
 The native build uses `@capacitor-community/background-geolocation` while a walk is active. Its iOS target includes the required location usage descriptions and `location` background mode. With no walk active, a foreground watcher keeps the position marker current; the locate control only centers the map. The optional Discovery reminders switch replaces that watcher with a background-capable one. Its samples are held in memory, never added to discovery history. A local notification suggests starting a recording after five minutes and at least 150 m of movement through unmapped areas; returning to mapped ground resets the candidate. Background reminders work while the app process is running; a force quit or system termination ends the in-memory candidate. Check all three cases on an iPhone: idle with reminders off stops location on backgrounding, idle with reminders on continues monitoring and can notify, and an explicitly started walk continues recording after lock.
 
 To test on a development iPhone build, select Xcode as the developer directory and run `VITE_ENABLE_DEV_TOOLS=1 npm run ios:sync`, then launch the app from Xcode. Sign in, enable Discovery reminders in Account & sync, and leave the play button off. The development panel shows whether the current position is in an unmapped area and the live five-minute/150 m progress. Walk in an unmapped area to test the real GPS path. Real reminders have a two-hour cooldown, shown in the panel. Its **Simulate 5-min discovery** button feeds synthetic points through the same detector without changing your map or reminder cooldown; on iPhone it schedules an actual local notification five seconds later, so you can lock the phone to check delivery. The panel is omitted from normal builds without `VITE_ENABLE_DEV_TOOLS=1`.
+
+The same panel's **Test achievement unlock** button opens the production achievement celebration and schedules its local notification on a native build. Repeated presses cycle through the badge catalog. It is preview-only and does not add achievements to the account or its persisted celebration queue.
 
 ```bash
 # Rebuild the web app and synchronize it into Xcode

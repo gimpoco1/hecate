@@ -9,6 +9,7 @@ export function isAppRootPath(pathname: string) {
 export function shouldRedirectBrowserToLeaderboard(
   pathname: string,
   nativePlatform: boolean,
+  developmentMode = false,
 ) {
-  return !nativePlatform && isAppRootPath(pathname)
+  return !developmentMode && !nativePlatform && isAppRootPath(pathname)
 }
