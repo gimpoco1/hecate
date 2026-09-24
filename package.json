@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "check:achievement-ids": "node scripts/check-achievement-id-parity.mjs",
+    "prebuild": "npm run check:achievement-ids",
     "build": "tsc -b && vite build",
+    "pretest": "npm run check:achievement-ids",
     "test": "vitest run",
     "postinstall": "node scripts/patch-background-geolocation.mjs",
     "preview": "vite preview",

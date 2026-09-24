@@ -6,15 +6,25 @@ import {
 } from "./geo";
 import type { Coordinate } from "./types";
 
-export type PersonalAchievementId =
-  | "the-long-way"
-  | "mostly-uncharted"
-  | "full-circle"
-  | "three-day-spark"
-  | "momentum"
-  | "local-ritual"
-  | "city-hopper"
-  | "against-the-familiar";
+/**
+ * Canonical public achievement ID allow-list.
+ *
+ * The leaderboard RPC validates these IDs independently in `supabase.sql` and
+ * `scripts/install-leaderboard-achievements.sql`. The pretest/prebuild parity
+ * check fails whenever either deployed SQL definition drifts from this tuple.
+ */
+export const PERSONAL_ACHIEVEMENT_IDS = [
+  "the-long-way",
+  "mostly-uncharted",
+  "full-circle",
+  "three-day-spark",
+  "momentum",
+  "local-ritual",
+  "city-hopper",
+  "against-the-familiar",
+] as const;
+
+export type PersonalAchievementId = (typeof PERSONAL_ACHIEVEMENT_IDS)[number];
 
 export type PersonalAchievementDefinition = {
   id: PersonalAchievementId;

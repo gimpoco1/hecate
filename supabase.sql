@@ -494,6 +494,9 @@ begin
 
   for v_achievement in select value from jsonb_array_elements_text(p_achievements)
   loop
+    -- BEGIN PERSONAL_ACHIEVEMENT_IDS
+    -- Keep this allow-list synchronized with PERSONAL_ACHIEVEMENT_IDS in
+    -- src/achievements.ts. npm test and npm run build enforce parity.
     if v_achievement not in (
       'the-long-way',
       'mostly-uncharted',
@@ -504,6 +507,7 @@ begin
       'city-hopper',
       'against-the-familiar'
     ) then
+    -- END PERSONAL_ACHIEVEMENT_IDS
       raise exception 'An achievement ID is invalid';
     end if;
     insert into public.leaderboard_achievements (entry_id, achievement_id)
