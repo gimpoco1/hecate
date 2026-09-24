@@ -80,6 +80,7 @@ import {
   createReminderLocationTracker,
   isNativeApp,
   openLocationSettings,
+  passiveLocationMode,
   type LocationTracker,
 } from "./location";
 import {
@@ -114,7 +115,15 @@ type ExplorationSummary = {
   cityName?: string;
   cityPercentageAdded?: number;
 };
-type PassiveLocationStatus = "idle" | "located" | "denied" | "unavailable";
+type PassiveLocationStatus =
+  | "idle"
+  | "requesting"
+  | "located"
+  | "denied"
+  | "unavailable";
+const PASSIVE_LOCATION_MAX_AGE_MS = 5 * 60_000;
+const PASSIVE_LOCATION_ACQUISITION_TIMEOUT_MS = 12_000;
+const PASSIVE_LOCATION_RETRY_MS = 5_000;
 const REMINDER_NOTIFICATION_ID = 1042;
 const INACTIVITY_NOTIFICATION_ID = 1043;
 const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
@@ -230,6 +239,8 @@ export default function App() {
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>();
   const [passiveLocationStatus, setPassiveLocationStatus] =
     useState<PassiveLocationStatus>("idle");
+  const [passiveLocationRefreshGeneration, setPassiveLocationRefreshGeneration] =
+    useState(0);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [notificationPermissionReady, setNotificationPermissionReady] =
     useState<boolean | null>(() => isNativeApp() ? null : true);
@@ -1007,38 +1018,61 @@ export default function App() {
 
   useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
-    if (nativeApp && notificationPermissionReady === null) return;
     const backgroundReminder =
-      nativeApp && reminderEnabled && Boolean(accountUserId);
+      nativeApp &&
+      reminderEnabled &&
+      Boolean(accountUserId) &&
+      notificationPermissionReady === true;
     let disposed = false;
     let nativeActive = true;
+    let trackerMode: "foreground" | "reminder" | null = null;
     let retryTimer: number | null = null;
-    const stop = () => {
+    let acquisitionTimer: number | null = null;
+    const clearTimers = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (acquisitionTimer !== null) window.clearTimeout(acquisitionTimer);
       retryTimer = null;
+      acquisitionTimer = null;
+    };
+    const stop = () => {
+      clearTimers();
       const tracker = foregroundTrackerRef.current;
       foregroundTrackerRef.current = null;
+      trackerMode = null;
       if (tracker) void Promise.resolve(tracker.stop()).catch(() => undefined);
     };
-    const start = () => {
-      if (
-        disposed ||
-        (!backgroundReminder &&
-          (!nativeActive || document.visibilityState !== "visible")) ||
-        foregroundTrackerRef.current
-      )
-        return;
-      const tracker = backgroundReminder
-        ? createReminderLocationTracker()
-        : createForegroundLocationTracker();
+    const desiredMode = () =>
+      passiveLocationMode(
+        nativeActive && document.visibilityState === "visible",
+        backgroundReminder,
+      );
+    const start = (mode: "foreground" | "reminder") => {
+      if (disposed || desiredMode() !== mode) return;
+      if (foregroundTrackerRef.current && trackerMode === mode) return;
+      stop();
+      const tracker =
+        mode === "foreground"
+          ? createForegroundLocationTracker()
+          : createReminderLocationTracker();
       foregroundTrackerRef.current = tracker;
-      setPassiveLocationStatus("idle");
+      trackerMode = mode;
+      if (mode === "foreground") setPassiveLocationStatus("requesting");
+      let receivedPoint = false;
       void tracker
         .start(
           (point) => {
             if (disposed || foregroundTrackerRef.current !== tracker) return;
             if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat))
               return;
+            if (
+              mode === "foreground" &&
+              Date.now() - point.recordedAt > PASSIVE_LOCATION_MAX_AGE_MS
+            )
+              return;
+            receivedPoint = true;
+            if (acquisitionTimer !== null)
+              window.clearTimeout(acquisitionTimer);
+            acquisitionTimer = null;
             latestPassivePointRef.current = point;
             const visible =
               nativeActive && document.visibilityState === "visible";
@@ -1109,34 +1143,59 @@ export default function App() {
             setPassiveLocationStatus(
               error.code === "permission-denied" ? "denied" : "unavailable",
             );
-            if (error.code !== "permission-denied")
-              retryTimer = window.setTimeout(start, 10_000);
+            if (error.code !== "permission-denied") {
+              retryTimer = window.setTimeout(
+                () => start(mode),
+                PASSIVE_LOCATION_RETRY_MS,
+              );
+            }
           },
         )
+        .then(() => {
+          if (
+            disposed ||
+            mode !== "foreground" ||
+            receivedPoint ||
+            foregroundTrackerRef.current !== tracker
+          )
+            return;
+          acquisitionTimer = window.setTimeout(() => {
+            if (disposed || foregroundTrackerRef.current !== tracker) return;
+            stop();
+            setPassiveLocationStatus("unavailable");
+            retryTimer = window.setTimeout(
+              () => start("foreground"),
+              PASSIVE_LOCATION_RETRY_MS,
+            );
+          }, PASSIVE_LOCATION_ACQUISITION_TIMEOUT_MS);
+        })
         .catch(() => {
           if (disposed || foregroundTrackerRef.current !== tracker) return;
           stop();
           setPassiveLocationStatus("unavailable");
-          retryTimer = window.setTimeout(start, 10_000);
+          retryTimer = window.setTimeout(
+            () => start(mode),
+            PASSIVE_LOCATION_RETRY_MS,
+          );
         });
     };
     const updateVisibility = () => {
-      if (!nativeActive || document.visibilityState !== "visible") {
-        if (!backgroundReminder) {
-          stop();
-          setPassiveLocationStatus("idle");
-        }
-      } else {
+      const mode = desiredMode();
+      if (mode === "foreground") {
         if (
           latestPassivePointRef.current &&
-          Date.now() - latestPassivePointRef.current.recordedAt < 60_000
+          Date.now() - latestPassivePointRef.current.recordedAt <
+            PASSIVE_LOCATION_MAX_AGE_MS
         ) {
           setCurrentPoint(latestPassivePointRef.current);
           setPassiveLocationStatus("located");
-        } else {
-          setPassiveLocationStatus("idle");
         }
-        start();
+        start("foreground");
+      } else if (mode === "reminder") {
+        start("reminder");
+      } else {
+        stop();
+        setPassiveLocationStatus("idle");
       }
     };
     document.addEventListener("visibilitychange", updateVisibility);
@@ -1152,7 +1211,7 @@ export default function App() {
         })
         .catch(() => undefined);
     }
-    start();
+    updateVisibility();
     return () => {
       disposed = true;
       document.removeEventListener("visibilitychange", updateVisibility);
@@ -1164,6 +1223,7 @@ export default function App() {
     devToolsEnabled,
     nativeApp,
     notificationPermissionReady,
+    passiveLocationRefreshGeneration,
     reminderEnabled,
     tracking,
   ]);
@@ -1876,6 +1936,10 @@ export default function App() {
         essential: true,
       });
     }
+    if (!currentPoint || passiveLocationStatus !== "located") {
+      setPassiveLocationStatus("requesting");
+      setPassiveLocationRefreshGeneration((generation) => generation + 1);
+    }
   };
 
   const journeyBounds = (card: HTMLElement) => {
@@ -2499,11 +2563,16 @@ export default function App() {
           </button>
         )}
         <button
-          className="location-control"
+          className={`location-control${
+            passiveLocationStatus === "requesting"
+              ? " location-control--requesting"
+              : ""
+          }`}
           onClick={locate}
-          disabled={!currentPoint}
-          aria-label="Center on my location"
-          title="Center on my location"
+          aria-label={
+            currentPoint ? "Center on my location" : "Find my location"
+          }
+          title={currentPoint ? "Center on my location" : "Find my location"}
         >
           <LocateIcon size={21} />
         </button>

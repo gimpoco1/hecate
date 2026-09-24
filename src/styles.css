@@ -599,6 +599,20 @@ button {
   cursor: wait;
   opacity: 0.72;
 }
+.map-actions .location-control--requesting svg {
+  animation: location-search-pulse 1s ease-in-out infinite;
+}
+@keyframes location-search-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
 .map-actions button.active {
   color: var(--lime);
   background: var(--forest);

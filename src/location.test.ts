@@ -15,7 +15,7 @@ vi.mock('@capacitor/core', () => ({
   }),
 }))
 
-import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, openLocationSettings } from './location'
+import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, openLocationSettings, passiveLocationMode } from './location'
 
 describe('native location lifecycle', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -30,6 +30,7 @@ describe('native location lifecycle', () => {
     expect(native.addWatcher).toHaveBeenCalledWith(
       expect.objectContaining({
         requestPermissions: true,
+        stale: true,
       }),
       expect.any(Function),
     )
@@ -43,6 +44,13 @@ describe('native location lifecycle', () => {
     expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38 }))
     await tracker.stop()
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'foreground-watcher' })
+  })
+
+  it('uses reminder monitoring only after the app leaves the foreground', () => {
+    expect(passiveLocationMode(true, true)).toBe('foreground')
+    expect(passiveLocationMode(true, false)).toBe('foreground')
+    expect(passiveLocationMode(false, true)).toBe('reminder')
+    expect(passiveLocationMode(false, false)).toBeNull()
   })
 
   it('removes a watcher when stop is requested before registration finishes', async () => {
@@ -82,7 +90,7 @@ describe('native location lifecycle', () => {
     await tracker.start(() => undefined, () => undefined)
 
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 8, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
+      expect.objectContaining({ distanceFilter: 8, stale: false, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
       expect.any(Function),
     )
   })
@@ -93,7 +101,7 @@ describe('native location lifecycle', () => {
     const tracker = createReminderLocationTracker()
     await tracker.start(() => undefined, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 30, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
+      expect.objectContaining({ distanceFilter: 30, stale: false, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
       expect.any(Function),
     )
     await tracker.stop()

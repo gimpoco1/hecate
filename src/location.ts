@@ -12,6 +12,14 @@ export interface LocationTracker {
   stop(): void | Promise<void>
 }
 
+export type PassiveLocationMode = 'foreground' | 'reminder' | null
+
+/** Foreground positioning takes priority; reminder monitoring is background-only. */
+export function passiveLocationMode(appVisible: boolean, remindersEnabled: boolean): PassiveLocationMode {
+  if (appVisible) return 'foreground'
+  return remindersEnabled ? 'reminder' : null
+}
+
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null
 
@@ -69,7 +77,10 @@ class NativeLocationTracker implements LocationTracker {
         showsBackgroundLocationIndicator: false,
       } : {}),
       requestPermissions: true,
-      stale: false,
+      // A recent cached fix makes the locate control useful immediately while
+      // iOS obtains a fresh foreground position. Walks and reminders continue
+      // to require fresh locations.
+      stale: this.mode === 'foreground',
       distanceFilter: this.mode === 'walk' ? 8 : this.mode === 'reminder' ? 30 : 20,
     }
     const watcherId = await BackgroundGeolocation.addWatcher(options, (location, error) => {
