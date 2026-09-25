@@ -130,7 +130,7 @@ describe("personal achievements", () => {
     );
 
     expect(results["local-ritual"].earned).toBe(false);
-    expect(results["local-ritual"].progressLabel).toBe("0 / 10 days in one city");
+    expect(results["local-ritual"].progressLabel).toBe("0 of 10 days in one city");
   });
 
   it("combines multiple discoveries in the same city on the same day", () => {

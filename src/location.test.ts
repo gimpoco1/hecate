@@ -15,7 +15,7 @@ vi.mock('@capacitor/core', () => ({
   }),
 }))
 
-import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, openLocationSettings, passiveLocationMode } from './location'
+import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from './location'
 
 describe('native location lifecycle', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -51,6 +51,14 @@ describe('native location lifecycle', () => {
     expect(passiveLocationMode(true, false)).toBe('foreground')
     expect(passiveLocationMode(false, true)).toBe('reminder')
     expect(passiveLocationMode(false, false)).toBeNull()
+  })
+
+  it('centres the discovery map on the freshest live user position', () => {
+    const older = { lng: 2.1, lat: 41.3, recordedAt: 100 }
+    const newer = { lng: 2.2, lat: 41.4, recordedAt: 200 }
+
+    expect(newestCoordinate(older, newer)).toBe(newer)
+    expect(newestCoordinate(undefined, older)).toBe(older)
   })
 
   it('removes a watcher when stop is requested before registration finishes', async () => {

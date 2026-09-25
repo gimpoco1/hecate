@@ -20,6 +20,14 @@ export function passiveLocationMode(appVisible: boolean, remindersEnabled: boole
   return remindersEnabled ? 'reminder' : null
 }
 
+/** Pick the freshest available fix when centering the map on the user. */
+export function newestCoordinate(...points: Array<Coordinate | null | undefined>) {
+  return points.reduce<Coordinate | undefined>((newest, point) => {
+    if (!point) return newest
+    return !newest || point.recordedAt > newest.recordedAt ? point : newest
+  }, undefined)
+}
+
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null
 
