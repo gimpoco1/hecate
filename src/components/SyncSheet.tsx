@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
+import { Browser } from '@capacitor/browser'
 import { Capacitor } from '@capacitor/core'
 import type { User } from '@supabase/supabase-js'
 import { authRedirectUrl } from '../auth'
+import {
+  isAutomaticUpdatesEnabled,
+  setAutomaticUpdatesEnabled,
+} from '../automaticUpdates'
 import { clearReminderPreference } from '../explorationReminder'
 import { INACTIVITY_RADIUS_M, INACTIVITY_REMINDER_MINUTES } from '../inactivityReminder'
 import { openLocationSettings } from '../location'
 import { isSyncConfigured, supabase } from '../storage'
 import { CITY_MILESTONE_TIERS } from '../badges'
+import { displayNameForUser, loadMyLeaderboardProfile } from '../leaderboard'
 import { AchievementArtwork } from './AchievementArtwork'
 import { CityLevelStars } from './CityLevelStars'
 import { ChevronIcon, InfoIcon, XIcon } from './Icons'
@@ -41,6 +47,8 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [reminderPending, setReminderPending] = useState(false)
   const [reminderError, setReminderError] = useState('')
+  const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(isAutomaticUpdatesEnabled)
+  const [publishedDisplayName, setPublishedDisplayName] = useState<string | null>(null)
   const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false)
 
   useEffect(() => {
@@ -76,6 +84,28 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
       subscription.unsubscribe()
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || !user) {
+      setPublishedDisplayName(null)
+      return
+    }
+
+    let active = true
+    void loadMyLeaderboardProfile()
+      .then(profile => {
+        if (!active) return
+        setPublishedDisplayName(profile?.displayName ?? null)
+      })
+      .catch(() => {
+        if (!active) return
+        setPublishedDisplayName(null)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [open, user])
 
   if (!open) return null
 
@@ -184,9 +214,9 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
     }
   }
 
-  const accountName = user?.user_metadata?.full_name || user?.user_metadata?.name
+  const accountDisplayName = user ? displayNameForUser(user, publishedDisplayName) : ''
   const accountEmail = user?.email ?? 'Signed-in account'
-  const accountInitial = (accountName || accountEmail).trim().charAt(0).toUpperCase()
+  const accountInitial = (accountDisplayName || accountEmail).trim().charAt(0).toUpperCase()
   const cityMilestoneCount = cityProgress
     ? CITY_MILESTONE_TIERS.filter(tier => cityProgress.discoveredKm >= tier.thresholdKm).length
     : 0
@@ -196,6 +226,21 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
     setPassword('')
     setConfirmPassword('')
     setMessage('')
+  }
+
+  const openLeaderboard = async () => {
+    const leaderboardUrl = `${window.location.origin}/leaderboard`
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Browser.open({ url: leaderboardUrl })
+        return
+      } catch {
+        // Fall back to a browser tab if the native browser plugin is unavailable.
+      }
+    }
+
+    window.open(leaderboardUrl, '_blank', 'noopener,noreferrer')
   }
 
   return <div className="sheet-backdrop" onClick={onClose}>
@@ -212,24 +257,23 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
           <div className="account-card__identity">
             <span className="account-card__avatar" aria-hidden="true">{accountInitial}</span>
             <span>
-              {accountName && <strong>{accountName}</strong>}
+              <strong>{accountDisplayName}</strong>
               <small>{accountEmail}</small>
             </span>
           </div>
           <div className="account-card__status"><span /> Signed in and syncing</div>
-          <div className="account-setting">
-            <div>
-              <strong>Discovery reminders</strong>
-              <p>{nativeApp
-                ? 'Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced.'
-                : 'Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background.'}</p>
-            </div>
-            <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Discovery reminders" disabled={reminderPending} onClick={() => {
-              setReminderPending(true)
-              setReminderError('')
-              void onReminderChange(!reminderEnabled).then(error => setReminderError(error ?? '')).finally(() => setReminderPending(false))
-            }}>{reminderEnabled ? 'On' : 'Off'}</button>
-          </div>
+          <button
+            type="button"
+            className="account-quick-link"
+            aria-label="Open the public leaderboard"
+            onClick={() => { void openLeaderboard() }}
+          >
+            <span>
+              <strong>Go to Leaderboard</strong>
+              <small>See your city and overall ranking</small>
+            </span>
+            <span aria-hidden="true">Open</span>
+          </button>
           {Capacitor.getPlatform() === 'ios' && <details className="tracking-help">
             <summary>How tracking works <ChevronIcon size={18} strokeWidth={2.4} /></summary>
             <div className="tracking-help__content">
@@ -298,6 +342,33 @@ export function SyncSheet({ open, onClose, reminderEnabled, nativeApp, cityProgr
               })}
             </div>
           </section>}
+          <section className="account-settings-panel" aria-label="Account settings">
+            <div className="account-settings-panel__header">Settings</div>
+            <div className="account-setting">
+              <div>
+                <strong>Live data</strong>
+                <p>Refresh your leaderboard, badges, and public snapshot after each completed tracking session unless you switch this off.</p>
+              </div>
+              <button type="button" role="switch" aria-checked={autoUpdatesEnabled} aria-label="Automatic updates" onClick={() => {
+                const next = !autoUpdatesEnabled
+                setAutoUpdatesEnabled(next)
+                setAutomaticUpdatesEnabled(next)
+              }}>{autoUpdatesEnabled ? 'On' : 'Off'}</button>
+            </div>
+            <div className="account-setting">
+              <div>
+                <strong>Discovery reminders</strong>
+                <p>{nativeApp
+                  ? 'Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced.'
+                  : 'Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background.'}</p>
+              </div>
+              <button type="button" role="switch" aria-checked={reminderEnabled} aria-label="Discovery reminders" disabled={reminderPending} onClick={() => {
+                setReminderPending(true)
+                setReminderError('')
+                void onReminderChange(!reminderEnabled).then(error => setReminderError(error ?? '')).finally(() => setReminderPending(false))
+              }}>{reminderEnabled ? 'On' : 'Off'}</button>
+            </div>
+          </section>
           <button className="sign-out-button" type="button" onClick={signOut} disabled={authPending}>Sign out</button>
           {!confirmingDelete ? <button className="delete-account-button" type="button" onClick={() => { setConfirmingDelete(true); setMessage('') }} disabled={authPending}>Delete account</button>
             : <div className="delete-confirmation" role="alertdialog" aria-labelledby="delete-account-title" aria-describedby="delete-account-description">

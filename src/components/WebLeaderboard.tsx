@@ -23,6 +23,10 @@ import {
   type LeaderboardProfile,
   type LeaderboardSnapshot,
 } from "../leaderboard";
+import {
+  isAutomaticUpdatesEnabled,
+  setAutomaticUpdatesEnabled,
+} from "../automaticUpdates";
 import { createRequestGuard } from "../requestGuard";
 import { isSyncConfigured, supabase } from "../storage";
 import { ChevronIcon, HecateMark, UserIcon, XIcon } from "./Icons";
@@ -221,6 +225,9 @@ function LeaderboardAccountPanel({
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [pending, setPending] = useState(false);
   const [unpublishing, setUnpublishing] = useState(false);
+  const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(
+    isAutomaticUpdatesEnabled,
+  );
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const displayNameDirty = useRef(false);
@@ -248,31 +255,42 @@ function LeaderboardAccountPanel({
   }, [open, publishedDisplayName, user]);
 
   useEffect(() => {
+    if (!open || !user) return;
+    const refreshSnapshot = () => {
+      if (
+        snapshot?.calculationVersion === LEADERBOARD_CALCULATION_VERSION &&
+        !autoUpdatesEnabled
+      ) {
+        return;
+      }
+      setLoadingSnapshot(true);
+      setMessage("");
+      const isCurrentRequest = snapshotRequestGuard.current.begin();
+      void buildLeaderboardSnapshot(user.id)
+        .then((nextSnapshot) => {
+          if (isCurrentRequest()) setSnapshot(nextSnapshot);
+        })
+        .catch(() => {
+          if (!isCurrentRequest()) return;
+          setError(true);
+          setMessage(
+            "Your private discovery data could not be loaded. Try again in a moment.",
+          );
+        })
+        .finally(() => {
+          if (isCurrentRequest()) setLoadingSnapshot(false);
+        });
+    };
+
     if (
-      !open ||
-      !user ||
-      snapshot?.calculationVersion === LEADERBOARD_CALCULATION_VERSION
-    )
-      return;
-    setLoadingSnapshot(true);
-    setMessage("");
-    const isCurrentRequest = snapshotRequestGuard.current.begin();
-    void buildLeaderboardSnapshot(user.id)
-      .then((nextSnapshot) => {
-        if (isCurrentRequest()) setSnapshot(nextSnapshot);
-      })
-      .catch(() => {
-        if (!isCurrentRequest()) return;
-        setError(true);
-        setMessage(
-          "Your private discovery data could not be loaded. Try again in a moment.",
-        );
-      })
-      .finally(() => {
-        if (isCurrentRequest()) setLoadingSnapshot(false);
-      });
+      snapshot?.calculationVersion !== LEADERBOARD_CALCULATION_VERSION ||
+      autoUpdatesEnabled
+    ) {
+      refreshSnapshot();
+    }
+
     return () => snapshotRequestGuard.current.invalidate();
-  }, [open, snapshot?.calculationVersion, user]);
+  }, [autoUpdatesEnabled, open, snapshot?.calculationVersion, user]);
 
   useEffect(() => {
     if (!open || !snapshot || citySelectionDirty.current) return;
@@ -507,7 +525,7 @@ function LeaderboardAccountPanel({
                 {!profileLoaded
                   ? "Loading your public profile…"
                   : displayNameChanges >= 1
-                    ? "Your public name is locked."
+                    ? "Your public name is locked. Contact support to request a change."
                     : publishedDisplayName
                       ? "You can change your public name one more time."
                       : "Choose carefully. You can change this name once later."}
@@ -673,6 +691,25 @@ function LeaderboardAccountPanel({
                 <strong>{selectedAchievementIds.length} achievements</strong>
               </div>
             </div>
+            <div className="leaderboard-settings-row">
+              <div>
+                <small>Live data</small>
+                <strong>Automatic updates</strong>
+              </div>
+              <button
+                type="button"
+                className={`leaderboard-toggle ${autoUpdatesEnabled ? "is-on" : ""}`}
+                role="switch"
+                aria-checked={autoUpdatesEnabled}
+                onClick={() => {
+                  const next = !autoUpdatesEnabled;
+                  setAutoUpdatesEnabled(next);
+                  setAutomaticUpdatesEnabled(next);
+                }}
+              >
+                {autoUpdatesEnabled ? "On" : "Off"}
+              </button>
+            </div>
             <div className="leaderboard-publishing-actions">
               <button
                 className="leaderboard-primary-button"
@@ -699,7 +736,7 @@ function LeaderboardAccountPanel({
                 </button>
               )}
             </div>
-            <div className="leaderboard-account-actions">
+            <div className="leaderboard-footer-actions">
               <button
                 className="leaderboard-link-button"
                 type="button"
@@ -764,8 +801,7 @@ export function WebLeaderboard() {
 
   useEffect(() => {
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 20_000);
-    if (!supabase) return () => window.clearInterval(interval);
+    if (!supabase) return;
     const client = supabase;
     const channel = client
       .channel("public-leaderboard")
@@ -786,7 +822,6 @@ export function WebLeaderboard() {
       )
       .subscribe();
     return () => {
-      window.clearInterval(interval);
       void client.removeChannel(channel);
     };
   }, []);
