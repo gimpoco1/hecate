@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   personalAchievementDefinition,
@@ -23,6 +29,10 @@ import {
   type LeaderboardProfile,
   type LeaderboardSnapshot,
 } from "../leaderboard";
+import {
+  isAutomaticUpdatesEnabled,
+  setAutomaticUpdatesEnabled,
+} from "../automaticUpdates";
 import { createRequestGuard } from "../requestGuard";
 import { isSyncConfigured, supabase } from "../storage";
 import { ChevronIcon, HecateMark, UserIcon, XIcon } from "./Icons";
@@ -74,11 +84,7 @@ function ExplorerProfilePanel({
 }) {
   if (!entry) return null;
   const cityMilestones = entry.cities.flatMap((city) =>
-    earnedCityMilestones(
-        city.cityId,
-        city.cityName,
-        city.discoveredKm,
-      ),
+    earnedCityMilestones(city.cityId, city.cityName, city.discoveredKm),
   );
   const personalAchievements = entry.achievements.map(
     personalAchievementDefinition,
@@ -221,6 +227,9 @@ function LeaderboardAccountPanel({
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [pending, setPending] = useState(false);
   const [unpublishing, setUnpublishing] = useState(false);
+  const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(
+    isAutomaticUpdatesEnabled,
+  );
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
   const displayNameDirty = useRef(false);
@@ -248,31 +257,42 @@ function LeaderboardAccountPanel({
   }, [open, publishedDisplayName, user]);
 
   useEffect(() => {
+    if (!open || !user) return;
+    const refreshSnapshot = () => {
+      if (
+        snapshot?.calculationVersion === LEADERBOARD_CALCULATION_VERSION &&
+        !autoUpdatesEnabled
+      ) {
+        return;
+      }
+      setLoadingSnapshot(true);
+      setMessage("");
+      const isCurrentRequest = snapshotRequestGuard.current.begin();
+      void buildLeaderboardSnapshot(user.id)
+        .then((nextSnapshot) => {
+          if (isCurrentRequest()) setSnapshot(nextSnapshot);
+        })
+        .catch(() => {
+          if (!isCurrentRequest()) return;
+          setError(true);
+          setMessage(
+            "Your private discovery data could not be loaded. Try again in a moment.",
+          );
+        })
+        .finally(() => {
+          if (isCurrentRequest()) setLoadingSnapshot(false);
+        });
+    };
+
     if (
-      !open ||
-      !user ||
-      snapshot?.calculationVersion === LEADERBOARD_CALCULATION_VERSION
-    )
-      return;
-    setLoadingSnapshot(true);
-    setMessage("");
-    const isCurrentRequest = snapshotRequestGuard.current.begin();
-    void buildLeaderboardSnapshot(user.id)
-      .then((nextSnapshot) => {
-        if (isCurrentRequest()) setSnapshot(nextSnapshot);
-      })
-      .catch(() => {
-        if (!isCurrentRequest()) return;
-        setError(true);
-        setMessage(
-          "Your private discovery data could not be loaded. Try again in a moment.",
-        );
-      })
-      .finally(() => {
-        if (isCurrentRequest()) setLoadingSnapshot(false);
-      });
+      snapshot?.calculationVersion !== LEADERBOARD_CALCULATION_VERSION ||
+      autoUpdatesEnabled
+    ) {
+      refreshSnapshot();
+    }
+
     return () => snapshotRequestGuard.current.invalidate();
-  }, [open, snapshot?.calculationVersion, user]);
+  }, [autoUpdatesEnabled, open, snapshot?.calculationVersion, user]);
 
   useEffect(() => {
     if (!open || !snapshot || citySelectionDirty.current) return;
@@ -319,7 +339,7 @@ function LeaderboardAccountPanel({
     const { error: linkError } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: authRedirectUrl('/leaderboard'),
+        emailRedirectTo: authRedirectUrl("/leaderboard"),
         shouldCreateUser: false,
       },
     });
@@ -354,15 +374,12 @@ function LeaderboardAccountPanel({
       if (!selectedCities.length) {
         throw new Error("Choose at least one city to share.");
       }
-      await publishLeaderboardSnapshot(
-        displayName,
-        {
-          ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
-          achievements: currentSnapshot.achievements.filter((achievementId) =>
-            selectedAchievementIds.includes(achievementId),
-          ),
-        },
-      );
+      await publishLeaderboardSnapshot(displayName, {
+        ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
+        achievements: currentSnapshot.achievements.filter((achievementId) =>
+          selectedAchievementIds.includes(achievementId),
+        ),
+      });
       await onPublished();
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
@@ -497,7 +514,7 @@ function LeaderboardAccountPanel({
                 value={displayName}
                 onChange={(event) => {
                   displayNameDirty.current = true;
-                  setDisplayName(event.target.value.slice(0, 30))
+                  setDisplayName(event.target.value.slice(0, 30));
                 }}
                 minLength={2}
                 maxLength={30}
@@ -507,7 +524,7 @@ function LeaderboardAccountPanel({
                 {!profileLoaded
                   ? "Loading your public profile…"
                   : displayNameChanges >= 1
-                    ? "Your public name is locked."
+                    ? "Your public name is locked. Contact support to request a change."
                     : publishedDisplayName
                       ? "You can change your public name one more time."
                       : "Choose carefully. You can change this name once later."}
@@ -524,8 +541,7 @@ function LeaderboardAccountPanel({
                     setSelectedCityIds(
                       snapshot?.cities
                         .filter(
-                          (city) =>
-                            Math.round(city.discoveredKm * 1_000) > 0,
+                          (city) => Math.round(city.discoveredKm * 1_000) > 0,
                         )
                         .map((city) => city.cityId) ?? [],
                     );
@@ -536,9 +552,7 @@ function LeaderboardAccountPanel({
               </div>
               <div className="leaderboard-city-sharing__list">
                 {snapshot?.cities
-                  .filter(
-                    (city) => Math.round(city.discoveredKm * 1_000) > 0,
-                  )
+                  .filter((city) => Math.round(city.discoveredKm * 1_000) > 0)
                   .map((city) => {
                     const milestones = earnedCityMilestones(
                       city.cityId,
@@ -579,7 +593,8 @@ function LeaderboardAccountPanel({
                         <span className="leaderboard-city-sharing__identity">
                           <span>{city.cityName}</span>
                           <small>
-                            {latestMilestone?.title ?? "First Footprint at 5 km"}
+                            {latestMilestone?.title ??
+                              "First Footprint at 5 km"}
                           </small>
                         </span>
                         <strong>{formatDistance(city.discoveredKm)}</strong>
@@ -673,6 +688,25 @@ function LeaderboardAccountPanel({
                 <strong>{selectedAchievementIds.length} achievements</strong>
               </div>
             </div>
+            <div className="leaderboard-settings-row">
+              <div>
+                <small>Live data</small>
+                <strong>Automatic updates</strong>
+              </div>
+              <button
+                type="button"
+                className={`leaderboard-toggle ${autoUpdatesEnabled ? "is-on" : ""}`}
+                role="switch"
+                aria-checked={autoUpdatesEnabled}
+                onClick={() => {
+                  const next = !autoUpdatesEnabled;
+                  setAutoUpdatesEnabled(next);
+                  setAutomaticUpdatesEnabled(next);
+                }}
+              >
+                {autoUpdatesEnabled ? "On" : "Off"}
+              </button>
+            </div>
             <div className="leaderboard-publishing-actions">
               <button
                 className="leaderboard-primary-button"
@@ -695,11 +729,13 @@ function LeaderboardAccountPanel({
                   onClick={() => void unpublish()}
                   disabled={pending}
                 >
-                  {unpublishing ? "Stopping sharing…" : "Stop sharing my ranking"}
+                  {unpublishing
+                    ? "Stopping sharing…"
+                    : "Stop sharing my ranking"}
                 </button>
               )}
             </div>
-            <div className="leaderboard-account-actions">
+            <div className="leaderboard-footer-actions">
               <button
                 className="leaderboard-link-button"
                 type="button"
@@ -764,8 +800,7 @@ export function WebLeaderboard() {
 
   useEffect(() => {
     void refresh();
-    const interval = window.setInterval(() => void refresh(), 20_000);
-    if (!supabase) return () => window.clearInterval(interval);
+    if (!supabase) return;
     const client = supabase;
     const channel = client
       .channel("public-leaderboard")
@@ -786,7 +821,6 @@ export function WebLeaderboard() {
       )
       .subscribe();
     return () => {
-      window.clearInterval(interval);
       void client.removeChannel(channel);
     };
   }, []);
@@ -890,7 +924,10 @@ export function WebLeaderboard() {
           Every walk reveals a little more. See who has uncovered the most new
           ground—and how your favorite cities compare.
         </p>
-        <div className="leaderboard-app-actions" aria-label="Get or open Hecate">
+        <div
+          className="leaderboard-app-actions"
+          aria-label="Get or open Hecate"
+        >
           <a
             className="leaderboard-app-store-badge"
             href={APP_STORE_URL}
@@ -1019,27 +1056,38 @@ export function WebLeaderboard() {
                     {group.explorers.length === 1 ? "explorer" : "explorers"}
                   </span>
                 </span>
-                <ol className="city-treemap__leaders" aria-label={`Top explorers in ${group.cityName}`}>
-                  {group.explorers.slice(0, 5).map(({ entry, city }, explorerIndex) => (
-                    <li key={entry.entryId}>
-                      <button
-                        className="city-treemap__leader-button"
-                        type="button"
-                        onClick={() => setFocusedEntryId(entry.entryId)}
-                        aria-label={`View ${entry.displayName}'s explorer passport`}
-                      >
-                        <span className="city-treemap__leader-rank">{explorerIndex + 1}</span>
-                        <span className="city-treemap__leader-avatar" aria-hidden="true">{entry.displayName.trim().charAt(0).toUpperCase()}</span>
-                        <span className="city-treemap__leader-name">{entry.displayName}</span>
-                        <strong>{formatDistance(city.discoveredKm)}</strong>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-                <span
-                  className="city-treemap__view-all"
-                  aria-hidden="true"
+                <ol
+                  className="city-treemap__leaders"
+                  aria-label={`Top explorers in ${group.cityName}`}
                 >
+                  {group.explorers
+                    .slice(0, 5)
+                    .map(({ entry, city }, explorerIndex) => (
+                      <li key={entry.entryId}>
+                        <button
+                          className="city-treemap__leader-button"
+                          type="button"
+                          onClick={() => setFocusedEntryId(entry.entryId)}
+                          aria-label={`View ${entry.displayName}'s explorer passport`}
+                        >
+                          <span className="city-treemap__leader-rank">
+                            {explorerIndex + 1}
+                          </span>
+                          <span
+                            className="city-treemap__leader-avatar"
+                            aria-hidden="true"
+                          >
+                            {entry.displayName.trim().charAt(0).toUpperCase()}
+                          </span>
+                          <span className="city-treemap__leader-name">
+                            {entry.displayName}
+                          </span>
+                          <strong>{formatDistance(city.discoveredKm)}</strong>
+                        </button>
+                      </li>
+                    ))}
+                </ol>
+                <span className="city-treemap__view-all" aria-hidden="true">
                   View all <ChevronIcon size={15} />
                 </span>
               </article>

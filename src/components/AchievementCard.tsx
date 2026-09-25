@@ -3,9 +3,9 @@ import type { PersonalAchievementDefinition } from "../achievements";
 import { AchievementArtwork } from "./AchievementArtwork";
 
 const categoryLabels: Record<PersonalAchievementDefinition["category"], string> = {
-  "single-walk": "Single-walk achievement",
-  consistency: "Consistency achievement",
-  places: "Places achievement",
+  "single-walk": "One-walk challenge",
+  consistency: "Consistency challenge",
+  places: "Places challenge",
 };
 
 export function AchievementCard({

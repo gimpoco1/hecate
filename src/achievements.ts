@@ -38,7 +38,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
   {
     id: "the-long-way",
     title: "The Long Way",
-    description: "Uncover 8 km of new ground in a single walk.",
+    description: "Add 8 km of new places to your map during one walk.",
     image: "/achievements/the-long-way.png",
     category: "single-walk",
   },
@@ -46,7 +46,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "mostly-uncharted",
     title: "Mostly Uncharted",
     description:
-      "Complete a 5 km walk where at least 80% of the route reveals new ground.",
+      "Walk 5 km in one go, with at least 80% in places that are new to your map.",
     image: "/achievements/mostly-uncharted.png",
     category: "single-walk",
   },
@@ -54,21 +54,21 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "full-circle",
     title: "Full Circle",
     description:
-      "Walk 5 km, uncover 2 km, and finish within 200 m of where you started.",
+      "In one walk, travel 5 km, add 2 km to your map, and finish within 200 m of your start.",
     image: "/achievements/full-circle.png",
     category: "single-walk",
   },
   {
     id: "three-day-spark",
     title: "Three-Day Spark",
-    description: "Uncover at least 500 m on three consecutive days.",
+    description: "Add at least 500 m to your map each day for 3 days in a row.",
     image: "/achievements/three-day-spark.png",
     category: "consistency",
   },
   {
     id: "momentum",
     title: "Momentum",
-    description: "Uncover at least 500 m on seven days within two weeks.",
+    description: "Add at least 500 m to your map on 7 different days within 2 weeks.",
     image: "/achievements/momentum.png",
     category: "consistency",
   },
@@ -76,14 +76,14 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "local-ritual",
     title: "Local Ritual",
     description:
-      "Uncover at least 500 m in the same city on ten different days.",
+      "In the same city, add at least 500 m to your map on 10 different days.",
     image: "/achievements/local-ritual.png",
     category: "places",
   },
   {
     id: "city-hopper",
     title: "City Hopper",
-    description: "Uncover at least 2 km in five different cities.",
+    description: "Add at least 2 km to your map in each of 5 different cities.",
     image: "/achievements/city-hopper.png",
     category: "places",
   },
@@ -91,7 +91,7 @@ export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
     id: "against-the-familiar",
     title: "Against the Familiar",
     description:
-      "Walk 8 km, uncover 3 km, and keep at least half the route on familiar ground.",
+      "In one 8 km walk, add 3 km to your map while at least half the route follows places already on your map.",
     image: "/achievements/against-the-familiar.png",
     category: "single-walk",
   },
@@ -236,7 +236,7 @@ export function evaluateAchievementsFromJourneys(
     "the-long-way": {
       earned: longestNewWalk >= 8,
       progress: Math.min(1, longestNewWalk / 8),
-      progressLabel: `${Math.min(longestNewWalk, 8).toFixed(1)} / 8 km in one walk`,
+      progressLabel: `${Math.min(longestNewWalk, 8).toFixed(1)} of 8 km added in one walk`,
     },
     "mostly-uncharted": {
       earned: Boolean(
@@ -252,27 +252,27 @@ export function evaluateAchievementsFromJourneys(
     "full-circle": {
       earned: fullCircle === 3,
       progress: fullCircle / 3,
-      progressLabel: `${fullCircle} / 3 route conditions met`,
+      progressLabel: `${fullCircle} of 3 walk goals complete`,
     },
     "three-day-spark": {
       earned: consecutiveDays >= 3,
       progress: Math.min(1, consecutiveDays / 3),
-      progressLabel: `${Math.min(consecutiveDays, 3)} / 3 consecutive days`,
+      progressLabel: `${Math.min(consecutiveDays, 3)} of 3 days in a row`,
     },
     momentum: {
       earned: momentumDays >= 7,
       progress: Math.min(1, momentumDays / 7),
-      progressLabel: `${Math.min(momentumDays, 7)} / 7 days in two weeks`,
+      progressLabel: `${Math.min(momentumDays, 7)} of 7 days within 2 weeks`,
     },
     "local-ritual": {
       earned: localRitualDays >= 10,
       progress: Math.min(1, localRitualDays / 10),
-      progressLabel: `${Math.min(localRitualDays, 10)} / 10 days in one city`,
+      progressLabel: `${Math.min(localRitualDays, 10)} of 10 days in one city`,
     },
     "city-hopper": {
       earned: qualifyingCities >= 5,
       progress: Math.min(1, qualifyingCities / 5),
-      progressLabel: `${Math.min(qualifyingCities, 5)} / 5 cities`,
+      progressLabel: `${Math.min(qualifyingCities, 5)} of 5 cities at 2 km`,
     },
     "against-the-familiar": {
       earned: Boolean(

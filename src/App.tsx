@@ -70,7 +70,10 @@ import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
   journeySheetOffsetPx,
+  shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
+  shouldHideJourneyContentDuringDrag,
+  shouldKeepJourneyContentMounted,
   shouldShowExplorationRecap,
   shouldStartJourneyDrag,
 } from "./journeyUi";
@@ -79,6 +82,7 @@ import {
   createLocationTracker,
   createReminderLocationTracker,
   isNativeApp,
+  newestCoordinate,
   openLocationSettings,
   passiveLocationMode,
   type LocationTracker,
@@ -158,7 +162,7 @@ async function sendAchievementNotification(
   userId: string,
   test = false,
 ) {
-  if (!await ensureNotificationPermission()) return false;
+  if (!(await ensureNotificationPermission())) return false;
   const achievement = personalAchievementDefinition(achievementId);
   const notificationIndex = Math.max(
     0,
@@ -239,11 +243,13 @@ export default function App() {
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>();
   const [passiveLocationStatus, setPassiveLocationStatus] =
     useState<PassiveLocationStatus>("idle");
-  const [passiveLocationRefreshGeneration, setPassiveLocationRefreshGeneration] =
-    useState(0);
+  const [
+    passiveLocationRefreshGeneration,
+    setPassiveLocationRefreshGeneration,
+  ] = useState(0);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [notificationPermissionReady, setNotificationPermissionReady] =
-    useState<boolean | null>(() => isNativeApp() ? null : true);
+    useState<boolean | null>(() => (isNativeApp() ? null : true));
   const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(
     null,
   );
@@ -287,6 +293,7 @@ export default function App() {
     null,
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
+  const [journeyContentVisible, setJourneyContentVisible] = useState(true);
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
@@ -331,10 +338,14 @@ export default function App() {
     startY: number;
     startHeight: number;
     currentHeight: number;
+    collapsedHeight: number;
+    expandedHeight: number;
+    contentHidden: boolean;
     moved: boolean;
     startedExpanded: boolean;
   } | null>(null);
   const journeyDragFrameRef = useRef<number | null>(null);
+  const journeySettleFrameRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
@@ -527,6 +538,16 @@ export default function App() {
   useEffect(() => {
     pointsRef.current = points;
   }, [points]);
+  useEffect(
+    () => () => {
+      if (journeyDragFrameRef.current !== null)
+        cancelAnimationFrame(journeyDragFrameRef.current);
+      if (journeySettleFrameRef.current !== null)
+        cancelAnimationFrame(journeySettleFrameRef.current);
+      journeyAnimationRef.current?.cancel();
+    },
+    [],
+  );
   const cityProgresses = useMemo(() => {
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
@@ -594,7 +615,8 @@ export default function App() {
     if (nativeApp) {
       unlocks.newlyEarned.forEach((achievementId) => {
         void sendAchievementNotification(achievementId, accountUserId).catch(
-          (error) => console.warn("Could not show achievement notification", error),
+          (error) =>
+            console.warn("Could not show achievement notification", error),
         );
       });
     }
@@ -1306,7 +1328,7 @@ export default function App() {
 
   useEffect(() => {
     if (
-      !citiesExpanded ||
+      !journeyContentVisible ||
       !accountUserId ||
       citiesLoadedUserId !== accountUserId ||
       points.length === 0
@@ -1356,15 +1378,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [accountUserId, cells, citiesExpanded, citiesLoadedUserId, points]);
+  }, [accountUserId, cells, citiesLoadedUserId, journeyContentVisible, points]);
 
   const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), []);
-  const onViewChange = useCallback(
-    (center: { lng: number; lat: number }) => {
-      setViewCenter(center);
-    },
-    [],
-  );
+  const onViewChange = useCallback((center: { lng: number; lat: number }) => {
+    setViewCenter(center);
+  }, []);
 
   const focusOnUserPoint = (point: Coordinate) => {
     setViewCenter({ lng: point.lng, lat: point.lat });
@@ -1389,7 +1408,11 @@ export default function App() {
         !latest || cell.discoveredAt > latest.discoveredAt ? cell : latest,
       undefined,
     );
-    const focus =
+    const livePoint = newestCoordinate(
+      currentPoint,
+      latestPassivePointRef.current,
+    );
+    const fallbackFocus =
       latestPoint ??
       (latestCell
         ? (() => {
@@ -1397,13 +1420,16 @@ export default function App() {
             return { lng, lat, recordedAt: latestCell.discoveredAt };
           })()
         : undefined);
+    const focus = livePoint ?? fallbackFocus;
 
     setShowIntro(false);
     if (focus) {
+      setViewCenter({ lng: focus.lng, lat: focus.lat });
+      setViewedCity(null);
       mapRef.current?.flyTo({
         center: [focus.lng, focus.lat],
-        zoom: 14.3,
-        duration: 2600,
+        zoom: livePoint ? 15 : 14.3,
+        duration: 850,
         essential: true,
       });
     } else {
@@ -1497,7 +1523,8 @@ export default function App() {
         !testRouteRunningRef.current &&
         discoveryHistoryReadyRef.current &&
         citiesLoadedUserIdRef.current === walkOwner &&
-        recordedPoint.recordedAt - lastBackgroundAchievementCheckRef.current >= 10_000
+        recordedPoint.recordedAt - lastBackgroundAchievementCheckRef.current >=
+          10_000
       ) {
         lastBackgroundAchievementCheckRef.current = recordedPoint.recordedAt;
         const unlocks = reconcileDiscoveryAchievementUnlocks(
@@ -1507,7 +1534,8 @@ export default function App() {
         );
         unlocks.newlyEarned.forEach((achievementId) => {
           void sendAchievementNotification(achievementId, walkOwner).catch(
-            (error) => console.warn("Could not show achievement notification", error),
+            (error) =>
+              console.warn("Could not show achievement notification", error),
           );
         });
       }
@@ -1777,7 +1805,7 @@ export default function App() {
       return;
     }
     try {
-      if (!await ensureNotificationPermission()) {
+      if (!(await ensureNotificationPermission())) {
         setReminderTestMessage(
           "Allow notifications in iPhone Settings, then try the stop reminder test again.",
         );
@@ -1958,8 +1986,12 @@ export default function App() {
     );
   };
 
-  const setJourneyVisibleHeight = (card: HTMLElement, height: number) => {
-    const { expanded } = journeyBounds(card);
+  const setJourneyVisibleHeight = (
+    card: HTMLElement,
+    height: number,
+    expandedHeight?: number,
+  ) => {
+    const expanded = expandedHeight ?? journeyBounds(card).expanded;
     card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
   };
 
@@ -1973,54 +2005,77 @@ export default function App() {
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
+    if (journeySettleFrameRef.current !== null) {
+      cancelAnimationFrame(journeySettleFrameRef.current);
+      journeySettleFrameRef.current = null;
+    }
     journeyAnimationRef.current?.cancel();
-    card.style.transform = "";
-    setCitiesExpanded(expanded);
-
-    if (reducedMotion) return;
-
-    const overshootHeight = expanded
-      ? Math.min(expandedHeight + 14, expandedHeight * 1.025)
-      : Math.max(collapsed - 10, collapsed * 0.9);
+    journeyAnimationRef.current = null;
     const offsetForHeight = (height: number) =>
       `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
-    const animation = card.animate(
-      [
-        { transform: offsetForHeight(startHeight) },
-        { transform: offsetForHeight(overshootHeight), offset: 0.76 },
-        { transform: offsetForHeight(targetHeight) },
-      ],
-      {
-        duration: 420,
-        easing: "cubic-bezier(.18, .9, .24, 1)",
-        fill: "both",
-      },
-    );
-    journeyAnimationRef.current = animation;
-    void animation.finished
-      .catch(() => undefined)
-      .then(() => {
-        if (journeyAnimationRef.current !== animation) return;
-        journeyAnimationRef.current = null;
-        animation.cancel();
+    card.style.transition = "none";
+    card.style.transform = offsetForHeight(startHeight);
+
+    if (reducedMotion) {
+      setCitiesExpanded(expanded);
+      setJourneyContentVisible(shouldKeepJourneyContentMounted(expanded, 0));
+      card.style.transition = "";
+      card.style.transform = offsetForHeight(targetHeight);
+      return;
+    }
+
+    // Keep the city and achievement data mounted so the sheet can update live
+    // without waiting for a full open/close drag cycle to finish.
+    if (expanded) setCitiesExpanded(true);
+    requestAnimationFrame(() => {
+      card.style.transition = "transform 180ms cubic-bezier(.2, .8, .2, 1)";
+      card.style.transform = offsetForHeight(targetHeight);
+      requestAnimationFrame(() => {
+        if (journeyCardRef.current === card) {
+          card.style.transition = "";
+          card.style.transform = offsetForHeight(targetHeight);
+        }
       });
+      setJourneyContentVisible(shouldKeepJourneyContentMounted(expanded, 0));
+      if (!expanded) setCitiesExpanded(false);
+    });
   };
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const target = event.target as HTMLElement;
+    const card = journeyCardRef.current;
+    if (!card) return;
+    const header = card.querySelector(
+      ".journey-card__header",
+    ) as HTMLElement | null;
+    const headerRect = header?.getBoundingClientRect();
+    const pointerOffsetFromHeaderTop =
+      headerRect && event.clientY >= headerRect.top
+        ? event.clientY - headerRect.top
+        : 0;
+    if (
+      headerRect &&
+      Boolean(target.closest(".journey-card__header")) &&
+      !shouldAllowHeaderGesture(headerRect.height, pointerOffsetFromHeaderTop)
+    ) {
+      return;
+    }
     if (
       !shouldStartJourneyDrag(
         citiesExpanded,
-        Boolean(target.closest(".journey-card__handle")),
+        Boolean(target.closest(".journey-card__header")),
         Boolean(target.closest(".discovery-control")),
       )
     )
       return;
-    const card = journeyCardRef.current;
-    if (!card) return;
+    const { collapsed, expanded } = journeyBounds(card);
     const startHeight = journeyVisibleHeight(card);
-    setJourneyVisibleHeight(card, startHeight);
+    setJourneyVisibleHeight(card, startHeight, expanded);
+    if (journeySettleFrameRef.current !== null) {
+      cancelAnimationFrame(journeySettleFrameRef.current);
+      journeySettleFrameRef.current = null;
+    }
     journeyAnimationRef.current?.cancel();
     journeyAnimationRef.current = null;
     card.classList.add("journey-card--dragging");
@@ -2030,6 +2085,9 @@ export default function App() {
       startY: event.clientY,
       startHeight,
       currentHeight: startHeight,
+      collapsedHeight: collapsed,
+      expandedHeight: expanded,
+      contentHidden: false,
       moved: false,
       startedExpanded: citiesExpanded,
     };
@@ -2039,7 +2097,7 @@ export default function App() {
     const drag = journeyDragRef.current;
     const card = journeyCardRef.current;
     if (!drag || !card || drag.pointerId !== event.pointerId) return;
-    const { collapsed, expanded } = journeyBounds(card);
+    const { collapsedHeight: collapsed, expandedHeight: expanded } = drag;
     const rawHeight = drag.startHeight + drag.startY - event.clientY;
     const height =
       rawHeight < collapsed
@@ -2049,11 +2107,27 @@ export default function App() {
           : rawHeight;
     drag.currentHeight = height;
     drag.moved ||= Math.abs(event.clientY - drag.startY) > 6;
+    const dragDistance = event.clientY - drag.startY;
+    if (
+      shouldHideJourneyContentDuringDrag(drag.startedExpanded, dragDistance)
+    ) {
+      if (!drag.contentHidden) {
+        drag.contentHidden = true;
+        setJourneyContentVisible(false);
+      }
+    } else if (drag.contentHidden) {
+      drag.contentHidden = false;
+      setJourneyContentVisible(true);
+    }
 
     if (journeyDragFrameRef.current !== null) return;
     journeyDragFrameRef.current = requestAnimationFrame(() => {
       if (journeyDragRef.current)
-        setJourneyVisibleHeight(card, journeyDragRef.current.currentHeight);
+        setJourneyVisibleHeight(
+          card,
+          journeyDragRef.current.currentHeight,
+          journeyDragRef.current.expandedHeight,
+        );
       journeyDragFrameRef.current = null;
     });
   };
@@ -2071,8 +2145,8 @@ export default function App() {
     }
     if (!drag.moved) {
       card.classList.remove("journey-card--dragging");
-      card.style.transform = "";
       journeyDragRef.current = null;
+      settleJourneySheet(drag.startedExpanded, drag.currentHeight);
       return;
     }
     event.preventDefault();
@@ -2080,7 +2154,7 @@ export default function App() {
     window.setTimeout(() => {
       suppressJourneyClickRef.current = false;
     }, 0);
-    const { collapsed, expanded: expandedHeight } = journeyBounds(card);
+    const { collapsedHeight: collapsed, expandedHeight } = drag;
     // Pointer-up can arrive before the final pointer-move frame. Apply that
     // last position so a single, deliberate swipe is never ignored.
     const rawEndHeight = drag.startHeight + drag.startY - event.clientY;
@@ -2112,7 +2186,6 @@ export default function App() {
       journeyDragFrameRef.current = null;
     }
     card.classList.remove("journey-card--dragging");
-    card.style.transform = "";
     settleJourneySheet(drag.startedExpanded, drag.currentHeight);
     journeyDragRef.current = null;
   };
@@ -2250,7 +2323,8 @@ export default function App() {
         ? "Location access disabled · Open Settings"
         : "Location access disabled · Check browser settings"
       : "Location temporarily unavailable";
-  const accountDataLoading = !authReady || Boolean(accountUserId && discoveryLoading);
+  const accountDataLoading =
+    !authReady || Boolean(accountUserId && discoveryLoading);
 
   return (
     <main
@@ -2613,68 +2687,70 @@ export default function App() {
           onPointerCancel={cancelJourneyDrag}
           onClickCapture={suppressClickAfterJourneyDrag}
         >
-          <div className="journey-card__handle" aria-hidden="true">
-            <span />
-          </div>
-          <div className="journey-card__summary">
-            <div className="eyebrow">Your discovery</div>
-            <div className="discovery-metrics">
-              {accountUserId ? (
-                <>
-                  <div className="distance">
-                    {formatDistance(currentCityDistance)}
-                  </div>
-                  {summaryCity && (
-                    <button
-                      className="city-progress"
-                      onClick={() => setCoverageInfoOpen(true)}
-                      aria-label={`Explain discovery percentage for ${summaryCity.name}`}
-                    >
-                      <strong>{discoveryLabel}</strong>
-                      <span>of {summaryCity.name}</span>
-                      <span className="city-progress__info">
-                        <InfoIcon size={18} strokeWidth={1.7} />
-                      </span>
-                    </button>
-                  )}
-                </>
-              ) : (
-                <p className="discovery-sign-in">Sign in to start tracking</p>
-              )}
+          <div className="journey-card__header">
+            <div className="journey-card__handle" aria-hidden="true">
+              <span />
             </div>
-          </div>
-          <button
-            className={`discovery-control discovery-control--${tracking}`}
-            onClick={toggleTracking}
-            onPointerDown={(event) => event.stopPropagation()}
-            disabled={
-              !authReady || discoveryLoading || tracking === "requesting"
-            }
-            aria-label={
-              !accountUserId
-                ? "Sign in to start discovering"
-                : tracking === "tracking"
-                  ? "Stop discovering"
-                  : tracking === "requesting"
-                    ? "Finding your location"
+            <div className="journey-card__summary">
+              <div className="eyebrow">Your discovery</div>
+              <div className="discovery-metrics">
+                {accountUserId ? (
+                  <>
+                    <div className="distance">
+                      {formatDistance(currentCityDistance)}
+                    </div>
+                    {summaryCity && (
+                      <button
+                        className="city-progress"
+                        onClick={() => setCoverageInfoOpen(true)}
+                        aria-label={`Explain discovery percentage for ${summaryCity.name}`}
+                      >
+                        <strong>{discoveryLabel}</strong>
+                        <span>of {summaryCity.name}</span>
+                        <span className="city-progress__info">
+                          <InfoIcon size={18} strokeWidth={1.7} />
+                        </span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="discovery-sign-in">Sign in to start tracking</p>
+                )}
+              </div>
+            </div>
+            <button
+              className={`discovery-control discovery-control--${tracking}`}
+              onClick={toggleTracking}
+              onPointerDown={(event) => event.stopPropagation()}
+              disabled={
+                !authReady || discoveryLoading || tracking === "requesting"
+              }
+              aria-label={
+                !accountUserId
+                  ? "Sign in to start discovering"
+                  : tracking === "tracking"
+                    ? "Stop discovering"
+                    : tracking === "requesting"
+                      ? "Finding your location"
+                      : "Start discovering"
+              }
+              title={
+                !accountUserId
+                  ? "Sign in to discover"
+                  : tracking === "tracking"
+                    ? "Stop discovering"
                     : "Start discovering"
-            }
-            title={
-              !accountUserId
-                ? "Sign in to discover"
-                : tracking === "tracking"
-                  ? "Stop discovering"
-                  : "Start discovering"
-            }
-          >
-            {tracking === "tracking" ? (
-              <span className="stop-square" />
-            ) : tracking === "requesting" ? (
-              <span className="control-spinner" />
-            ) : (
-              <span className="play-triangle" />
-            )}
-          </button>
+              }
+            >
+              {tracking === "tracking" ? (
+                <span className="stop-square" />
+              ) : tracking === "requesting" ? (
+                <span className="control-spinner" />
+              ) : (
+                <span className="play-triangle" />
+              )}
+            </button>
+          </div>
           {tracking === "tracking" && (
             <div className="tracking-notice">
               <span />
@@ -2696,8 +2772,11 @@ export default function App() {
               sample discovery.
             </p>
           )}
-          {citiesExpanded && (
-            <div className="discovered-cities" aria-label="Discovered cities">
+          {journeyContentVisible && (
+            <div
+              className={`discovered-cities${citiesExpanded ? "" : " discovered-cities--collapsed"}`}
+              aria-label="Discovered cities"
+            >
               <div className="discovered-cities__heading">
                 <span>Your cities</span>
                 <small>
@@ -2755,7 +2834,10 @@ export default function App() {
                   <div className="personal-achievements__heading">
                     <span id="personal-achievements-title">Achievements</span>
                     <small>
-                      {achievementEvaluations.filter(({ earned }) => earned).length}
+                      {
+                        achievementEvaluations.filter(({ earned }) => earned)
+                          .length
+                      }
                       {" / "}
                       {achievementEvaluations.length} earned
                     </small>
@@ -2765,7 +2847,9 @@ export default function App() {
                       ({ definition, earned, progress, progressLabel }) => (
                         <li
                           key={definition.id}
-                          className={earned ? "personal-achievements__earned" : ""}
+                          className={
+                            earned ? "personal-achievements__earned" : ""
+                          }
                         >
                           <AchievementCard
                             achievement={definition}
