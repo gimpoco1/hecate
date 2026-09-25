@@ -41,7 +41,9 @@ describe("automaticUpdates", () => {
 
     setAutomaticUpdatesEnabled(false);
     expect(isAutomaticUpdatesEnabled()).toBe(false);
-    expect(globalThis.localStorage.getItem(AUTOMATIC_UPDATES_KEY)).toBe("false");
+    expect(globalThis.localStorage.getItem(AUTOMATIC_UPDATES_KEY)).toBe(
+      "false",
+    );
 
     setAutomaticUpdatesEnabled(true);
     expect(isAutomaticUpdatesEnabled()).toBe(true);
