@@ -16,6 +16,12 @@ import { openLocationSettings } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { CITY_MILESTONE_TIERS } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
+import {
+  FAVORITE_PLACE_ICONS,
+  favoritePlaceIconVector,
+  type FavoritePlace,
+  type FavoritePlaceIcon,
+} from "../favoritePlaces";
 import { publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
@@ -32,11 +38,26 @@ type Props = {
     cityName: string;
     discoveredKm: number;
   } | null;
+  favoritePlaces: FavoritePlace[];
+  onFavoriteSelect: (favorite: FavoritePlace) => void;
   onReminderChange: (enabled: boolean) => Promise<string | null>;
 };
 type SignInMethod = "password" | "link";
 type PasswordIntent = "signin" | "signup";
 type MessageTone = "success" | "error";
+
+function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
+  const vector = favoritePlaceIconVector(icon);
+  return (
+    <svg
+      className={vector.filled ? "favorite-icon--filled" : undefined}
+      viewBox={vector.viewBox}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: vector.markup }}
+    />
+  );
+}
 
 export function SyncSheet({
   open,
@@ -45,6 +66,8 @@ export function SyncSheet({
   reminderEnabled,
   nativeApp,
   cityProgress,
+  favoritePlaces,
+  onFavoriteSelect,
   onReminderChange,
 }: Props) {
   const [email, setEmail] = useState("");
@@ -265,6 +288,12 @@ export function SyncSheet({
         (tier) => cityProgress.discoveredKm >= tier.thresholdKm,
       ).length
     : 0;
+  const favoriteGroups = FAVORITE_PLACE_ICONS.flatMap((category) => {
+    const places = favoritePlaces
+      .filter((place) => place.icon === category.id)
+      .sort((first, second) => first.name.localeCompare(second.name));
+    return places.length ? [{ ...category, places }] : [];
+  });
   const beginAccountCreation = () => {
     setSignInMethod("password");
     setPasswordIntent("signup");
@@ -352,6 +381,53 @@ export function SyncSheet({
               </span>
               <span aria-hidden="true">Open</span>
             </button>
+            <section
+              className="account-favorites"
+              aria-labelledby="account-favorites-title"
+            >
+              <div className="account-favorites__heading">
+                <span>
+                  <strong id="account-favorites-title">
+                    Favorite places
+                  </strong>{" "}
+                </span>
+                <small>{favoritePlaces.length}</small>
+              </div>
+              <div className="account-favorites__groups">
+                {favoriteGroups.length === 0 && (
+                  <p className="account-favorites__empty">
+                    Places you save from the map will appear here.
+                  </p>
+                )}
+                {favoriteGroups.map((group) => (
+                  <details key={group.id} open={favoriteGroups.length === 1}>
+                    <summary>
+                      <span className="account-favorites__category-icon">
+                        <FavoriteGlyph icon={group.id} />
+                      </span>
+                      <strong>{group.label}</strong>
+                      <small>{group.places.length}</small>
+                      <ChevronIcon size={16} strokeWidth={2.3} />
+                    </summary>
+                    <div className="account-favorites__places">
+                      {group.places.map((place) => (
+                        <button
+                          key={place.id}
+                          type="button"
+                          onClick={() => onFavoriteSelect(place)}
+                        >
+                          <span>
+                            <strong>{place.name}</strong>
+                            <small>{place.comment}</small>
+                          </span>
+                          <ChevronIcon size={16} strokeWidth={2.3} />
+                        </button>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
             {Capacitor.getPlatform() === "ios" && (
               <details className="tracking-help">
                 <summary>
@@ -745,14 +821,10 @@ export function SyncSheet({
                       ? "Create account"
                       : "Sign in"}
               </button>
-              {signInMethod === "password" &&
-                passwordIntent === "signin" && (
+              {signInMethod === "password" && passwordIntent === "signin" && (
                 <div className="auth-switch">
                   <span>New to Hecate?</span>
-                  <button
-                    type="button"
-                    onClick={beginAccountCreation}
-                  >
+                  <button type="button" onClick={beginAccountCreation}>
                     Create account
                   </button>
                 </div>

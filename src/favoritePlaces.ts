@@ -45,6 +45,7 @@ export type FavoritePlaceIcon = (typeof FAVORITE_PLACE_ICONS)[number]["id"];
 
 export type FavoritePlace = {
   id: string;
+  name: string;
   lat: number;
   lng: number;
   comment: string;
@@ -55,6 +56,7 @@ export type FavoritePlace = {
 
 type FavoritePlaceRow = {
   id: string;
+  name: string;
   latitude: number;
   longitude: number;
   comment: string;
@@ -112,6 +114,7 @@ function isFavoritePlace(value: unknown): value is FavoritePlace {
   const place = value as Partial<FavoritePlace>;
   return (
     typeof place.id === "string" &&
+    (place.name === undefined || typeof place.name === "string") &&
     typeof place.lat === "number" &&
     Number.isFinite(place.lat) &&
     place.lat >= -90 &&
@@ -131,7 +134,11 @@ export function favoritePlacesFromUnknown(value: unknown): FavoritePlace[] {
   return Array.isArray(value)
     ? value
         .filter(isFavoritePlace)
-        .map((place) => ({ ...place, icon: place.icon ?? "star" }))
+        .map((place) => ({
+          ...place,
+          name: place.name === undefined ? "Favorite place" : place.name,
+          icon: place.icon ?? "star",
+        }))
     : [];
 }
 
@@ -156,6 +163,7 @@ export function saveFavoritePlaces(
 function favoritePlaceFromRow(row: FavoritePlaceRow): FavoritePlace | null {
   const place = {
     id: row.id,
+    name: row.name,
     lat: Number(row.latitude),
     lng: Number(row.longitude),
     comment: row.comment,
@@ -170,6 +178,7 @@ function favoritePlaceToRow(place: FavoritePlace, userId: string) {
   return {
     id: place.id,
     user_id: userId,
+    name: place.name,
     latitude: place.lat,
     longitude: place.lng,
     comment: place.comment,
@@ -185,7 +194,7 @@ export async function loadFavoritePlacesFromDatabase(
 ) {
   const { data, error } = await client
     .from("favorite_places")
-    .select("id,latitude,longitude,comment,icon,created_at,updated_at")
+    .select("id,name,latitude,longitude,comment,icon,created_at,updated_at")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
   if (error) throw error;
@@ -223,7 +232,11 @@ export async function deleteFavoritePlacesFromDatabase(
   if (error) throw error;
 }
 
-export function createFavoritePlace(lat: number, lng: number): FavoritePlace {
+export function createFavoritePlace(
+  lat: number,
+  lng: number,
+  suggestedName = "Favorite place",
+): FavoritePlace {
   const now = Date.now();
   const id =
     typeof crypto.randomUUID === "function"
@@ -231,6 +244,7 @@ export function createFavoritePlace(lat: number, lng: number): FavoritePlace {
       : `favorite-${now}-${Math.random().toString(36).slice(2)}`;
   return {
     id,
+    name: suggestedName.trim().slice(0, 80) || "Favorite place",
     lat,
     lng,
     comment: "",

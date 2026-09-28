@@ -624,6 +624,7 @@ drop table if exists public.discovery_points;
 create table if not exists public.favorite_places (
   user_id uuid not null references auth.users(id) on delete cascade,
   id text not null check (char_length(id) between 1 and 100),
+  name text not null default 'Favorite place' check (char_length(name) between 1 and 80),
   latitude double precision not null check (latitude between -90 and 90),
   longitude double precision not null check (longitude between -180 and 180),
   comment text not null check (char_length(comment) between 1 and 240),

@@ -19,7 +19,7 @@ type Props = {
   currentPoint?: Coordinate
   locationState?: 'idle' | 'located' | 'tracking'
   onMapClick?: () => void
-  onFavoritePlaceRequest?: (point: { lng: number; lat: number }) => void
+  onFavoritePlaceRequest?: (point: { lng: number; lat: number; suggestedName?: string }) => void
   onFavoriteSelect?: (favorite: FavoritePlace) => void
   favoritePlacementActive?: boolean
   favoritePlaces?: FavoritePlace[]
@@ -75,7 +75,7 @@ function createFavoriteMarkerElement(favorite: FavoritePlace, onSelect: (favorit
   const element = document.createElement('button')
   element.type = 'button'
   element.className = 'favorite-marker'
-  element.setAttribute('aria-label', favorite.comment ? `Favorite place: ${favorite.comment}` : 'Favorite place')
+  element.setAttribute('aria-label', favorite.name ? `Favorite place: ${favorite.name}` : 'Favorite place')
   const vector = favoritePlaceIconVector(favorite.icon)
   element.innerHTML = `<svg class="${vector.filled ? 'favorite-icon--filled' : ''}" viewBox="${vector.viewBox}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${vector.markup}</svg>`
   element.addEventListener('click', event => {
@@ -83,6 +83,22 @@ function createFavoriteMarkerElement(favorite: FavoritePlace, onSelect: (favorit
     onSelect(favorite)
   })
   return element
+}
+
+function suggestedPlaceName(map: MapLibreMap, point: maplibregl.PointLike) {
+  const candidates = map.queryRenderedFeatures(point)
+    .flatMap(feature => {
+      const name = feature.properties?.name
+      if (typeof name !== 'string' || !name.trim()) return []
+      const layerId = feature.layer.id.toLowerCase()
+      let priority = 0
+      if (/(poi|amenity|shop|restaurant|cafe)/.test(layerId)) priority += 50
+      if (/(park|landuse|building|landmark)/.test(layerId)) priority += 30
+      if (feature.geometry.type === 'Point') priority += 20
+      return priority > 0 ? [{ name: name.trim(), priority }] : []
+    })
+    .sort((first, second) => second.priority - first.priority)
+  return candidates[0]?.name
 }
 
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeometry, mode: MapMode) {
@@ -337,7 +353,11 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     map.on('move', handleMove)
     map.on('click', event => {
       if (favoritePlacementActiveRef.current) {
-        onFavoritePlaceRequestRef.current?.({ lng: event.lngLat.lng, lat: event.lngLat.lat })
+        onFavoritePlaceRequestRef.current?.({
+          lng: event.lngLat.lng,
+          lat: event.lngLat.lat,
+          suggestedName: suggestedPlaceName(map, event.point),
+        })
         return
       }
       onMapClickRef.current?.()
