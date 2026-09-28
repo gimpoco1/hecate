@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import * as maplibregl from 'maplibre-gl'
 import type { Map as MapLibreMap } from 'maplibre-gl'
@@ -7,6 +7,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { compassHeadingFromEvent, type CompassOrientationEvent } from '../deviceHeading'
 import { favoritePlaceIconVector, type FavoritePlace } from '../favoritePlaces'
 import { DISCOVERY_RADIUS_M, discoveryCellCenter, metersToPixels, splitRoute } from '../geo'
+import { loadMapStyle, MAP_STYLE_URL } from '../mapStyle'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
 maplibregl.setWorkerUrl(mapWorkerUrl)
@@ -220,6 +221,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   const onViewChangeRef = useRef(onViewChange)
   const compassHeadingRef = useRef<number | undefined>(undefined)
   const redrawRef = useRef<((force?: boolean) => void) | null>(null)
+  const [mapStyle, setMapStyle] = useState<Awaited<ReturnType<typeof loadMapStyle>> | string | null>(null)
   const geometry = useMemo<MistGeometry>(() => ({
     routeSegments: splitRoute(points),
     cellCenters: cells.map(cell => discoveryCellCenter(cell)),
@@ -233,6 +235,17 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   useEffect(() => { onFavoriteSelectRef.current = onFavoriteSelect }, [onFavoriteSelect])
   useEffect(() => { favoritePlacementActiveRef.current = favoritePlacementActive }, [favoritePlacementActive])
   useEffect(() => { onViewChangeRef.current = onViewChange }, [onViewChange])
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadMapStyle(controller.signal)
+      .then(setMapStyle)
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        console.warn('Map style could not be patched; using the original style', error)
+        setMapStyle(MAP_STYLE_URL)
+      })
+    return () => controller.abort()
+  }, [])
   useEffect(() => {
     locationStateRef.current = locationState
     const element = markerRef.current?.getElement()
@@ -265,11 +278,11 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   }, [mapRef])
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return
+    if (!containerRef.current || mapRef.current || !mapStyle) return
     const nativeApp = Capacitor.isNativePlatform()
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: 'https://tiles.openfreemap.org/styles/liberty',
+      style: mapStyle,
       center: initialCenter,
       zoom: initialZoom,
       pitch: 0,
@@ -339,7 +352,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       map.remove()
       mapRef.current = null
     }
-  }, [mapRef, onZoomChange])
+  }, [mapRef, mapStyle, onZoomChange])
 
   useEffect(() => {
     const map = mapRef.current
