@@ -5,6 +5,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { compassHeadingFromEvent, type CompassOrientationEvent } from '../deviceHeading'
+import { favoritePlaceIconVector, type FavoritePlace } from '../favoritePlaces'
 import { DISCOVERY_RADIUS_M, discoveryCellCenter, metersToPixels, splitRoute } from '../geo'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
@@ -17,6 +18,10 @@ type Props = {
   currentPoint?: Coordinate
   locationState?: 'idle' | 'located' | 'tracking'
   onMapClick?: () => void
+  onFavoritePlaceRequest?: (point: { lng: number; lat: number }) => void
+  onFavoriteSelect?: (favorite: FavoritePlace) => void
+  favoritePlacementActive?: boolean
+  favoritePlaces?: FavoritePlace[]
   onZoomChange: (zoom: number) => void
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void
   mapRef: React.MutableRefObject<MapLibreMap | null>
@@ -63,6 +68,20 @@ function updateUserMarkerHeading(element: HTMLElement, heading: number | undefin
   } else {
     element.style.removeProperty('--user-heading')
   }
+}
+
+function createFavoriteMarkerElement(favorite: FavoritePlace, onSelect: (favorite: FavoritePlace) => void) {
+  const element = document.createElement('button')
+  element.type = 'button'
+  element.className = 'favorite-marker'
+  element.setAttribute('aria-label', favorite.comment ? `Favorite place: ${favorite.comment}` : 'Favorite place')
+  const vector = favoritePlaceIconVector(favorite.icon)
+  element.innerHTML = `<svg class="${vector.filled ? 'favorite-icon--filled' : ''}" viewBox="${vector.viewBox}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${vector.markup}</svg>`
+  element.addEventListener('click', event => {
+    event.stopPropagation()
+    onSelect(favorite)
+  })
+  return element
 }
 
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeometry, mode: MapMode) {
@@ -187,13 +206,17 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeo
   context.stroke(path)
 }
 
-export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onZoomChange, onViewChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
+export function DiscoveryMap({ mode, points, cells, currentPoint, locationState = 'idle', onMapClick, onFavoritePlaceRequest, onFavoriteSelect, favoritePlacementActive = false, favoritePlaces = [], onZoomChange, onViewChange, mapRef, initialCenter = [7, 24], initialZoom = 1.35 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const markerRef = useRef<maplibregl.Marker | null>(null)
+  const favoriteMarkersRef = useRef<maplibregl.Marker[]>([])
   const currentPointRef = useRef(currentPoint)
   const locationStateRef = useRef(locationState)
   const onMapClickRef = useRef(onMapClick)
+  const onFavoritePlaceRequestRef = useRef(onFavoritePlaceRequest)
+  const onFavoriteSelectRef = useRef(onFavoriteSelect)
+  const favoritePlacementActiveRef = useRef(favoritePlacementActive)
   const onViewChangeRef = useRef(onViewChange)
   const compassHeadingRef = useRef<number | undefined>(undefined)
   const redrawRef = useRef<((force?: boolean) => void) | null>(null)
@@ -206,6 +229,9 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   useEffect(() => { stateRef.current = { mode, geometry } }, [mode, geometry])
   useEffect(() => { currentPointRef.current = currentPoint }, [currentPoint])
   useEffect(() => { onMapClickRef.current = onMapClick }, [onMapClick])
+  useEffect(() => { onFavoritePlaceRequestRef.current = onFavoritePlaceRequest }, [onFavoritePlaceRequest])
+  useEffect(() => { onFavoriteSelectRef.current = onFavoriteSelect }, [onFavoriteSelect])
+  useEffect(() => { favoritePlacementActiveRef.current = favoritePlacementActive }, [favoritePlacementActive])
   useEffect(() => { onViewChangeRef.current = onViewChange }, [onViewChange])
   useEffect(() => {
     locationStateRef.current = locationState
@@ -296,12 +322,20 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     }
     const handleResize = () => redraw(true)
     map.on('move', handleMove)
-    map.on('click', () => onMapClickRef.current?.())
+    map.on('click', event => {
+      if (favoritePlacementActiveRef.current) {
+        onFavoritePlaceRequestRef.current?.({ lng: event.lngLat.lng, lat: event.lngLat.lat })
+        return
+      }
+      onMapClickRef.current?.()
+    })
     map.on('moveend', handleMoveEnd)
     map.on('resize', handleResize)
     return () => {
       redrawRef.current = null
       markerRef.current?.remove()
+      favoriteMarkersRef.current.forEach(marker => marker.remove())
+      favoriteMarkersRef.current = []
       map.remove()
       mapRef.current = null
     }
@@ -327,7 +361,23 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     }
   }, [currentPoint, mapRef])
 
-  return <div className="map-stage">
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    favoriteMarkersRef.current.forEach(marker => marker.remove())
+    favoriteMarkersRef.current = favoritePlaces.map(favorite => {
+      const element = createFavoriteMarkerElement(favorite, selected => onFavoriteSelectRef.current?.(selected))
+      return new maplibregl.Marker({ element, anchor: 'bottom' })
+        .setLngLat([favorite.lng, favorite.lat])
+        .addTo(map)
+    })
+    return () => {
+      favoriteMarkersRef.current.forEach(marker => marker.remove())
+      favoriteMarkersRef.current = []
+    }
+  }, [favoritePlaces, mapRef])
+
+  return <div className={`map-stage${favoritePlacementActive ? ' map-stage--placing-favorite' : ''}`}>
     <div ref={containerRef} className="map" aria-label="Interactive discovery map" />
     <canvas ref={canvasRef} className={`mist mist--${mode}`} aria-hidden="true" />
   </div>

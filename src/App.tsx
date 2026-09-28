@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
+import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
+import { AppLauncher } from "@capacitor/app-launcher";
+import { Browser } from "@capacitor/browser";
+import { Keyboard } from "@capacitor/keyboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
@@ -38,10 +42,12 @@ import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
   HecateMark,
+  DirectionsIcon,
   InfoIcon,
   LocateIcon,
   MapIcon,
   PerspectiveIcon,
+  StarIcon,
   UserIcon,
   XIcon,
 } from "./components/Icons";
@@ -70,6 +76,21 @@ import {
   simulateUnmappedWalk,
   type ReminderKind,
 } from "./explorationReminder";
+import {
+  createFavoritePlace,
+  deleteFavoritePlacesFromDatabase,
+  FAVORITE_PLACE_ICONS,
+  favoriteDirectionsUrl,
+  favoritePlaceIconVector,
+  favoritePlacesFromUnknown,
+  favoriteNativeDirectionsUrl,
+  loadFavoritePlaces,
+  loadFavoritePlacesFromDatabase,
+  saveFavoritePlaces,
+  upsertFavoritePlacesInDatabase,
+  type FavoritePlace,
+  type FavoritePlaceIcon,
+} from "./favoritePlaces";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
 import {
   isAutomaticUpdatePending,
@@ -127,6 +148,19 @@ type ExplorationSummary = {
   cityName?: string;
   cityPercentageAdded?: number;
 };
+
+function FavoritePlaceGlyph({ icon }: { icon: FavoritePlaceIcon }) {
+  const vector = favoritePlaceIconVector(icon);
+  return (
+    <svg
+      className={vector.filled ? "favorite-icon--filled" : undefined}
+      viewBox={vector.viewBox}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: vector.markup }}
+    />
+  );
+}
 type PassiveLocationStatus =
   | "idle"
   | "requesting"
@@ -293,6 +327,12 @@ export default function App() {
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
+  const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
+  const [favoritePlacementActive, setFavoritePlacementActive] = useState(false);
+  const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
+  const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
+  const [favoriteDateKind, setFavoriteDateKind] = useState<"created" | "updated">("created");
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null);
   const [viewCenter, setViewCenter] = useState<{
     lng: number;
@@ -2463,6 +2503,169 @@ export default function App() {
       tracking === "idle",
   );
 
+  useEffect(() => {
+    if (!authReady) return;
+    setFavoritePlacementActive(false);
+    setFavoriteDraft(null);
+    setFavoriteEditorMode("view");
+    setFavoriteDateKind("created");
+    if (!accountUserId) {
+      setFavoritePlaces([]);
+      return;
+    }
+
+    let cancelled = false;
+    const localPlaces = loadFavoritePlaces(accountUserId);
+    setFavoritePlaces(localPlaces);
+    const client = supabase;
+    if (!client) return;
+    void Promise.all([
+      client.auth.getUser(),
+      loadFavoritePlacesFromDatabase(client, accountUserId),
+    ]).then(async ([{ data, error }, databasePlaces]) => {
+      if (cancelled || error || data.user?.id !== accountUserId) return;
+      let remotePlaces = databasePlaces;
+      if (!remotePlaces.length) {
+        const metadataPlaces = favoritePlacesFromUnknown(
+          data.user.user_metadata?.favorite_places,
+        );
+        const migrated = [...metadataPlaces, ...localPlaces].reduce<FavoritePlace[]>(
+          (places, place) => {
+            const previous = places.find((candidate) => candidate.id === place.id);
+            if (!previous) return [...places, place];
+            return previous.updatedAt >= place.updatedAt
+              ? places
+              : [...places.filter((candidate) => candidate.id !== place.id), place];
+          },
+          [],
+        );
+        if (migrated.length) {
+          await upsertFavoritePlacesInDatabase(client, accountUserId, migrated);
+          remotePlaces = migrated;
+        }
+        if (metadataPlaces.length) {
+          await client.auth.updateUser({ data: { favorite_places: null } });
+        }
+      }
+      if (cancelled) return;
+      saveFavoritePlaces(accountUserId, remotePlaces);
+      setFavoritePlaces(remotePlaces);
+    }).catch((error) => {
+      console.warn("Favorite places could not be loaded from the database", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountUserId, authReady]);
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    let disposed = false;
+    const handles: Array<{ remove: () => Promise<void> }> = [];
+    void Promise.all([
+      Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => {
+        if (!disposed) setKeyboardInset(keyboardHeight);
+      }),
+      Keyboard.addListener("keyboardWillHide", () => {
+        if (!disposed) setKeyboardInset(0);
+      }),
+    ]).then((listeners) => {
+      if (disposed) listeners.forEach((listener) => void listener.remove());
+      else handles.push(...listeners);
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      handles.forEach((listener) => void listener.remove());
+    };
+  }, [nativeApp]);
+
+  const persistFavoritePlaces = (nextPlaces: FavoritePlace[]) => {
+    if (!accountUserId) return;
+    const changedPlaces = nextPlaces.filter((place) => {
+      const previous = favoritePlaces.find((candidate) => candidate.id === place.id);
+      return !previous || previous.updatedAt !== place.updatedAt;
+    });
+    const removedIds = favoritePlaces
+      .filter((place) => !nextPlaces.some((candidate) => candidate.id === place.id))
+      .map((place) => place.id);
+    setFavoritePlaces(nextPlaces);
+    saveFavoritePlaces(accountUserId, nextPlaces);
+    if (!supabase) return;
+    void Promise.all([
+      upsertFavoritePlacesInDatabase(supabase, accountUserId, changedPlaces),
+      deleteFavoritePlacesFromDatabase(supabase, accountUserId, removedIds),
+    ]).catch((error) => {
+      console.warn("Favorite places will retry syncing later", error);
+    });
+  };
+
+  const saveFavoriteDraft = () => {
+    if (!favoriteDraft?.comment.trim()) return;
+    const saved = {
+      ...favoriteDraft,
+      comment: favoriteDraft.comment.trim(),
+      updatedAt: Date.now(),
+    };
+    persistFavoritePlaces([
+      ...favoritePlaces.filter((place) => place.id !== saved.id),
+      saved,
+    ]);
+    setFavoriteDraft(null);
+  };
+
+  const deleteFavoriteDraft = () => {
+    if (!favoriteDraft) return;
+    persistFavoritePlaces(
+      favoritePlaces.filter((place) => place.id !== favoriteDraft.id),
+    );
+    setFavoriteDraft(null);
+  };
+
+  const openFavoriteDirections = async (provider: "apple" | "google") => {
+    if (!favoriteDraft) return;
+    const url = favoriteDirectionsUrl(provider, favoriteDraft);
+    if (nativeApp) {
+      try {
+        const result = await AppLauncher.openUrl({
+          url: favoriteNativeDirectionsUrl(provider, favoriteDraft),
+        });
+        if (result.completed) return;
+      } catch {
+        // Fall back to web directions if the selected app is unavailable.
+      }
+      try {
+        await Browser.open({ url });
+        return;
+      } catch {
+        // Fall back to a regular browser tab if native plugins are unavailable.
+      }
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const chooseFavoriteDirections = async () => {
+    if (!favoriteDraft) return;
+    if (!nativeApp) {
+      await openFavoriteDirections("google");
+      return;
+    }
+    try {
+      const result = await ActionSheet.showActions({
+        title: "Get directions",
+        message: "Select a maps application",
+        options: [
+          { title: "Apple Maps" },
+          { title: "Google Maps" },
+          { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
+        ],
+      });
+      if (result.index === 0) await openFavoriteDirections("apple");
+      if (result.index === 1) await openFavoriteDirections("google");
+    } catch {
+      await openFavoriteDirections("apple");
+    }
+  };
+
   return (
     <main className="app-shell" aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
@@ -2485,6 +2688,34 @@ export default function App() {
               undefined,
               JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
             );
+        }}
+        favoritePlaces={favoritePlaces}
+        favoritePlacementActive={favoritePlacementActive}
+        onFavoritePlaceRequest={({ lat, lng }) => {
+          setFavoritePlacementActive(false);
+          setFavoriteEditorMode("edit");
+          setFavoriteDateKind("created");
+          setFavoriteDraft(createFavoritePlace(lat, lng));
+        }}
+        onFavoriteSelect={(favorite) => {
+          setFavoritePlacementActive(false);
+          setFavoriteEditorMode("view");
+          setFavoriteDateKind("created");
+          if (journeyExpandedRef.current) settleJourneySheet(false);
+          const map = mapRef.current;
+          if (!map) {
+            setFavoriteDraft({ ...favorite });
+            return;
+          }
+          map.once("moveend", () => setFavoriteDraft({ ...favorite }));
+          map.flyTo({
+            center: [favorite.lng, favorite.lat],
+            zoom: Math.max(map.getZoom(), 15.5),
+            pitch: 0,
+            bearing: 0,
+            duration: 650,
+            essential: true,
+          });
         }}
         onZoomChange={onZoomChange}
         mapRef={mapRef}
@@ -2650,6 +2881,15 @@ export default function App() {
         </div>
       ) : null}
 
+      {favoritePlacementActive && (
+        <div className="favorite-placement-hint" role="status">
+          Tap the place you want to remember
+          <button type="button" onClick={() => setFavoritePlacementActive(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {!nativeApp && reminderPrompt && tracking !== "tracking" && (
         <aside
           className="reminder-prompt"
@@ -2744,6 +2984,22 @@ export default function App() {
             </small>
           </button>
         )}
+        {accountUserId && (
+          <button
+            className={favoritePlacementActive ? "active" : ""}
+            type="button"
+            onClick={() => {
+              setFavoriteDraft(null);
+              setFavoritePlacementActive((active) => !active);
+              if (journeyExpandedRef.current) settleJourneySheet(false);
+            }}
+            aria-label={favoritePlacementActive ? "Cancel adding a favorite place" : "Add a favorite place"}
+            aria-pressed={favoritePlacementActive}
+            title="Add a favorite place"
+          >
+            <StarIcon size={21} />
+          </button>
+        )}
         <button
           className={`location-control${
             passiveLocationStatus === "requesting"
@@ -2784,6 +3040,137 @@ export default function App() {
           <PerspectiveIcon size={21} />
         </button>
       </nav>
+
+      {favoriteDraft && (
+        <div
+          className="favorite-editor-backdrop"
+          role="presentation"
+          style={keyboardInset ? { paddingBottom: `${keyboardInset + 12}px` } : undefined}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setFavoriteDraft(null);
+          }}
+        >
+          <section className="favorite-editor" role="dialog" aria-modal="true" aria-labelledby="favorite-editor-title">
+            <button
+              className="favorite-editor__close"
+              type="button"
+              onClick={() => setFavoriteDraft(null)}
+              aria-label="Close favorite place editor"
+            >
+              <XIcon size={18} />
+            </button>
+            <div className="favorite-editor__eyebrow-row">
+              <div className="favorite-editor__kind">
+                <span className="favorite-editor__place-icon" aria-hidden="true">
+                  <FavoritePlaceGlyph icon={favoriteDraft.icon} />
+                </span>
+                <div className="eyebrow">Favorite place</div>
+              </div>
+              <span>{favoriteDraft.lat.toFixed(5)}, {favoriteDraft.lng.toFixed(5)}</span>
+            </div>
+            <h2 id="favorite-editor-title">
+              {favoriteEditorMode === "view"
+                ? "A place worth returning to"
+                : favoritePlaces.some((place) => place.id === favoriteDraft.id)
+                  ? "Update your note"
+                  : "What should you remember?"}
+            </h2>
+            {favoriteEditorMode === "view" ? (
+              <>
+                <div className="favorite-editor__comment-card">
+                  <p className="favorite-editor__comment">{favoriteDraft.comment}</p>
+                </div>
+                <button
+                  className="favorite-editor__date"
+                  type="button"
+                  onClick={() => setFavoriteDateKind((kind) => kind === "created" ? "updated" : "created")}
+                  aria-label={`Showing ${favoriteDateKind} date. Tap to show ${favoriteDateKind === "created" ? "updated" : "created"} date.`}
+                >
+                  <span>{favoriteDateKind === "created" ? "Created" : "Updated"}</span>
+                  <time dateTime={new Date(favoriteDateKind === "created" ? favoriteDraft.createdAt : favoriteDraft.updatedAt).toISOString()}>
+                    {new Intl.DateTimeFormat(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    }).format(favoriteDateKind === "created" ? favoriteDraft.createdAt : favoriteDraft.updatedAt)}
+                  </time>
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="favorite-editor__icon-picker" role="group" aria-label="Place type">
+                  {FAVORITE_PLACE_ICONS.map((icon) => (
+                    <button
+                      key={icon.id}
+                      type="button"
+                      className={favoriteDraft.icon === icon.id ? "active" : ""}
+                      onClick={() => setFavoriteDraft({ ...favoriteDraft, icon: icon.id })}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onTouchStart={(event) => event.preventDefault()}
+                      onTouchEnd={(event) => {
+                        event.preventDefault();
+                        setFavoriteDraft({ ...favoriteDraft, icon: icon.id });
+                      }}
+                      aria-label={icon.label}
+                      aria-pressed={favoriteDraft.icon === icon.id}
+                      title={icon.label}
+                    >
+                      <FavoritePlaceGlyph icon={icon.id} />
+                      <span>{icon.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  autoFocus
+                  maxLength={240}
+                  value={favoriteDraft.comment}
+                  onChange={(event) => setFavoriteDraft({ ...favoriteDraft, comment: event.target.value })}
+                  placeholder="A quiet courtyard, the best view, come back at sunset…"
+                  aria-label="Note about this favorite place"
+                />
+                <div className="favorite-editor__meta">
+                  <span>{favoriteDraft.comment.length}/240</span>
+                </div>
+              </>
+            )}
+            <div className="favorite-editor__actions">
+              {favoriteEditorMode === "edit" && favoritePlaces.some((place) => place.id === favoriteDraft.id) && (
+                <button className="favorite-editor__delete" type="button" onClick={deleteFavoriteDraft}>
+                  Remove
+                </button>
+              )}
+              {favoriteEditorMode === "view" ? (
+                <>
+                  <button
+                    className="favorite-editor__directions"
+                    type="button"
+                    onClick={() => void chooseFavoriteDirections()}
+                  >
+                    <DirectionsIcon size={18} />
+                    Get directions
+                  </button>
+                  <button
+                    className="favorite-editor__save"
+                    type="button"
+                    onClick={() => setFavoriteEditorMode("edit")}
+                  >
+                    Update note
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="favorite-editor__save"
+                  type="button"
+                  onClick={saveFavoriteDraft}
+                  disabled={!favoriteDraft.comment.trim()}
+                >
+                  Save place
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
 
       {isCityScale && (
         <section
