@@ -16,6 +16,7 @@ import { openLocationSettings } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { CITY_MILESTONE_TIERS } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
+import { publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
 import { ChevronIcon, InfoIcon, XIcon } from "./Icons";
@@ -263,7 +264,7 @@ export function SyncSheet({
   };
 
   const openLeaderboard = async () => {
-    const leaderboardUrl = `${window.location.origin}/leaderboard`;
+    const leaderboardUrl = publicLeaderboardUrl(window.location.origin);
 
     if (Capacitor.isNativePlatform()) {
       try {

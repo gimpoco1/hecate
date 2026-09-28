@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
 import * as maplibregl from 'maplibre-gl'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
@@ -34,7 +35,7 @@ function userMarkerClassName(locationState: NonNullable<Props['locationState']>)
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeometry, mode: MapMode) {
   const rect = canvas.getBoundingClientRect()
   const moving = map.isMoving()
-  const ratio = Math.min(window.devicePixelRatio || 1, moving ? 1.35 : 2)
+  const ratio = Math.min(window.devicePixelRatio || 1, moving ? 1 : 2)
   const width = Math.round(rect.width * ratio)
   const height = Math.round(rect.height * ratio)
   if (canvas.width !== width || canvas.height !== height) {
@@ -62,8 +63,23 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeo
     return
   }
 
-  const projectedSegments = geometry.routeSegments.map(segment => segment.map(point => map.project([point.lng, point.lat])))
+  const bounds = map.getBounds()
+  const longitudeSpan = bounds.getEast() - bounds.getWest()
+  const latitudeSpan = bounds.getNorth() - bounds.getSouth()
+  const filterToViewport = map.getZoom() >= 5 && longitudeSpan > 0
+  const west = bounds.getWest() - longitudeSpan * 0.2
+  const east = bounds.getEast() + longitudeSpan * 0.2
+  const south = bounds.getSouth() - latitudeSpan * 0.2
+  const north = bounds.getNorth() + latitudeSpan * 0.2
+  const isNearViewport = ([lng, lat]: [number, number]) =>
+    !filterToViewport || (lng >= west && lng <= east && lat >= south && lat <= north)
+  const projectedSegments = geometry.routeSegments
+    .map(segment => segment
+      .filter(point => isNearViewport([point.lng, point.lat]))
+      .map(point => map.project([point.lng, point.lat])))
+    .filter(segment => segment.length > 0)
   const projectedCells = geometry.cellCenters
+    .filter(isNearViewport)
     .map(center => map.project(center))
     .filter(point => point.x > -200 && point.x < rect.width + 200 && point.y > -200 && point.y < rect.height + 200)
   const path = new Path2D()
@@ -89,7 +105,7 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeo
   // Thin nested boundaries make the surrounding mist read like topographic
   // contours instead of a generic blur. Their spacing stays constant on earth.
   const contourScales = moving
-    ? [3, 2.6, 2.2, 1.8, 1.4]
+    ? [2.6, 1.8]
     : [3, 2.8, 2.6, 2.4, 2.2, 2, 1.8, 1.6, 1.4, 1.2]
   contourScales.map(scale => revealDiameterM * scale).forEach((widthM, index) => {
     const outerWidth = widthForMeters(widthM)
@@ -115,8 +131,7 @@ function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeo
   // A layered erase exposes the actual map with a luminous, feathered edge.
   context.globalCompositeOperation = 'destination-out'
   const revealLayers = moving ? [
-    { widthM: revealDiameterM * 1.62, alpha: 0.2 },
-    { widthM: revealDiameterM * 1.18, alpha: 0.54 },
+    { widthM: revealDiameterM * 1.28, alpha: 0.48 },
     { widthM: revealDiameterM, alpha: 0.94 },
   ] : [
     { widthM: revealDiameterM * 1.87, alpha: 0.12 },
@@ -166,6 +181,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
+    const nativeApp = Capacitor.isNativePlatform()
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: 'https://tiles.openfreemap.org/styles/liberty',
@@ -175,8 +191,9 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       bearing: 0,
       attributionControl: false,
       maxZoom: 19,
-      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+      pixelRatio: Math.min(window.devicePixelRatio || 1, nativeApp ? 1.5 : 2),
       renderWorldCopies: false,
+      fadeDuration: 0,
     })
     mapRef.current = map
 
