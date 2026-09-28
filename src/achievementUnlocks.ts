@@ -2,9 +2,10 @@ import {
   isPersonalAchievementId,
   type PersonalAchievementId,
 } from "./achievements";
+import { supabase } from "./storage";
 
-type AchievementUnlockState = {
-  version: 1 | 2;
+export type AchievementUnlockState = {
+  version: 1 | 2 | 3;
   earned: PersonalAchievementId[];
   pending: PersonalAchievementId[];
 };
@@ -23,7 +24,7 @@ export function loadAchievementUnlocks(
     const stored = JSON.parse(localStorage.getItem(keyForUser(userId)) ?? "null");
     if (!stored || typeof stored !== "object") return null;
     return {
-      version: stored.version === 2 ? 2 : 1,
+      version: stored.version === 3 ? 3 : stored.version === 2 ? 2 : 1,
       earned: Array.isArray(stored.earned)
         ? unique(stored.earned.filter(isPersonalAchievementId))
         : [],
@@ -45,6 +46,158 @@ function saveAchievementUnlocks(
   } catch {
     /* The current session can still celebrate when storage is unavailable. */
   }
+}
+
+export async function syncAchievementUnlocks(
+  userId: string,
+  currentlyEarned: PersonalAchievementId[],
+  localBeforeReconcile: AchievementUnlockState | null,
+  locallyNewlyEarned: PersonalAchievementId[] = [],
+) {
+  const local = loadAchievementUnlocks(userId);
+  if (!local) return null;
+  if (!supabase) return { ...local, newlyEarned: locallyNewlyEarned };
+  const { data: sessionData, error: sessionError } =
+    await supabase.auth.getSession();
+  if (sessionError || sessionData.session?.user.id !== userId)
+    return { ...local, newlyEarned: locallyNewlyEarned };
+
+  const { data, error } = await supabase
+    .from("user_achievement_unlocks")
+    .select("achievement_id,acknowledged_at")
+    .eq("user_id", userId);
+  if (error) throw error;
+
+  const rows = (data ?? []).flatMap((row) =>
+    isPersonalAchievementId(row.achievement_id)
+      ? [
+          {
+            achievementId: row.achievement_id,
+            acknowledged: typeof row.acknowledged_at === "string",
+          },
+        ]
+      : [],
+  );
+  const remoteIds = new Set(rows.map((row) => row.achievementId));
+  const localPending = new Set(local.pending);
+
+  if (!rows.length) {
+    // First database migration: preserve local pending celebrations, but treat
+    // all other historical achievements as acknowledged so they never replay.
+    const baseline = unique([...local.earned, ...currentlyEarned]);
+    if (baseline.length) {
+      const now = new Date().toISOString();
+      const { error: insertError } = await supabase
+        .from("user_achievement_unlocks")
+        .upsert(
+          baseline.map((achievementId) => ({
+            user_id: userId,
+            achievement_id: achievementId,
+            acknowledged_at: localPending.has(achievementId) ? null : now,
+          })),
+          {
+            onConflict: "user_id,achievement_id",
+            ignoreDuplicates: true,
+          },
+        );
+      if (insertError) throw insertError;
+    }
+    const databaseWasInitialized = local.version === 3;
+    const initialized: AchievementUnlockState = { ...local, version: 3 };
+    saveAchievementUnlocks(userId, initialized);
+    return {
+      ...initialized,
+      newlyEarned: databaseWasInitialized
+        ? locallyNewlyEarned
+        : ([] as PersonalAchievementId[]),
+    };
+  }
+
+  const earned = unique([
+    ...rows.map((row) => row.achievementId),
+    ...local.earned,
+    ...currentlyEarned,
+  ]);
+  const locallyAcknowledged = new Set(
+    localBeforeReconcile
+      ? localBeforeReconcile.earned.filter(
+          (id) => !localBeforeReconcile.pending.includes(id),
+        )
+      : [],
+  );
+  const acknowledgementsToSync = rows
+    .filter(
+      (row) => !row.acknowledged && locallyAcknowledged.has(row.achievementId),
+    )
+    .map((row) => row.achievementId);
+  if (acknowledgementsToSync.length) {
+    const { error: acknowledgeError } = await supabase
+      .from("user_achievement_unlocks")
+      .update({ acknowledged_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .in("achievement_id", acknowledgementsToSync);
+    if (acknowledgeError) throw acknowledgeError;
+  }
+
+  const missing = earned.filter((id) => !remoteIds.has(id));
+  if (missing.length) {
+    const now = new Date().toISOString();
+    const { error: insertError } = await supabase
+      .from("user_achievement_unlocks")
+      .upsert(
+        missing.map((achievementId) => ({
+          user_id: userId,
+          achievement_id: achievementId,
+          acknowledged_at:
+            localBeforeReconcile?.earned.includes(achievementId) &&
+            !localBeforeReconcile.pending.includes(achievementId)
+              ? now
+              : null,
+        })),
+        {
+          onConflict: "user_id,achievement_id",
+          ignoreDuplicates: true,
+        },
+      );
+    if (insertError) throw insertError;
+  }
+
+  const pending = unique([
+    ...rows
+      .filter(
+        (row) =>
+          !row.acknowledged && !locallyAcknowledged.has(row.achievementId),
+      )
+      .map((row) => row.achievementId),
+    ...missing.filter(
+      (id) =>
+        !localBeforeReconcile?.earned.includes(id) ||
+        localBeforeReconcile.pending.includes(id),
+    ),
+  ]);
+  const merged: AchievementUnlockState = { version: 3, earned, pending };
+  saveAchievementUnlocks(userId, merged);
+  return {
+    ...merged,
+    newlyEarned: missing.filter(
+      (id) => !localBeforeReconcile?.earned.includes(id),
+    ),
+  };
+}
+
+export async function acknowledgeAchievementUnlock(
+  userId: string,
+  achievementId: PersonalAchievementId,
+) {
+  if (!supabase) return;
+  const { data, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || data.session?.user.id !== userId) return;
+  const { error } = await supabase
+    .from("user_achievement_unlocks")
+    .update({ acknowledged_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("achievement_id", achievementId);
+  if (error) throw error;
 }
 
 export function reconcileAchievementUnlocks(
@@ -78,7 +231,7 @@ export function reconcileAchievementUnlocks(
   const known = new Set(previous.earned);
   const newlyEarned = earned.filter((id) => !known.has(id));
   const state: AchievementUnlockState = {
-    version: 2,
+    version: previous.version === 3 ? 3 : 2,
     // Unlocks are permanent. During startup, routes and city boundaries can
     // arrive in separate requests and briefly produce an incomplete earned
     // set. Never let that transient snapshot erase acknowledgement history or
@@ -110,7 +263,7 @@ export function dismissAchievementUnlock(
   if (!previous) return;
   saveAchievementUnlocks(userId, {
     ...previous,
-    version: 2,
+    version: previous.version === 3 ? 3 : 2,
     pending: previous.pending.filter((id) => id !== achievementId),
   });
 }

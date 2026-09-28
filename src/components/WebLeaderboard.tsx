@@ -790,11 +790,6 @@ export function WebLeaderboard() {
         { event: "*", schema: "public", table: "leaderboard_city_stats" },
         () => void refresh(),
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "leaderboard_achievements" },
-        () => void refresh(),
-      )
       .subscribe((status) => {
         if (disposed) return;
         if (status === "SUBSCRIBED") {

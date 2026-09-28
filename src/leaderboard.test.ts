@@ -7,7 +7,7 @@ const entries = mapLeaderboardRows([
   {
     entry_id: 'a', display_name: 'Mara', total_discovered_km: '12.5', city_count: 1, updated_at: '2026-09-20', calculation_version: 3,
     leaderboard_city_stats: [{ city_id: 'barcelona', city_name: 'Barcelona', discovered_km: '4.2', discovered_percentage: '1.8' }],
-    leaderboard_achievements: [{ achievement_id: 'the-long-way' }, { achievement_id: 'not-real' }],
+    achievement_ids: ['the-long-way', 'not-real'],
   },
   {
     entry_id: 'b', display_name: 'Leo', total_discovered_km: 18, city_count: 1, updated_at: '2026-09-21', calculation_version: 3,

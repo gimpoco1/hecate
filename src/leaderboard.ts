@@ -35,14 +35,12 @@ type LeaderboardRow = {
   city_count: number
   updated_at: string
   calculation_version: number
+  achievement_ids?: string[] | null
   leaderboard_city_stats?: Array<{
     city_id: string
     city_name: string
     discovered_km: number | string
     discovered_percentage: number | string
-  }>
-  leaderboard_achievements?: Array<{
-    achievement_id: string
   }>
 }
 
@@ -94,9 +92,7 @@ export function mapLeaderboardRows(rows: LeaderboardRow[]): LeaderboardEntry[] {
       discoveredKm: Number(city.discovered_km),
       discoveredPercentage: Number(city.discovered_percentage),
     })),
-    achievements: (row.leaderboard_achievements ?? [])
-      .map(achievement => achievement.achievement_id)
-      .filter(isPersonalAchievementId),
+    achievements: (row.achievement_ids ?? []).filter(isPersonalAchievementId),
   }))
 }
 
@@ -192,7 +188,7 @@ export async function loadLeaderboard() {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('leaderboard_entries')
-    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage),leaderboard_achievements(achievement_id)')
+    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
     .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
     .order('total_discovered_km', { ascending: false })
   if (error) throw error
@@ -297,7 +293,7 @@ export async function refreshPublishedLeaderboardSnapshot(userId: string) {
   const [{ data, error }, snapshot] = await Promise.all([
     supabase
       .from('leaderboard_entries')
-      .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage),leaderboard_achievements(achievement_id)')
+      .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
       .eq('entry_id', profile.entryId)
       .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
       .maybeSingle(),

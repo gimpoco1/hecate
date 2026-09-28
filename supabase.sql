@@ -280,15 +280,15 @@ $$;
 revoke all on function public.delete_account() from public, anon;
 grant execute on function public.delete_account() to authenticated;
 
--- Public leaderboard snapshots. Ownership lives in a separate table so the
--- public realtime payload never exposes an account UUID. A snapshot contains
--- aggregate totals only; routes, coordinates, cells, and city boundaries stay
--- in the private tables above.
+-- Public leaderboard snapshots contain aggregate totals only; routes,
+-- coordinates, cells, city boundaries, and the private account-to-entry link
+-- stay outside the publicly readable row.
 create table if not exists public.leaderboard_entries (
   entry_id uuid primary key default gen_random_uuid(),
   display_name text not null check (char_length(display_name) between 2 and 30),
   total_discovered_km double precision not null check (total_discovered_km >= 0),
   city_count integer not null check (city_count >= 0),
+  achievement_ids text[] not null default '{}',
   calculation_version smallint not null default 3 check (calculation_version > 0),
   updated_at timestamptz not null default now()
 );
@@ -299,24 +299,26 @@ create table if not exists public.leaderboard_entries (
 alter table public.leaderboard_entries
   add column if not exists calculation_version smallint not null default 1
   check (calculation_version > 0);
+alter table public.leaderboard_entries
+  add column if not exists achievement_ids text[] not null default '{}';
 
 -- Public-name ownership survives unpublishing. This prevents a user from
 -- resetting the one-rename allowance by deleting and recreating a snapshot.
 -- The table is private; only security-definer leaderboard functions use it.
 create table if not exists public.leaderboard_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
+  entry_id uuid unique references public.leaderboard_entries(entry_id) on delete set null,
   display_name text not null check (char_length(display_name) between 2 and 30),
   display_name_changes smallint not null default 0 check (display_name_changes between 0 and 1),
   updated_at timestamptz not null default now()
 );
 
+alter table public.leaderboard_profiles
+  add column if not exists entry_id uuid unique
+  references public.leaderboard_entries(entry_id) on delete set null;
+
 create unique index if not exists leaderboard_profiles_display_name_unique
   on public.leaderboard_profiles (lower(display_name));
-
-create table if not exists public.leaderboard_owners (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  entry_id uuid not null unique references public.leaderboard_entries(entry_id) on delete cascade
-);
 
 create table if not exists public.leaderboard_city_stats (
   entry_id uuid not null references public.leaderboard_entries(entry_id) on delete cascade,
@@ -327,29 +329,42 @@ create table if not exists public.leaderboard_city_stats (
   primary key (entry_id, city_id)
 );
 
-create table if not exists public.leaderboard_achievements (
-  entry_id uuid not null references public.leaderboard_entries(entry_id) on delete cascade,
-  achievement_id text not null,
-  primary key (entry_id, achievement_id)
-);
-
 create index if not exists leaderboard_entries_distance_idx
   on public.leaderboard_entries (total_discovered_km desc, updated_at desc);
 create index if not exists leaderboard_city_stats_city_idx
   on public.leaderboard_city_stats (city_id, discovered_percentage desc);
 
--- Preserve the names of snapshots created before leaderboard_profiles existed.
-insert into public.leaderboard_profiles (user_id, display_name)
-select owner.user_id, entry.display_name
-from public.leaderboard_owners owner
-join public.leaderboard_entries entry on entry.entry_id = owner.entry_id
-on conflict (user_id) do nothing;
+-- Consolidate legacy ownership and achievement relationship tables when this
+-- schema is applied to an existing installation.
+do $$
+begin
+  if to_regclass('public.leaderboard_owners') is not null then
+    execute $migration$
+      insert into public.leaderboard_profiles (user_id, entry_id, display_name)
+      select owner.user_id, owner.entry_id, entry.display_name
+      from public.leaderboard_owners owner
+      join public.leaderboard_entries entry on entry.entry_id = owner.entry_id
+      on conflict (user_id) do update set entry_id = excluded.entry_id
+    $migration$;
+  end if;
+  if to_regclass('public.leaderboard_achievements') is not null then
+    execute $migration$
+      update public.leaderboard_entries entry
+      set achievement_ids = achievements.ids
+      from (
+        select entry_id, array_agg(achievement_id order by achievement_id) as ids
+        from public.leaderboard_achievements
+        group by entry_id
+      ) achievements
+      where entry.entry_id = achievements.entry_id
+    $migration$;
+  end if;
+end;
+$$;
 
 alter table public.leaderboard_entries enable row level security;
 alter table public.leaderboard_profiles enable row level security;
-alter table public.leaderboard_owners enable row level security;
 alter table public.leaderboard_city_stats enable row level security;
-alter table public.leaderboard_achievements enable row level security;
 
 drop policy if exists "Leaderboard entries are public" on public.leaderboard_entries;
 create policy "Leaderboard entries are public" on public.leaderboard_entries
@@ -357,22 +372,11 @@ create policy "Leaderboard entries are public" on public.leaderboard_entries
 drop policy if exists "Leaderboard city totals are public" on public.leaderboard_city_stats;
 create policy "Leaderboard city totals are public" on public.leaderboard_city_stats
   for select using (true);
-drop policy if exists "Leaderboard achievements are public" on public.leaderboard_achievements;
-create policy "Leaderboard achievements are public" on public.leaderboard_achievements
-  for select using (true);
-drop policy if exists "Users read their leaderboard ownership" on public.leaderboard_owners;
-create policy "Users read their leaderboard ownership" on public.leaderboard_owners
-  for select using ((select auth.uid()) = user_id);
-
 revoke all on public.leaderboard_entries from anon, authenticated;
 revoke all on public.leaderboard_profiles from anon, authenticated;
 revoke all on public.leaderboard_city_stats from anon, authenticated;
-revoke all on public.leaderboard_achievements from anon, authenticated;
-revoke all on public.leaderboard_owners from anon, authenticated;
 grant select on public.leaderboard_entries to anon, authenticated;
 grant select on public.leaderboard_city_stats to anon, authenticated;
-grant select on public.leaderboard_achievements to anon, authenticated;
-grant select on public.leaderboard_owners to authenticated;
 
 drop function if exists public.publish_leaderboard_snapshot(text, double precision, jsonb);
 drop function if exists public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint);
@@ -392,6 +396,7 @@ declare
   v_entry_id uuid;
   v_city jsonb;
   v_achievement text;
+  v_achievement_ids text[] := '{}';
   v_name text := btrim(p_display_name);
   v_profile_name text;
   v_name_changes smallint;
@@ -450,17 +455,18 @@ begin
   end if;
 
   select entry_id into v_entry_id
-  from public.leaderboard_owners
+  from public.leaderboard_profiles
   where user_id = v_user_id;
 
   if v_entry_id is null then
     insert into public.leaderboard_entries (
-      display_name, total_discovered_km, city_count, calculation_version
+      display_name, total_discovered_km, city_count, calculation_version, achievement_ids
     ) values (
-      v_profile_name, p_total_discovered_km, jsonb_array_length(p_cities), p_calculation_version
+      v_profile_name, p_total_discovered_km, jsonb_array_length(p_cities), p_calculation_version, '{}'
     ) returning entry_id into v_entry_id;
-    insert into public.leaderboard_owners (user_id, entry_id)
-      values (v_user_id, v_entry_id);
+    update public.leaderboard_profiles
+    set entry_id = v_entry_id
+    where user_id = v_user_id;
   else
     update public.leaderboard_entries set
       display_name = v_profile_name,
@@ -470,7 +476,6 @@ begin
       updated_at = now()
     where entry_id = v_entry_id;
     delete from public.leaderboard_city_stats where entry_id = v_entry_id;
-    delete from public.leaderboard_achievements where entry_id = v_entry_id;
   end if;
 
   for v_city in select value from jsonb_array_elements(p_cities)
@@ -510,10 +515,14 @@ begin
     -- END PERSONAL_ACHIEVEMENT_IDS
       raise exception 'An achievement ID is invalid';
     end if;
-    insert into public.leaderboard_achievements (entry_id, achievement_id)
-    values (v_entry_id, v_achievement)
-    on conflict do nothing;
+    if not (v_achievement = any(v_achievement_ids)) then
+      v_achievement_ids := array_append(v_achievement_ids, v_achievement);
+    end if;
   end loop;
+
+  update public.leaderboard_entries
+  set achievement_ids = v_achievement_ids
+  where entry_id = v_entry_id;
 
   return v_entry_id;
 end;
@@ -527,7 +536,7 @@ security definer
 set search_path = ''
 as $$
   select entry_id
-  from public.leaderboard_owners
+  from public.leaderboard_profiles
   where user_id = auth.uid();
 $$;
 
@@ -539,12 +548,11 @@ security definer
 set search_path = ''
 as $$
   select jsonb_build_object(
-    'entry_id', owner.entry_id,
+    'entry_id', profile.entry_id,
     'display_name', profile.display_name,
     'display_name_changes', profile.display_name_changes
   )
   from public.leaderboard_profiles profile
-  left join public.leaderboard_owners owner on owner.user_id = profile.user_id
   where profile.user_id = auth.uid();
 $$;
 
@@ -562,7 +570,7 @@ begin
     raise exception 'Authentication required';
   end if;
   select entry_id into v_entry_id
-  from public.leaderboard_owners
+  from public.leaderboard_profiles
   where user_id = v_user_id;
   if v_entry_id is not null then
     delete from public.leaderboard_entries where entry_id = v_entry_id;
@@ -593,12 +601,8 @@ begin
 exception when duplicate_object then null;
 end;
 $$;
-do $$
-begin
-  alter publication supabase_realtime add table public.leaderboard_achievements;
-exception when duplicate_object then null;
-end;
-$$;
+drop table if exists public.leaderboard_achievements;
+drop table if exists public.leaderboard_owners;
 
 -- The legacy table has no remaining readers or writers. Existing installs
 -- should migrate any remaining legacy rows before rerunning this script.

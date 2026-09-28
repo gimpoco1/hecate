@@ -10,9 +10,12 @@ import {
   type PersonalAchievementId,
 } from "./achievements";
 import {
+  acknowledgeAchievementUnlock,
   dismissAchievementUnlock,
   isAchievementUnlockPending,
+  loadAchievementUnlocks,
   reconcileAchievementUnlocks,
+  syncAchievementUnlocks,
 } from "./achievementUnlocks";
 import { reconcileDiscoveryAchievementUnlocks } from "./achievementDelivery";
 import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
@@ -626,16 +629,46 @@ export default function App() {
     const earned = achievementEvaluations
       .filter(({ earned: isEarned }) => isEarned)
       .map(({ definition }) => definition.id);
+    const localBeforeReconcile = loadAchievementUnlocks(accountUserId);
     const unlocks = reconcileAchievementUnlocks(accountUserId, earned);
     setAchievementCelebrations(unlocks.pending);
-    if (nativeApp) {
-      unlocks.newlyEarned.forEach((achievementId) => {
-        void sendAchievementNotification(achievementId, accountUserId).catch(
-          (error) =>
-            console.warn("Could not show achievement notification", error),
-        );
+    void syncAchievementUnlocks(
+      accountUserId,
+      earned,
+      localBeforeReconcile,
+      unlocks.newlyEarned,
+    )
+      .then((synced) => {
+        if (accountUserIdRef.current === accountUserId && synced) {
+          setAchievementCelebrations(synced.pending);
+          if (nativeApp) {
+            synced.newlyEarned.forEach((achievementId) => {
+              void sendAchievementNotification(
+                achievementId,
+                accountUserId,
+              ).catch((error) =>
+                console.warn("Could not show achievement notification", error),
+              );
+            });
+          }
+        }
+      })
+      .catch((error) => {
+        console.warn("Could not sync achievement unlocks", error);
+        if (nativeApp) {
+          unlocks.newlyEarned.forEach((achievementId) => {
+            void sendAchievementNotification(
+              achievementId,
+              accountUserId,
+            ).catch((notificationError) =>
+              console.warn(
+                "Could not show achievement notification",
+                notificationError,
+              ),
+            );
+          });
+        }
       });
-    }
   }, [
     accountUserId,
     achievementEvaluations,
@@ -643,6 +676,34 @@ export default function App() {
     nativeApp,
     testRouteRunning,
   ]);
+
+  useEffect(() => {
+    if (
+      !accountUserId ||
+      !discoveryHistoryReadyRef.current ||
+      citiesLoadedUserId !== accountUserId
+    )
+      return;
+    const retry = () => {
+      if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      const earned = achievementEvaluations
+        .filter(({ earned: isEarned }) => isEarned)
+        .map(({ definition }) => definition.id);
+      const local = loadAchievementUnlocks(accountUserId);
+      void syncAchievementUnlocks(accountUserId, earned, local)
+        .then((synced) => {
+          if (accountUserIdRef.current === accountUserId && synced)
+            setAchievementCelebrations(synced.pending);
+        })
+        .catch(() => undefined);
+    };
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [accountUserId, achievementEvaluations, citiesLoadedUserId]);
 
   useEffect(() => {
     purgeLegacyDiscoveryCache();
@@ -3053,6 +3114,13 @@ export default function App() {
               dismissAchievementUnlock(
                 accountUserId,
                 activeAchievementCelebration.id,
+              );
+            if (accountUserId)
+              void acknowledgeAchievementUnlock(
+                accountUserId,
+                activeAchievementCelebration.id,
+              ).catch((error) =>
+                console.warn("Could not sync achievement acknowledgement", error),
               );
             setAchievementCelebrations((current) => current.slice(1));
           }}
