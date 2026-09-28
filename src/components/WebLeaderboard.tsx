@@ -8,7 +8,6 @@ import {
 import type { User } from "@supabase/supabase-js";
 import {
   personalAchievementDefinition,
-  type PersonalAchievementId,
 } from "../achievements";
 import { authRedirectUrl } from "../auth";
 import { earnedCityMilestones } from "../badges";
@@ -183,7 +182,7 @@ function ExplorerProfilePanel({
           )}
         </section>
         <p className="explorer-profile__privacy">
-          Only accomplishments and city totals this explorer chose to publish
+          Earned achievements and the city totals this explorer chose to share
           are shown. Routes and locations remain private.
         </p>
       </aside>
@@ -199,7 +198,6 @@ type AccountPanelProps = {
   displayNameChanges: number;
   profileLoaded: boolean;
   publishedCityIds: string[];
-  publishedAchievementIds: PersonalAchievementId[];
   onClose: () => void;
   onPublished: () => Promise<void>;
 };
@@ -212,7 +210,6 @@ function LeaderboardAccountPanel({
   displayNameChanges,
   profileLoaded,
   publishedCityIds,
-  publishedAchievementIds,
   onClose,
   onPublished,
 }: AccountPanelProps) {
@@ -221,9 +218,6 @@ function LeaderboardAccountPanel({
   const [displayName, setDisplayName] = useState("");
   const [snapshot, setSnapshot] = useState<LeaderboardSnapshot | null>(null);
   const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
-  const [selectedAchievementIds, setSelectedAchievementIds] = useState<
-    PersonalAchievementId[]
-  >([]);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
   const [pending, setPending] = useState(false);
   const [unpublishing, setUnpublishing] = useState(false);
@@ -234,7 +228,6 @@ function LeaderboardAccountPanel({
   const [error, setError] = useState(false);
   const displayNameDirty = useRef(false);
   const citySelectionDirty = useRef(false);
-  const achievementSelectionDirty = useRef(false);
   const snapshotRequestGuard = useRef(createRequestGuard());
 
   useEffect(() => {
@@ -243,7 +236,6 @@ function LeaderboardAccountPanel({
       setSnapshot(null);
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
-      achievementSelectionDirty.current = false;
       return;
     }
     if (!user) {
@@ -305,13 +297,6 @@ function LeaderboardAccountPanel({
       : availableCityIds;
     setSelectedCityIds(nextSelection);
   }, [entryId, open, publishedCityIds, snapshot]);
-
-  useEffect(() => {
-    if (!open || !snapshot || achievementSelectionDirty.current) return;
-    setSelectedAchievementIds(
-      entryId ? publishedAchievementIds : snapshot.achievements,
-    );
-  }, [entryId, open, publishedAchievementIds, snapshot]);
 
   if (!open) return null;
 
@@ -376,14 +361,11 @@ function LeaderboardAccountPanel({
       }
       await publishLeaderboardSnapshot(displayName, {
         ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
-        achievements: currentSnapshot.achievements.filter((achievementId) =>
-          selectedAchievementIds.includes(achievementId),
-        ),
+        achievements: currentSnapshot.achievements,
       });
       await onPublished();
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
-      achievementSelectionDirty.current = false;
       setError(false);
       setMessage(
         entryId
@@ -603,62 +585,37 @@ function LeaderboardAccountPanel({
                   })}
               </div>
             </fieldset>
-            <fieldset className="leaderboard-achievement-sharing">
-              <legend>Achievements to share</legend>
-              <div className="leaderboard-city-sharing__actions">
-                <span>Share only the accomplishments you want featured.</span>
-                {snapshot?.achievements.length ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      achievementSelectionDirty.current = true;
-                      setSelectedAchievementIds(snapshot.achievements);
-                    }}
-                  >
-                    Select all
-                  </button>
-                ) : null}
+            <section
+              className="leaderboard-achievement-preview"
+              aria-labelledby="public-achievements-title"
+            >
+              <div>
+                <strong id="public-achievements-title">
+                  Public achievements
+                </strong>
+                <span>All earned achievements appear automatically.</span>
               </div>
               {snapshot?.achievements.length ? (
-                <div className="leaderboard-achievement-sharing__grid">
+                <ul>
                   {snapshot.achievements.map((achievementId) => {
                     const achievement =
                       personalAchievementDefinition(achievementId);
                     return (
-                      <label key={achievementId}>
-                        <input
-                          type="checkbox"
-                          checked={selectedAchievementIds.includes(
-                            achievementId,
-                          )}
-                          onChange={(event) => {
-                            achievementSelectionDirty.current = true;
-                            setSelectedAchievementIds((current) =>
-                              event.target.checked
-                                ? [...current, achievementId]
-                                : current.filter(
-                                    (currentId) => currentId !== achievementId,
-                                  ),
-                            );
-                          }}
-                        />
+                      <li key={achievementId}>
                         <AchievementArtwork
                           image={achievement.image}
                           title={achievement.title}
-                          size={42}
+                          size={30}
                         />
                         <span>{achievement.title}</span>
-                      </label>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               ) : (
-                <p className="leaderboard-achievement-sharing__empty">
-                  Your first personal achievement will appear here after a
-                  qualifying discovery.
-                </p>
+                <p>Your first earned achievement will appear here.</p>
               )}
-            </fieldset>
+            </section>
             <div className="leaderboard-preview" aria-busy={loadingSnapshot}>
               <div>
                 <small>Shared ground</small>
@@ -684,8 +641,8 @@ function LeaderboardAccountPanel({
                 </strong>
               </div>
               <div>
-                <small>Shared</small>
-                <strong>{selectedAchievementIds.length} achievements</strong>
+                <small>Achievements</small>
+                <strong>{snapshot?.achievements.length ?? 0} earned</strong>
               </div>
             </div>
             <div className="leaderboard-settings-row">
@@ -800,8 +757,26 @@ export function WebLeaderboard() {
 
   useEffect(() => {
     void refresh();
-    if (!supabase) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    if (!supabase) {
+      return () =>
+        document.removeEventListener("visibilitychange", refreshWhenVisible);
+    }
     const client = supabase;
+    let fallbackInterval: number | null = null;
+    const stopFallbackPolling = () => {
+      if (fallbackInterval === null) return;
+      window.clearInterval(fallbackInterval);
+      fallbackInterval = null;
+    };
+    const startFallbackPolling = () => {
+      if (fallbackInterval !== null) return;
+      void refresh();
+      fallbackInterval = window.setInterval(() => void refresh(), 20_000);
+    };
     const channel = client
       .channel("public-leaderboard")
       .on(
@@ -819,8 +794,20 @@ export function WebLeaderboard() {
         { event: "*", schema: "public", table: "leaderboard_achievements" },
         () => void refresh(),
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          stopFallbackPolling();
+        } else if (
+          status === "TIMED_OUT" ||
+          status === "CHANNEL_ERROR" ||
+          status === "CLOSED"
+        ) {
+          startFallbackPolling();
+        }
+      });
     return () => {
+      stopFallbackPolling();
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       void client.removeChannel(channel);
     };
   }, []);
@@ -1087,9 +1074,11 @@ export function WebLeaderboard() {
                       </li>
                     ))}
                 </ol>
-                <span className="city-treemap__view-all" aria-hidden="true">
-                  View all <ChevronIcon size={15} />
-                </span>
+                {group.explorers.length > 5 && (
+                  <span className="city-treemap__view-all" aria-hidden="true">
+                    View all <ChevronIcon size={15} />
+                  </span>
+                )}
               </article>
             ))}
           </div>
@@ -1163,7 +1152,6 @@ export function WebLeaderboard() {
         displayNameChanges={currentProfile?.displayNameChanges ?? 0}
         profileLoaded={profileLoaded}
         publishedCityIds={myEntry?.cities.map((city) => city.cityId) ?? []}
-        publishedAchievementIds={myEntry?.achievements ?? []}
         onClose={() => setPanelOpen(false)}
         onPublished={refreshMine}
       />

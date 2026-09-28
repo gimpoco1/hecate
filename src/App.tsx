@@ -67,6 +67,8 @@ import {
   type ReminderKind,
 } from "./explorationReminder";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
+import { isAutomaticUpdatesEnabled } from "./automaticUpdates";
+import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
   journeySheetOffsetPx,
@@ -895,16 +897,28 @@ export default function App() {
     }
   };
 
+  const refreshLiveLeaderboard = async (userId: string) => {
+    if (!isAutomaticUpdatesEnabled()) return;
+    try {
+      await refreshPublishedLeaderboardSnapshot(userId);
+    } catch (error) {
+      // Discovery syncing is the source of truth. A later completed session or
+      // online retry can safely rebuild the public aggregate snapshot.
+      console.warn("Could not refresh live leaderboard data", error);
+    }
+  };
+
   useEffect(() => {
     if (!accountUserId) return;
     const retry = () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
-      void flushPendingWalks(accountUserId);
-      if (cellsRef.current.length && !activeWalkRef.current?.isTest) {
-        void syncDiscoveryCells(cellsRef.current, accountUserId).catch(
-          () => undefined,
-        );
-      }
+      void (async () => {
+        await flushPendingWalks(accountUserId);
+        if (cellsRef.current.length && !activeWalkRef.current?.isTest) {
+          await syncDiscoveryCells(cellsRef.current, accountUserId);
+        }
+        await refreshLiveLeaderboard(accountUserId);
+      })().catch(() => undefined);
     };
     window.addEventListener("online", retry);
     document.addEventListener("visibilitychange", retry);
@@ -1572,10 +1586,18 @@ export default function App() {
         await flushPendingWalks(walkOwner);
         // The recap and the next app launch must be based on the same completed
         // discovery. Do not rely only on the debounced background cell sync.
+        let discoverySynced = false;
         try {
           await syncDiscoveryCells(cellsRef.current, walkOwner);
+          discoverySynced = true;
         } catch {
           /* The existing debounced sync retries if this request fails. */
+        }
+        const completedWalkSynced = !pendingWalksRef.current.some(
+          walk => walk.id === completed.id,
+        );
+        if (completedWalkSynced && discoverySynced) {
+          await refreshLiveLeaderboard(walkOwner);
         }
       }
       if (started) {

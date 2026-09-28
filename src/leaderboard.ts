@@ -274,6 +274,46 @@ export function leaderboardSnapshotForCities(
   }
 }
 
+export function refreshedPublishedSnapshot(
+  snapshot: LeaderboardSnapshot,
+  publishedEntry: LeaderboardEntry,
+): LeaderboardSnapshot {
+  return {
+    ...leaderboardSnapshotForCities(
+      snapshot,
+      publishedEntry.cities.map(city => city.cityId),
+    ),
+    // Joining the leaderboard shares every earned achievement. City selection
+    // remains explicit because those aggregates carry location context.
+    achievements: snapshot.achievements,
+  }
+}
+
+export async function refreshPublishedLeaderboardSnapshot(userId: string) {
+  if (!supabase) return false
+  const profile = await loadMyLeaderboardProfile()
+  if (!profile?.entryId) return false
+
+  const [{ data, error }, snapshot] = await Promise.all([
+    supabase
+      .from('leaderboard_entries')
+      .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage),leaderboard_achievements(achievement_id)')
+      .eq('entry_id', profile.entryId)
+      .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
+      .maybeSingle(),
+    buildLeaderboardSnapshot(userId),
+  ])
+  if (error) throw error
+  if (!data) return false
+
+  const publishedEntry = mapLeaderboardRows([data as LeaderboardRow])[0]
+  await publishLeaderboardSnapshot(
+    publishedEntry.displayName,
+    refreshedPublishedSnapshot(snapshot, publishedEntry),
+  )
+  return true
+}
+
 export async function publishLeaderboardSnapshot(displayName: string, snapshot: LeaderboardSnapshot) {
   if (!supabase) throw new Error('Hecate account sync is not configured')
   const { error } = await supabase.rpc('publish_leaderboard_snapshot', {
