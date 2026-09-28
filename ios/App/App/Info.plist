@@ -41,6 +41,8 @@
 	<string>Hecate uses background location during a walk you start, or when you enable discovery reminders, to suggest recording a journey through new areas. Reminder locations are not saved to your map or account.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Hecate uses your location to show your position, reveal a walk you start, and detect walks when reminders are enabled.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Hecate uses your device orientation to show which direction you are facing on the map.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

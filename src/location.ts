@@ -41,6 +41,7 @@ class WebLocationTracker implements LocationTracker {
         lat: coords.latitude,
         recordedAt: timestamp,
         accuracy: coords.accuracy,
+        heading: coords.heading === null ? undefined : coords.heading,
       }),
       error => onError({
         code: error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'unavailable',
@@ -102,6 +103,7 @@ class NativeLocationTracker implements LocationTracker {
         lat: location.latitude,
         recordedAt: location.time ?? Date.now(),
         accuracy: location.accuracy,
+        heading: location.bearing ?? undefined,
       })
     })
     if (this.stopRequested) {

@@ -26,6 +26,7 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { requestDeviceHeadingPermission } from "./deviceHeading";
 import { AchievementCard } from "./components/AchievementCard";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
@@ -1888,6 +1889,7 @@ export default function App() {
   };
 
   const toggleTracking = async () => {
+    void requestDeviceHeadingPermission();
     if (tracking === "tracking") {
       resetInactivityReminder();
       const tracker = trackerRef.current;
@@ -1980,6 +1982,7 @@ export default function App() {
   };
 
   const locate = () => {
+    void requestDeviceHeadingPermission();
     if (currentPoint) {
       setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
       setViewedCity(null);

@@ -4,6 +4,7 @@ import * as maplibregl from 'maplibre-gl'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import mapWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { compassHeadingFromEvent, type CompassOrientationEvent } from '../deviceHeading'
 import { DISCOVERY_RADIUS_M, discoveryCellCenter, metersToPixels, splitRoute } from '../geo'
 import type { Coordinate, DiscoveryCell, MapMode } from '../types'
 
@@ -30,6 +31,38 @@ type MistGeometry = {
 
 function userMarkerClassName(locationState: NonNullable<Props['locationState']>) {
   return `user-marker user-marker--${locationState}`
+}
+
+function createUserMarkerElement(locationState: NonNullable<Props['locationState']>) {
+  const element = document.createElement('div')
+  element.className = userMarkerClassName(locationState)
+  element.innerHTML = `<span class="user-marker__direction" aria-hidden="true">
+    <svg viewBox="0 0 44 44" focusable="false">
+      <defs>
+        <linearGradient id="user-direction-fill" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stop-color="#4285f4" stop-opacity="0.42" />
+          <stop offset="0.58" stop-color="#637cff" stop-opacity="0.2" />
+          <stop offset="1" stop-color="#7b73ff" stop-opacity="0" />
+        </linearGradient>
+        <filter id="user-direction-soften" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="0.65" />
+        </filter>
+      </defs>
+      <path d="M22 43 L6 9 Q22 0 38 9 Z" fill="url(#user-direction-fill)" filter="url(#user-direction-soften)" />
+      <path d="M22 42 L8 10 Q22 3 36 10 Z" fill="url(#user-direction-fill)" opacity="0.72" />
+    </svg>
+  </span><span class="user-marker__dot"></span>`
+  return element
+}
+
+function updateUserMarkerHeading(element: HTMLElement, heading: number | undefined, mapBearing: number) {
+  const validHeading = typeof heading === 'number' && Number.isFinite(heading) && heading >= 0
+  element.classList.toggle('user-marker--has-heading', validHeading)
+  if (validHeading) {
+    element.style.setProperty('--user-heading', `${heading - mapBearing}deg`)
+  } else {
+    element.style.removeProperty('--user-heading')
+  }
 }
 
 function drawMist(canvas: HTMLCanvasElement, map: MapLibreMap, geometry: MistGeometry, mode: MapMode) {
@@ -162,6 +195,7 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   const locationStateRef = useRef(locationState)
   const onMapClickRef = useRef(onMapClick)
   const onViewChangeRef = useRef(onViewChange)
+  const compassHeadingRef = useRef<number | undefined>(undefined)
   const redrawRef = useRef<((force?: boolean) => void) | null>(null)
   const geometry = useMemo<MistGeometry>(() => ({
     routeSegments: splitRoute(points),
@@ -178,6 +212,23 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     const element = markerRef.current?.getElement()
     if (element) element.className = userMarkerClassName(locationState)
   }, [locationState])
+
+  useEffect(() => {
+    const updateHeading = (rawEvent: Event) => {
+      const heading = compassHeadingFromEvent(rawEvent as CompassOrientationEvent)
+      if (heading === undefined) return
+      compassHeadingRef.current = heading
+      const element = markerRef.current?.getElement()
+      const map = mapRef.current
+      if (element && map) updateUserMarkerHeading(element, heading, map.getBearing())
+    }
+    window.addEventListener('deviceorientationabsolute', updateHeading, true)
+    window.addEventListener('deviceorientation', updateHeading, true)
+    return () => {
+      window.removeEventListener('deviceorientationabsolute', updateHeading, true)
+      window.removeEventListener('deviceorientation', updateHeading, true)
+    }
+  }, [mapRef])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -205,9 +256,8 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       map.setProjection({ type: 'globe' })
       const point = currentPointRef.current
       if (point && !markerRef.current) {
-        const element = document.createElement('div')
-        element.className = userMarkerClassName(locationStateRef.current)
-        element.innerHTML = '<span></span>'
+        const element = createUserMarkerElement(locationStateRef.current)
+        updateUserMarkerHeading(element, compassHeadingRef.current ?? point.heading, map.getBearing())
         markerRef.current = new maplibregl.Marker({ element, anchor: 'center' })
           .setLngLat([point.lng, point.lat])
           .addTo(map)
@@ -223,7 +273,12 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
       drawMist(canvasRef.current, map, stateRef.current.geometry, stateRef.current.mode)
     }
     redrawRef.current = redraw
-    const handleMove = () => redraw()
+    const handleMove = () => {
+      redraw()
+      const point = currentPointRef.current
+      const element = markerRef.current?.getElement()
+      if (point && element) updateUserMarkerHeading(element, compassHeadingRef.current ?? point.heading, map.getBearing())
+    }
     const handleMoveEnd = () => {
       redraw(true)
       const center = map.getCenter()
@@ -255,12 +310,12 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
     const map = mapRef.current
     if (!map || !currentPoint) return
     if (!markerRef.current) {
-      const element = document.createElement('div')
-      element.className = userMarkerClassName(locationStateRef.current)
-      element.innerHTML = '<span></span>'
+      const element = createUserMarkerElement(locationStateRef.current)
+      updateUserMarkerHeading(element, compassHeadingRef.current ?? currentPoint.heading, map.getBearing())
       markerRef.current = new maplibregl.Marker({ element, anchor: 'center' }).setLngLat([currentPoint.lng, currentPoint.lat]).addTo(map)
     } else {
       markerRef.current.setLngLat([currentPoint.lng, currentPoint.lat])
+      updateUserMarkerHeading(markerRef.current.getElement(), compassHeadingRef.current ?? currentPoint.heading, map.getBearing())
     }
   }, [currentPoint, mapRef])
 

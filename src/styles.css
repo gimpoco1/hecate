@@ -1768,6 +1768,8 @@ button {
   pointer-events: none;
 }
 .user-marker {
+  position: relative;
+  isolation: isolate;
   width: 27px;
   height: 27px;
   border-radius: 50%;
@@ -1777,7 +1779,33 @@ button {
     0 3px 15px rgba(20, 54, 42, 0.35),
     0 0 0 5px rgba(109, 124, 116, 0.24);
 }
-.user-marker span {
+.user-marker__direction {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 50%;
+  width: 42px;
+  height: 44px;
+  visibility: hidden;
+  opacity: 0;
+  transform: translate(-50%, 0) rotate(var(--user-heading, 0deg));
+  transform-origin: 50% 100%;
+  transition: transform 180ms linear;
+  pointer-events: none;
+}
+.user-marker__direction svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.user-marker--has-heading .user-marker__direction {
+  visibility: visible;
+  opacity: 1;
+}
+.user-marker__dot {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -1794,8 +1822,8 @@ button {
     0 3px 15px rgba(20, 54, 42, 0.35),
     0 0 0 5px rgba(10, 132, 255, 0.2);
 }
-.user-marker--located span,
-.user-marker--tracking span {
+.user-marker--located .user-marker__dot,
+.user-marker--tracking .user-marker__dot {
   background: #0a84ff;
   border-color: #d9efff;
 }

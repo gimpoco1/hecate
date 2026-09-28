@@ -40,8 +40,8 @@ describe('native location lifecycle', () => {
         backgroundTitle: expect.anything(),
       }),
     )
-    native.addWatcher.mock.calls[0][1]({ longitude: 2.17, latitude: 41.38, accuracy: 25, time: Date.now() })
-    expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38 }))
+    native.addWatcher.mock.calls[0][1]({ longitude: 2.17, latitude: 41.38, accuracy: 25, bearing: 135, time: Date.now() })
+    expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38, heading: 135 }))
     await tracker.stop()
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'foreground-watcher' })
   })
