@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   AUTOMATIC_UPDATES_KEY,
+  isAutomaticUpdatePending,
   isAutomaticUpdatesEnabled,
+  setAutomaticUpdatePending,
   setAutomaticUpdatesEnabled,
 } from "./automaticUpdates";
 
@@ -48,5 +50,16 @@ describe("automaticUpdates", () => {
     setAutomaticUpdatesEnabled(true);
     expect(isAutomaticUpdatesEnabled()).toBe(true);
     expect(globalThis.localStorage.getItem(AUTOMATIC_UPDATES_KEY)).toBe("true");
+  });
+
+  it("tracks pending leaderboard retries independently for each account", () => {
+    expect(isAutomaticUpdatePending("user-a")).toBe(false);
+
+    setAutomaticUpdatePending("user-a", true);
+    expect(isAutomaticUpdatePending("user-a")).toBe(true);
+    expect(isAutomaticUpdatePending("user-b")).toBe(false);
+
+    setAutomaticUpdatePending("user-a", false);
+    expect(isAutomaticUpdatePending("user-a")).toBe(false);
   });
 });

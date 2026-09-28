@@ -766,6 +766,7 @@ export function WebLeaderboard() {
         document.removeEventListener("visibilitychange", refreshWhenVisible);
     }
     const client = supabase;
+    let disposed = false;
     let fallbackInterval: number | null = null;
     const stopFallbackPolling = () => {
       if (fallbackInterval === null) return;
@@ -795,6 +796,7 @@ export function WebLeaderboard() {
         () => void refresh(),
       )
       .subscribe((status) => {
+        if (disposed) return;
         if (status === "SUBSCRIBED") {
           stopFallbackPolling();
         } else if (
@@ -806,6 +808,7 @@ export function WebLeaderboard() {
         }
       });
     return () => {
+      disposed = true;
       stopFallbackPolling();
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       void client.removeChannel(channel);

@@ -68,7 +68,11 @@ import {
   type ReminderKind,
 } from "./explorationReminder";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
-import { isAutomaticUpdatesEnabled } from "./automaticUpdates";
+import {
+  isAutomaticUpdatePending,
+  isAutomaticUpdatesEnabled,
+  setAutomaticUpdatePending,
+} from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
@@ -349,6 +353,7 @@ export default function App() {
   const journeyDragFrameRef = useRef<number | null>(null);
   const journeySettleFrameRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
+  const journeyExpandedRef = useRef(false);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
   const cellsRef = useRef<DiscoveryCell[]>([]);
@@ -553,6 +558,7 @@ export default function App() {
   useEffect(() => {
     const card = journeyCardRef.current;
     if (!card || journeyAnimationRef.current) return;
+    journeyExpandedRef.current = citiesExpanded;
     card.dataset.expanded = String(citiesExpanded);
   }, [citiesExpanded, isCityScale]);
   const cityProgresses = useMemo(() => {
@@ -903,28 +909,48 @@ export default function App() {
   };
 
   const refreshLiveLeaderboard = async (userId: string) => {
-    if (!isAutomaticUpdatesEnabled()) return;
+    if (!isAutomaticUpdatesEnabled()) {
+      setAutomaticUpdatePending(userId, false);
+      return true;
+    }
     try {
       await refreshPublishedLeaderboardSnapshot(userId);
+      setAutomaticUpdatePending(userId, false);
+      return true;
     } catch (error) {
       // Discovery syncing is the source of truth. A later completed session or
       // online retry can safely rebuild the public aggregate snapshot.
       console.warn("Could not refresh live leaderboard data", error);
+      return false;
     }
   };
 
   useEffect(() => {
     if (!accountUserId) return;
+    let retrying = false;
     const retry = () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
+      if (!isAutomaticUpdatePending(accountUserId)) return;
+      if (!isAutomaticUpdatesEnabled()) {
+        setAutomaticUpdatePending(accountUserId, false);
+        return;
+      }
+      if (retrying) return;
+      retrying = true;
       void (async () => {
         await flushPendingWalks(accountUserId);
+        if (pendingWalksRef.current.length) return;
         if (cellsRef.current.length && !activeWalkRef.current?.isTest) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
         await refreshLiveLeaderboard(accountUserId);
-      })().catch(() => undefined);
+      })()
+        .catch(() => undefined)
+        .finally(() => {
+          retrying = false;
+        });
     };
+    retry();
     window.addEventListener("online", retry);
     document.addEventListener("visibilitychange", retry);
     return () => {
@@ -1586,6 +1612,9 @@ export default function App() {
         ),
       };
       if (!active.isTest) {
+        if (isAutomaticUpdatesEnabled()) {
+          setAutomaticUpdatePending(walkOwner, true);
+        }
         pendingWalksRef.current.push(completed);
         saveWalkJournal(walkOwner, pendingWalksRef.current);
         await flushPendingWalks(walkOwner);
@@ -2049,6 +2078,7 @@ export default function App() {
     const startTransform = offsetForHeight(startHeight);
     const targetTransform = offsetForHeight(targetHeight);
     const setVisualExpanded = (nextExpanded: boolean) => {
+      journeyExpandedRef.current = nextExpanded;
       card.dataset.expanded = String(nextExpanded);
     };
     card.style.transform = startTransform;
@@ -2120,7 +2150,7 @@ export default function App() {
     }
     if (
       !shouldStartJourneyDrag(
-        citiesExpanded,
+        journeyExpandedRef.current,
         Boolean(target.closest(".journey-card__header")),
         Boolean(target.closest(".discovery-control")),
       )
@@ -2145,7 +2175,7 @@ export default function App() {
       collapsedHeight: collapsed,
       expandedHeight: expanded,
       moved: false,
-      startedExpanded: citiesExpanded,
+      startedExpanded: journeyExpandedRef.current,
     };
   };
 
@@ -2389,7 +2419,7 @@ export default function App() {
               : "idle"
         }
         onMapClick={() => {
-          if (citiesExpanded)
+          if (journeyExpandedRef.current)
             settleJourneySheet(
               false,
               undefined,

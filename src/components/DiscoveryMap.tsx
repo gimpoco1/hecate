@@ -210,7 +210,15 @@ export function DiscoveryMap({ mode, points, cells, currentPoint, locationState 
   useEffect(() => {
     locationStateRef.current = locationState
     const element = markerRef.current?.getElement()
-    if (element) element.className = userMarkerClassName(locationState)
+    const map = mapRef.current
+    if (element) {
+      element.className = userMarkerClassName(locationState)
+      updateUserMarkerHeading(
+        element,
+        compassHeadingRef.current ?? currentPointRef.current?.heading,
+        map?.getBearing() ?? 0,
+      )
+    }
   }, [locationState])
 
   useEffect(() => {
