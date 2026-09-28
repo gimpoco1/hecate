@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { discoveryCellsFromPoints } from './geo'
-import { cityLeaderboardGroups, cityTreemapLayout, displayNameForUser, leaderboardSnapshotForCities, leaderboardSnapshotFromDiscovery, mapLeaderboardRows, rankedEntries } from './leaderboard'
+import { cityLeaderboardGroups, cityTreemapLayout, displayNameForUser, leaderboardSnapshotForCities, leaderboardSnapshotFromDiscovery, mapLeaderboardRows, rankedEntries, refreshedPublishedSnapshot } from './leaderboard'
 import type { Coordinate } from './types'
 
 const entries = mapLeaderboardRows([
   {
     entry_id: 'a', display_name: 'Mara', total_discovered_km: '12.5', city_count: 1, updated_at: '2026-09-20', calculation_version: 3,
     leaderboard_city_stats: [{ city_id: 'barcelona', city_name: 'Barcelona', discovered_km: '4.2', discovered_percentage: '1.8' }],
-    leaderboard_achievements: [{ achievement_id: 'the-long-way' }, { achievement_id: 'not-real' }],
+    achievement_ids: ['the-long-way', 'not-real'],
   },
   {
     entry_id: 'b', display_name: 'Leo', total_discovered_km: 18, city_count: 1, updated_at: '2026-09-21', calculation_version: 3,
@@ -43,6 +43,30 @@ describe('leaderboard ranking', () => {
     expect(shared.cities.map(city => city.cityId)).toEqual(['london'])
     expect(shared.totalDiscoveredKm).toBe(5)
     expect(shared.achievements).toEqual(['the-long-way'])
+  })
+
+  it('refreshes only shared cities while publishing every earned achievement', () => {
+    const refreshed = refreshedPublishedSnapshot({
+      calculationVersion: 3,
+      totalDiscoveredKm: 30,
+      achievements: ['the-long-way', 'city-hopper'],
+      cities: [
+        { cityId: 'barcelona', cityName: 'Barcelona', discoveredKm: 18, discoveredPercentage: 4 },
+        { cityId: 'london', cityName: 'Greater London', discoveredKm: 12, discoveredPercentage: 3 },
+      ],
+    }, {
+      entryId: 'published',
+      displayName: 'Explorer',
+      totalDiscoveredKm: 10,
+      cityCount: 1,
+      updatedAt: '2026-09-25',
+      cities: [{ cityId: 'barcelona', cityName: 'Barcelona', discoveredKm: 10, discoveredPercentage: 2 }],
+      achievements: ['the-long-way'],
+    })
+
+    expect(refreshed.totalDiscoveredKm).toBe(18)
+    expect(refreshed.cities.map(city => city.cityId)).toEqual(['barcelona'])
+    expect(refreshed.achievements).toEqual(['the-long-way', 'city-hopper'])
   })
 
   it('maps database numeric values and ranks the overall board by distance', () => {

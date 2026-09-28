@@ -3,6 +3,7 @@ export type Coordinate = {
   lat: number
   recordedAt: number
   accuracy?: number
+  heading?: number
   walkId?: string
 }
 
