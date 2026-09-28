@@ -20,10 +20,13 @@
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
+    "@capacitor/action-sheet": "^7.0.4",
     "@capacitor/app": "^7.1.2",
+    "@capacitor/app-launcher": "^7.0.4",
     "@capacitor/browser": "^7.0.0",
     "@capacitor/core": "^7.6.9",
     "@capacitor/ios": "^7.6.9",
+    "@capacitor/keyboard": "^7.0.6",
     "@capacitor/local-notifications": "^7.0.7",
     "@supabase/supabase-js": "^2.57.4",
     "maplibre-gl": "^6.9.0",

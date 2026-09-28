@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
+import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
+import { AppLauncher } from "@capacitor/app-launcher";
+import { Browser } from "@capacitor/browser";
+import { Keyboard } from "@capacitor/keyboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import {
@@ -34,6 +38,7 @@ import { requestDeviceHeadingPermission } from "./deviceHeading";
 import { AchievementCard } from "./components/AchievementCard";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
+import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
@@ -42,6 +47,7 @@ import {
   LocateIcon,
   MapIcon,
   PerspectiveIcon,
+  StarIcon,
   UserIcon,
   XIcon,
 } from "./components/Icons";
@@ -70,6 +76,18 @@ import {
   simulateUnmappedWalk,
   type ReminderKind,
 } from "./explorationReminder";
+import {
+  createFavoritePlace,
+  deleteFavoritePlacesFromDatabase,
+  favoriteDirectionsUrl,
+  favoritePlacesFromUnknown,
+  favoriteNativeDirectionsUrl,
+  loadFavoritePlaces,
+  loadFavoritePlacesFromDatabase,
+  saveFavoritePlaces,
+  upsertFavoritePlacesInDatabase,
+  type FavoritePlace,
+} from "./favoritePlaces";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
 import {
   isAutomaticUpdatePending,
@@ -127,6 +145,7 @@ type ExplorationSummary = {
   cityName?: string;
   cityPercentageAdded?: number;
 };
+
 type PassiveLocationStatus =
   | "idle"
   | "requesting"
@@ -293,6 +312,11 @@ export default function App() {
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
+  const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
+  const [favoritePlacementActive, setFavoritePlacementActive] = useState(false);
+  const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
+  const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null);
   const [viewCenter, setViewCenter] = useState<{
     lng: number;
@@ -2463,6 +2487,187 @@ export default function App() {
       tracking === "idle",
   );
 
+  useEffect(() => {
+    if (!authReady) return;
+    setFavoritePlacementActive(false);
+    setFavoriteDraft(null);
+    setFavoriteEditorMode("view");
+    if (!accountUserId) {
+      setFavoritePlaces([]);
+      return;
+    }
+
+    let cancelled = false;
+    const localPlaces = loadFavoritePlaces(accountUserId);
+    setFavoritePlaces(localPlaces);
+    const client = supabase;
+    if (!client) return;
+    void Promise.all([
+      client.auth.getUser(),
+      loadFavoritePlacesFromDatabase(client, accountUserId),
+    ]).then(async ([{ data, error }, databasePlaces]) => {
+      if (cancelled || error || data.user?.id !== accountUserId) return;
+      let remotePlaces = databasePlaces;
+      if (!remotePlaces.length) {
+        const metadataPlaces = favoritePlacesFromUnknown(
+          data.user.user_metadata?.favorite_places,
+        );
+        const migrated = [...metadataPlaces, ...localPlaces].reduce<FavoritePlace[]>(
+          (places, place) => {
+            const previous = places.find((candidate) => candidate.id === place.id);
+            if (!previous) return [...places, place];
+            return previous.updatedAt >= place.updatedAt
+              ? places
+              : [...places.filter((candidate) => candidate.id !== place.id), place];
+          },
+          [],
+        );
+        if (migrated.length) {
+          await upsertFavoritePlacesInDatabase(client, accountUserId, migrated);
+          remotePlaces = migrated;
+        }
+        if (metadataPlaces.length) {
+          await client.auth.updateUser({ data: { favorite_places: null } });
+        }
+      }
+      if (cancelled) return;
+      saveFavoritePlaces(accountUserId, remotePlaces);
+      setFavoritePlaces(remotePlaces);
+    }).catch((error) => {
+      console.warn("Favorite places could not be loaded from the database", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountUserId, authReady]);
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    let disposed = false;
+    const handles: Array<{ remove: () => Promise<void> }> = [];
+    void Promise.all([
+      Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => {
+        if (!disposed) setKeyboardInset(keyboardHeight);
+      }),
+      Keyboard.addListener("keyboardWillHide", () => {
+        if (!disposed) setKeyboardInset(0);
+      }),
+    ]).then((listeners) => {
+      if (disposed) listeners.forEach((listener) => void listener.remove());
+      else handles.push(...listeners);
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      handles.forEach((listener) => void listener.remove());
+    };
+  }, [nativeApp]);
+
+  const persistFavoritePlaces = (nextPlaces: FavoritePlace[]) => {
+    if (!accountUserId) return;
+    const changedPlaces = nextPlaces.filter((place) => {
+      const previous = favoritePlaces.find((candidate) => candidate.id === place.id);
+      return !previous || previous.updatedAt !== place.updatedAt;
+    });
+    const removedIds = favoritePlaces
+      .filter((place) => !nextPlaces.some((candidate) => candidate.id === place.id))
+      .map((place) => place.id);
+    setFavoritePlaces(nextPlaces);
+    saveFavoritePlaces(accountUserId, nextPlaces);
+    if (!supabase) return;
+    void Promise.all([
+      upsertFavoritePlacesInDatabase(supabase, accountUserId, changedPlaces),
+      deleteFavoritePlacesFromDatabase(supabase, accountUserId, removedIds),
+    ]).catch((error) => {
+      console.warn("Favorite places will retry syncing later", error);
+    });
+  };
+
+  const saveFavoriteDraft = (draft: FavoritePlace) => {
+    if (!draft.name.trim() || !draft.comment.trim()) return;
+    const saved = {
+      ...draft,
+      name: draft.name.trim(),
+      comment: draft.comment.trim(),
+      updatedAt: Date.now(),
+    };
+    persistFavoritePlaces([
+      ...favoritePlaces.filter((place) => place.id !== saved.id),
+      saved,
+    ]);
+    setFavoriteDraft(null);
+  };
+
+  const deleteFavoriteDraft = (draft: FavoritePlace) => {
+    persistFavoritePlaces(
+      favoritePlaces.filter((place) => place.id !== draft.id),
+    );
+    setFavoriteDraft(null);
+  };
+
+  const openFavoriteDirections = async (provider: "apple" | "google", favorite: FavoritePlace) => {
+    const url = favoriteDirectionsUrl(provider, favorite);
+    if (nativeApp) {
+      try {
+        const result = await AppLauncher.openUrl({
+          url: favoriteNativeDirectionsUrl(provider, favorite),
+        });
+        if (result.completed) return;
+      } catch {
+        // Fall back to web directions if the selected app is unavailable.
+      }
+      try {
+        await Browser.open({ url });
+        return;
+      } catch {
+        // Fall back to a regular browser tab if native plugins are unavailable.
+      }
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const chooseFavoriteDirections = async (favorite: FavoritePlace) => {
+    if (!nativeApp) {
+      await openFavoriteDirections("google", favorite);
+      return;
+    }
+    try {
+      const result = await ActionSheet.showActions({
+        title: "Get directions",
+        message: "Select a maps application",
+        options: [
+          { title: "Apple Maps" },
+          { title: "Google Maps" },
+          { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
+        ],
+      });
+      if (result.index === 0) await openFavoriteDirections("apple", favorite);
+      if (result.index === 1) await openFavoriteDirections("google", favorite);
+    } catch {
+      await openFavoriteDirections("apple", favorite);
+    }
+  };
+
+  const openFavoritePlace = (favorite: FavoritePlace) => {
+    setSyncOpen(false);
+    setFavoritePlacementActive(false);
+    setFavoriteEditorMode("view");
+    if (journeyExpandedRef.current) settleJourneySheet(false);
+    const map = mapRef.current;
+    if (!map) {
+      setFavoriteDraft({ ...favorite });
+      return;
+    }
+    map.once("moveend", () => setFavoriteDraft({ ...favorite }));
+    map.flyTo({
+      center: [favorite.lng, favorite.lat],
+      zoom: Math.max(map.getZoom(), 15.5),
+      pitch: 0,
+      bearing: 0,
+      duration: 650,
+      essential: true,
+    });
+  };
+
   return (
     <main className="app-shell" aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
@@ -2486,6 +2691,14 @@ export default function App() {
               JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
             );
         }}
+        favoritePlaces={favoritePlaces}
+        favoritePlacementActive={favoritePlacementActive}
+        onFavoritePlaceRequest={({ lat, lng, suggestedName }) => {
+          setFavoritePlacementActive(false);
+          setFavoriteEditorMode("edit");
+          setFavoriteDraft(createFavoritePlace(lat, lng, suggestedName));
+        }}
+        onFavoriteSelect={openFavoritePlace}
         onZoomChange={onZoomChange}
         mapRef={mapRef}
       />
@@ -2650,6 +2863,15 @@ export default function App() {
         </div>
       ) : null}
 
+      {favoritePlacementActive && (
+        <div className="favorite-placement-hint" role="status">
+          Tap the place you want to remember
+          <button type="button" onClick={() => setFavoritePlacementActive(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {!nativeApp && reminderPrompt && tracking !== "tracking" && (
         <aside
           className="reminder-prompt"
@@ -2744,6 +2966,22 @@ export default function App() {
             </small>
           </button>
         )}
+        {accountUserId && (
+          <button
+            className={favoritePlacementActive ? "active" : ""}
+            type="button"
+            onClick={() => {
+              setFavoriteDraft(null);
+              setFavoritePlacementActive((active) => !active);
+              if (journeyExpandedRef.current) settleJourneySheet(false);
+            }}
+            aria-label={favoritePlacementActive ? "Cancel adding a favorite place" : "Add a favorite place"}
+            aria-pressed={favoritePlacementActive}
+            title="Add a favorite place"
+          >
+            <StarIcon size={21} />
+          </button>
+        )}
         <button
           className={`location-control${
             passiveLocationStatus === "requesting"
@@ -2784,6 +3022,21 @@ export default function App() {
           <PerspectiveIcon size={21} />
         </button>
       </nav>
+
+      {favoriteDraft && (
+        <FavoritePlaceEditor
+          key={`${favoriteDraft.id}:${favoriteEditorMode}`}
+          favorite={favoriteDraft}
+          initialMode={favoriteEditorMode}
+          existing={favoritePlaces.some((place) => place.id === favoriteDraft.id)}
+          keyboardInset={keyboardInset}
+          onClose={() => setFavoriteDraft(null)}
+          onSave={saveFavoriteDraft}
+          onDelete={deleteFavoriteDraft}
+          onDirections={(favorite) => void chooseFavoriteDirections(favorite)}
+        />
+      )}
+
 
       {isCityScale && (
         <section
@@ -3023,6 +3276,8 @@ export default function App() {
         reminderEnabled={reminderEnabled}
         nativeApp={nativeApp}
         cityProgress={accountCityProgress}
+        favoritePlaces={favoritePlaces}
+        onFavoriteSelect={openFavoritePlace}
         onReminderChange={updateReminderEnabled}
       />
       {explorationSummary && (

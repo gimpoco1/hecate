@@ -1,46 +1,64 @@
 PODS:
   - Capacitor (7.6.9):
     - CapacitorCordova
+  - CapacitorActionSheet (7.0.4):
+    - Capacitor
   - CapacitorApp (7.1.2):
+    - Capacitor
+  - CapacitorAppLauncher (7.0.4):
     - Capacitor
   - CapacitorBrowser (7.0.0):
     - Capacitor
   - CapacitorCommunityBackgroundGeolocation (1.2.26):
     - Capacitor
   - CapacitorCordova (7.6.9)
+  - CapacitorKeyboard (7.0.6):
+    - Capacitor
   - CapacitorLocalNotifications (7.0.7):
     - Capacitor
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorActionSheet (from `../../node_modules/@capacitor/action-sheet`)"
   - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorAppLauncher (from `../../node_modules/@capacitor/app-launcher`)"
   - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
   - "CapacitorCommunityBackgroundGeolocation (from `../../node_modules/@capacitor-community/background-geolocation`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorKeyboard (from `../../node_modules/@capacitor/keyboard`)"
   - "CapacitorLocalNotifications (from `../../node_modules/@capacitor/local-notifications`)"
 
 EXTERNAL SOURCES:
   Capacitor:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorActionSheet:
+    :path: "../../node_modules/@capacitor/action-sheet"
   CapacitorApp:
     :path: "../../node_modules/@capacitor/app"
+  CapacitorAppLauncher:
+    :path: "../../node_modules/@capacitor/app-launcher"
   CapacitorBrowser:
     :path: "../../node_modules/@capacitor/browser"
   CapacitorCommunityBackgroundGeolocation:
     :path: "../../node_modules/@capacitor-community/background-geolocation"
   CapacitorCordova:
     :path: "../../node_modules/@capacitor/ios"
+  CapacitorKeyboard:
+    :path: "../../node_modules/@capacitor/keyboard"
   CapacitorLocalNotifications:
     :path: "../../node_modules/@capacitor/local-notifications"
 
 SPEC CHECKSUMS:
   Capacitor: 46067d1c8df89760dbed78780d436327d588c726
+  CapacitorActionSheet: cc792b7c919c5811d1984b05754050f4bd1eed43
   CapacitorApp: f01a913211780e0718dae9750442c3e23f96e106
+  CapacitorAppLauncher: a4f8a38922f861e585d887185ef28432e17c3eca
   CapacitorBrowser: 55c21db47416dcc8fc3b623e18fd7d09acb26081
   CapacitorCommunityBackgroundGeolocation: 750523ec6dd1cc94cf4e2bf7787605106753f73c
   CapacitorCordova: 2080fc0d6bfbc9dcc0e6d88e77fa624190d343ca
+  CapacitorKeyboard: a2e0869edd229490ce36aed2549c0d6b95e27ee8
   CapacitorLocalNotifications: 71124afe526ac00585314bff34651bd023f86e37
 
-PODFILE CHECKSUM: 5cea2dd3e7c7c23db1d5726792446f12877e598a
+PODFILE CHECKSUM: 505e5c8894f19bd8a643ff543e7383e12a717c4c
 
 COCOAPODS: 1.17.0
