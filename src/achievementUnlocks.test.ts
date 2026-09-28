@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   dismissAchievementUnlock,
+  isAchievementUnlockPending,
   reconcileAchievementUnlocks,
 } from "./achievementUnlocks";
 
@@ -55,7 +56,22 @@ describe("achievement unlock delivery", () => {
     });
   });
 
-  it("drops achievements that no longer meet revised criteria so they can be earned again", () => {
+  it("migrates legacy state using the current achievements as a baseline", () => {
+    values.set(
+      "hecate:achievement-unlocks:v1:user-1",
+      JSON.stringify({ earned: [], pending: [] }),
+    );
+
+    expect(reconcileAchievementUnlocks("user-1", ["mostly-uncharted"])).toEqual({
+      newlyEarned: [],
+      pending: [],
+    });
+    expect(
+      reconcileAchievementUnlocks("user-1", ["mostly-uncharted"]),
+    ).toEqual({ newlyEarned: [], pending: [] });
+  });
+
+  it("never requeues an acknowledged unlock after an incomplete refresh", () => {
     reconcileAchievementUnlocks("user-1", []);
     reconcileAchievementUnlocks("user-1", ["the-long-way"]);
     dismissAchievementUnlock("user-1", "the-long-way");
@@ -65,8 +81,20 @@ describe("achievement unlock delivery", () => {
       pending: [],
     });
     expect(reconcileAchievementUnlocks("user-1", ["the-long-way"])).toEqual({
-      newlyEarned: ["the-long-way"],
-      pending: ["the-long-way"],
+      newlyEarned: [],
+      pending: [],
     });
+    expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(false);
+  });
+
+  it("keeps an unacknowledged unlock pending through incomplete refreshes", () => {
+    reconcileAchievementUnlocks("user-1", []);
+    reconcileAchievementUnlocks("user-1", ["momentum"]);
+
+    expect(reconcileAchievementUnlocks("user-1", [])).toEqual({
+      newlyEarned: [],
+      pending: ["momentum"],
+    });
+    expect(isAchievementUnlockPending("user-1", "momentum")).toBe(true);
   });
 });

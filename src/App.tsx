@@ -11,6 +11,7 @@ import {
 } from "./achievements";
 import {
   dismissAchievementUnlock,
+  isAchievementUnlockPending,
   reconcileAchievementUnlocks,
 } from "./achievementUnlocks";
 import { reconcileDiscoveryAchievementUnlocks } from "./achievementDelivery";
@@ -33,7 +34,6 @@ import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
-  ChevronIcon,
   HecateMark,
   InfoIcon,
   LocateIcon,
@@ -284,8 +284,10 @@ export default function App() {
   trackingStateRef.current = tracking;
   const [zoom, setZoom] = useState(1.35);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [syncInitialIntent, setSyncInitialIntent] = useState<
+    "signin" | "signup"
+  >("signin");
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
-  const [showIntro, setShowIntro] = useState(true);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null);
@@ -354,6 +356,7 @@ export default function App() {
   const journeySettleFrameRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
+  const initialMapFocusUserRef = useRef<string | null>(null);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
   const cellsRef = useRef<DiscoveryCell[]>([]);
@@ -725,7 +728,6 @@ export default function App() {
           isPersonalAchievementId(event.notification.extra.achievementId)
         ) {
           setAchievementTestPreview(event.notification.extra.achievementId);
-          setShowIntro(false);
           return;
         }
         if (
@@ -739,12 +741,17 @@ export default function App() {
           )
             return;
           const achievementId = event.notification.extra.achievementId;
+          const userId =
+            typeof notifiedUserId === "string"
+              ? notifiedUserId
+              : accountUserIdRef.current;
+          if (!userId || !isAchievementUnlockPending(userId, achievementId))
+            return;
           setAchievementCelebrations((current) =>
             current.includes(achievementId)
               ? current
               : [achievementId, ...current],
           );
-          setShowIntro(false);
           return;
         }
         if (
@@ -758,7 +765,6 @@ export default function App() {
           return;
         }
         if (event.notification.id === REMINDER_TEST_NOTIFICATION_ID) {
-          setShowIntro(false);
           return;
         }
         if (event.notification.id !== REMINDER_NOTIFICATION_ID) return;
@@ -780,7 +786,6 @@ export default function App() {
         )
           return;
         setReminderPrompt(null);
-        setShowIntro(false);
       },
     )
       .then((handle) => {
@@ -805,6 +810,7 @@ export default function App() {
     setCityBackfillLoading(false);
     setCoverageInfoOpen(false);
     setExplorationSummary(null);
+    initialMapFocusUserRef.current = null;
     setDiscoveryLoading(Boolean(accountUserId));
     lastPointRef.current = undefined;
     cellsRef.current = [];
@@ -1440,24 +1446,20 @@ export default function App() {
     });
   };
 
-  const openDiscoveries = () => {
-    if (!accountUserId) {
-      setSyncOpen(true);
+  useEffect(() => {
+    if (
+      !accountUserId ||
+      discoveryLoading ||
+      initialMapFocusUserRef.current === accountUserId
+    )
       return;
-    }
-    if (discoveryLoading) return;
-
     const latestPoint = points.at(-1);
     const latestCell = cells.reduce<DiscoveryCell | undefined>(
       (latest, cell) =>
         !latest || cell.discoveredAt > latest.discoveredAt ? cell : latest,
       undefined,
     );
-    const livePoint = newestCoordinate(
-      currentPoint,
-      latestPassivePointRef.current,
-    );
-    const fallbackFocus =
+    const latestDiscovery =
       latestPoint ??
       (latestCell
         ? (() => {
@@ -1465,22 +1467,19 @@ export default function App() {
             return { lng, lat, recordedAt: latestCell.discoveredAt };
           })()
         : undefined);
-    const focus = livePoint ?? fallbackFocus;
+    const focus = latestDiscovery ?? currentPoint;
+    if (!focus) return;
 
-    setShowIntro(false);
-    if (focus) {
-      setViewCenter({ lng: focus.lng, lat: focus.lat });
-      setViewedCity(null);
-      mapRef.current?.flyTo({
-        center: [focus.lng, focus.lat],
-        zoom: livePoint ? 15 : 14.3,
-        duration: 850,
-        essential: true,
-      });
-    } else {
-      void toggleTracking();
-    }
-  };
+    initialMapFocusUserRef.current = accountUserId;
+    setViewCenter({ lng: focus.lng, lat: focus.lat });
+    setViewedCity(null);
+    mapRef.current?.jumpTo({
+      center: [focus.lng, focus.lat],
+      zoom: latestDiscovery ? 14.3 : 15,
+      pitch: 0,
+      bearing: 0,
+    });
+  }, [accountUserId, cells, currentPoint, discoveryLoading, points]);
 
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) {
@@ -1767,7 +1766,6 @@ export default function App() {
       };
       trackingUserRef.current = accountUserId;
       setTracking("tracking");
-      setShowIntro(false);
       for (const point of route) {
         addPoint(point);
         await new Promise((resolve) => window.setTimeout(resolve, 350));
@@ -1892,7 +1890,6 @@ export default function App() {
       ];
     achievementTestIndexRef.current += 1;
     setAchievementTestPreview(achievement.id);
-    setShowIntro(false);
     if (!nativeApp) {
       setAchievementTestMessage(
         `Showing ${achievement.title}. Native notifications are only available in the iPhone app.`,
@@ -1995,7 +1992,6 @@ export default function App() {
       });
       if (!trackerFailed) {
         setTracking("tracking");
-        setShowIntro(false);
       }
     } catch {
       focusFirstTrackingPointRef.current = false;
@@ -2386,7 +2382,6 @@ export default function App() {
     });
   };
 
-  const introVisible = showIntro && zoom < 4;
   const locationIsCurrent =
     tracking === "tracking" || passiveLocationStatus === "located";
   const locationDisplayStatus: PassiveLocationStatus =
@@ -2399,12 +2394,16 @@ export default function App() {
       : "Location temporarily unavailable";
   const accountDataLoading =
     !authReady || Boolean(accountUserId && discoveryLoading);
+  const showFirstDiscoveryHint = Boolean(
+    accountUserId &&
+      !discoveryLoading &&
+      points.length === 0 &&
+      cells.length === 0 &&
+      tracking === "idle",
+  );
 
   return (
-    <main
-      className={`app-shell ${introVisible ? "app-shell--intro" : ""}`}
-      aria-busy={accountDataLoading}
-    >
+    <main className="app-shell" aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
@@ -2555,70 +2554,40 @@ export default function App() {
         </button>
         <button
           className="avatar-button"
-          onClick={() => setSyncOpen(true)}
+          onClick={() => {
+            setSyncInitialIntent("signin");
+            setSyncOpen(true);
+          }}
           aria-label="Account and sync"
         >
           <UserIcon size={19} />
         </button>
       </header>
 
-      {introVisible && (
-        <section className="globe-intro">
-          <div className="globe-intro__signal">
-            <span />{" "}
-            {accountUserId
-              ? points.length || cells.length
-                ? "Your map is ready"
-                : "A world to uncover"
-              : "Discover your world"}
-          </div>
-          <h1>
-            {accountUserId && (points.length || cells.length)
-              ? "Continue where you left off."
-              : "Move through the world. Make it yours."}
-          </h1>
+      {!accountUserId && !isCityScale && !accountDataLoading ? (
+        <section className="guest-intro" aria-labelledby="guest-intro-title">
+          <div className="eyebrow">Discover your world</div>
+          <h1 id="guest-intro-title">Turn every walk into your map.</h1>
           <p>
-            {accountUserId && (points.length || cells.length)
-              ? "Return to your discoveries and uncover whatever comes next."
-              : "Every journey reveals new places and turns movement into a map that is uniquely yours."}
+            Hecate reveals new ground as you explore. Your routes and exact
+            locations stay private.
           </p>
-          <button onClick={openDiscoveries} disabled={discoveryLoading}>
-            <span>
-              <small>
-                {discoveryLoading
-                  ? "Syncing your account"
-                  : accountUserId
-                    ? "Your private map"
-                    : "Account required"}
-              </small>
-              {discoveryLoading
-                ? "Loading discoveries…"
-                : accountUserId
-                  ? points.length || cells.length
-                    ? "Open my discoveries"
-                    : "Start discovering"
-                  : "Sign in to discover"}
-            </span>
-            <span className="globe-intro__arrow">
-              <ChevronIcon size={19} />
-            </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSyncInitialIntent("signup");
+              setSyncOpen(true);
+            }}
+          >
+            Create a free account
           </button>
-          <div className="globe-intro__note">
-            <span />{" "}
-            {accountUserId
-              ? points.length || cells.length
-                ? `${formatDistance(discoveryDistance)} of new ground uncovered`
-                : "Nothing revealed yet"
-              : "Your discoveries stay with your account"}
-          </div>
+          <small>Already exploring? You can sign in there too.</small>
         </section>
-      )}
-
-      {!isCityScale && !showIntro && (
+      ) : !isCityScale && !accountDataLoading ? (
         <div className="zoom-hint">
           <span /> Zoom closer to reveal discoveries
         </div>
-      )}
+      ) : null}
 
       {!nativeApp && reminderPrompt && tracking !== "tracking" && (
         <aside
@@ -2667,8 +2636,7 @@ export default function App() {
         </aside>
       )}
 
-      {!introVisible &&
-        tracking !== "tracking" &&
+      {tracking !== "tracking" &&
         tracking !== "requesting" &&
         (locationDisplayStatus === "denied" ||
           locationDisplayStatus === "unavailable") && (
@@ -2773,7 +2741,12 @@ export default function App() {
             <div className="journey-card__summary">
               <div className="eyebrow">Your discovery</div>
               <div className="discovery-metrics">
-                {accountUserId ? (
+                {showFirstDiscoveryHint ? (
+                  <div className="first-discovery-hint" role="status">
+                    <strong>Ready to explore?</strong>
+                    <span>Tap play and start walking.</span>
+                  </div>
+                ) : accountUserId ? (
                   <>
                     <div className="distance">
                       {formatDistance(currentCityDistance)}
@@ -2984,6 +2957,7 @@ export default function App() {
       )}
       <SyncSheet
         open={syncOpen}
+        initialAuthIntent={syncInitialIntent}
         onClose={() => setSyncOpen(false)}
         reminderEnabled={reminderEnabled}
         nativeApp={nativeApp}

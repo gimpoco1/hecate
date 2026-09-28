@@ -23,6 +23,7 @@ import { ChevronIcon, InfoIcon, XIcon } from "./Icons";
 
 type Props = {
   open: boolean;
+  initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   reminderEnabled: boolean;
   nativeApp: boolean;
@@ -39,6 +40,7 @@ type MessageTone = "success" | "error";
 
 export function SyncSheet({
   open,
+  initialAuthIntent = "signin",
   onClose,
   reminderEnabled,
   nativeApp,
@@ -66,6 +68,14 @@ export function SyncSheet({
     string | null
   >(null);
   const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setSignInMethod("password");
+    setPasswordIntent(initialAuthIntent);
+    setConfirmPassword("");
+    setMessage("");
+  }, [initialAuthIntent, open]);
 
   useEffect(() => {
     if (!open) {
@@ -607,32 +617,65 @@ export function SyncSheet({
             <div
               className="auth-methods"
               role="tablist"
-              aria-label="Sign-in method"
+              aria-label={
+                passwordIntent === "signup"
+                  ? "Account action"
+                  : "Sign-in method"
+              }
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={signInMethod === "password"}
-                className={signInMethod === "password" ? "active" : ""}
-                onClick={() => {
-                  setSignInMethod("password");
-                  setMessage("");
-                }}
-              >
-                Password
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={signInMethod === "link"}
-                className={signInMethod === "link" ? "active" : ""}
-                onClick={() => {
-                  setSignInMethod("link");
-                  setMessage("");
-                }}
-              >
-                Email link
-              </button>
+              {passwordIntent === "signup" ? (
+                <>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected="true"
+                    className="active"
+                    onClick={beginAccountCreation}
+                  >
+                    Sign up
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected="false"
+                    onClick={() => {
+                      setPasswordIntent("signin");
+                      setPassword("");
+                      setConfirmPassword("");
+                      setMessage("");
+                    }}
+                  >
+                    Log in
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={signInMethod === "password"}
+                    className={signInMethod === "password" ? "active" : ""}
+                    onClick={() => {
+                      setSignInMethod("password");
+                      setMessage("");
+                    }}
+                  >
+                    Password
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={signInMethod === "link"}
+                    className={signInMethod === "link" ? "active" : ""}
+                    onClick={() => {
+                      setSignInMethod("link");
+                      setMessage("");
+                    }}
+                  >
+                    Email link
+                  </button>
+                </>
+              )}
             </div>
             <form className="auth-form" onSubmit={signIn}>
               <label htmlFor="email">Email address</label>
@@ -702,26 +745,15 @@ export function SyncSheet({
                       ? "Create account"
                       : "Sign in"}
               </button>
-              {signInMethod === "password" && (
+              {signInMethod === "password" &&
+                passwordIntent === "signin" && (
                 <div className="auth-switch">
-                  <span>
-                    {passwordIntent === "signin"
-                      ? "New to Hecate?"
-                      : "Already have an account?"}
-                  </span>
+                  <span>New to Hecate?</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (passwordIntent === "signin") beginAccountCreation();
-                      else {
-                        setPasswordIntent("signin");
-                        setPassword("");
-                        setConfirmPassword("");
-                        setMessage("");
-                      }
-                    }}
+                    onClick={beginAccountCreation}
                   >
-                    {passwordIntent === "signin" ? "Create account" : "Sign in"}
+                    Create account
                   </button>
                 </div>
               )}

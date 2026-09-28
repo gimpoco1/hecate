@@ -9,7 +9,7 @@ describe("AccountLoadingScreen", () => {
     expect(markup).toContain("account-loading-screen--visible");
     expect(markup).toContain('role="status"');
     expect(markup).toContain("Gathering your discoveries.");
-    expect(markup).toContain('/Hecate.webp');
+    expect(markup).toContain('/icon.svg');
   });
 
   it("leaves the faded screen out of the accessibility tree", () => {
