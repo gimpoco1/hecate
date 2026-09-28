@@ -74,8 +74,6 @@ import {
   journeySheetOffsetPx,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
-  shouldHideJourneyContentDuringDrag,
-  shouldKeepJourneyContentMounted,
   shouldShowExplorationRecap,
   shouldStartJourneyDrag,
 } from "./journeyUi";
@@ -136,6 +134,8 @@ const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
 const REMINDER_TEST_NOTIFICATION_ID = 1045;
 const ACHIEVEMENT_NOTIFICATION_ID_START = 1100;
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
+const JOURNEY_SETTLE_DURATION_MS = 220;
+const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
 
 function reminderMessage() {
   return "You have been moving through new areas for 5 minutes. Start recording your journey?";
@@ -295,7 +295,7 @@ export default function App() {
     null,
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
-  const [journeyContentVisible, setJourneyContentVisible] = useState(true);
+  const [journeyContentVisible, setJourneyContentVisible] = useState(false);
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
@@ -342,7 +342,6 @@ export default function App() {
     currentHeight: number;
     collapsedHeight: number;
     expandedHeight: number;
-    contentHidden: boolean;
     moved: boolean;
     startedExpanded: boolean;
   } | null>(null);
@@ -550,6 +549,11 @@ export default function App() {
     },
     [],
   );
+  useEffect(() => {
+    const card = journeyCardRef.current;
+    if (!card || journeyAnimationRef.current) return;
+    card.dataset.expanded = String(citiesExpanded);
+  }, [citiesExpanded, isCityScale]);
   const cityProgresses = useMemo(() => {
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
@@ -2017,7 +2021,11 @@ export default function App() {
     card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
   };
 
-  const settleJourneySheet = (expanded: boolean, fromHeight?: number) => {
+  const settleJourneySheet = (
+    expanded: boolean,
+    fromHeight?: number,
+    durationMs = JOURNEY_SETTLE_DURATION_MS,
+  ) => {
     const card = journeyCardRef.current;
     if (!card) return;
     const { collapsed, expanded: expandedHeight } = journeyBounds(card);
@@ -2035,31 +2043,55 @@ export default function App() {
     journeyAnimationRef.current = null;
     const offsetForHeight = (height: number) =>
       `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
-    card.style.transition = "none";
-    card.style.transform = offsetForHeight(startHeight);
+    const startTransform = offsetForHeight(startHeight);
+    const targetTransform = offsetForHeight(targetHeight);
+    const setVisualExpanded = (nextExpanded: boolean) => {
+      card.dataset.expanded = String(nextExpanded);
+    };
+    card.style.transform = startTransform;
 
     if (reducedMotion) {
+      setVisualExpanded(expanded);
       setCitiesExpanded(expanded);
-      setJourneyContentVisible(shouldKeepJourneyContentMounted(expanded, 0));
-      card.style.transition = "";
-      card.style.transform = offsetForHeight(targetHeight);
+      setJourneyContentVisible(expanded);
+      card.style.transform = targetTransform;
       return;
     }
 
-    // Keep the city and achievement data mounted so the sheet can update live
-    // without waiting for a full open/close drag cycle to finish.
-    if (expanded) setCitiesExpanded(true);
-    requestAnimationFrame(() => {
-      card.style.transition = "transform 180ms cubic-bezier(.2, .8, .2, 1)";
-      card.style.transform = offsetForHeight(targetHeight);
-      requestAnimationFrame(() => {
-        if (journeyCardRef.current === card) {
-          card.style.transition = "";
-          card.style.transform = offsetForHeight(targetHeight);
+    // Change visual state without a React render. This keeps the MapLibre tree
+    // and drawer lists out of the animation's critical path, and removes the
+    // content divider immediately when closing begins.
+    setVisualExpanded(expanded);
+
+    journeySettleFrameRef.current = requestAnimationFrame(() => {
+      journeySettleFrameRef.current = null;
+      if (journeyCardRef.current !== card) return;
+      card.style.transform = targetTransform;
+      const animation = card.animate(
+        [
+          { transform: startTransform },
+          { transform: targetTransform },
+        ],
+        {
+          duration: durationMs,
+          easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+          fill: "both",
+        },
+      );
+      journeyAnimationRef.current = animation;
+      animation.onfinish = () => {
+        if (journeyAnimationRef.current !== animation) return;
+        journeyAnimationRef.current = null;
+        card.style.transform = targetTransform;
+        animation.cancel();
+        setCitiesExpanded(expanded);
+        setJourneyContentVisible(expanded);
+      };
+      animation.oncancel = () => {
+        if (journeyAnimationRef.current === animation) {
+          journeyAnimationRef.current = null;
         }
-      });
-      setJourneyContentVisible(shouldKeepJourneyContentMounted(expanded, 0));
-      if (!expanded) setCitiesExpanded(false);
+      };
     });
   };
 
@@ -2109,7 +2141,6 @@ export default function App() {
       currentHeight: startHeight,
       collapsedHeight: collapsed,
       expandedHeight: expanded,
-      contentHidden: false,
       moved: false,
       startedExpanded: citiesExpanded,
     };
@@ -2129,18 +2160,6 @@ export default function App() {
           : rawHeight;
     drag.currentHeight = height;
     drag.moved ||= Math.abs(event.clientY - drag.startY) > 6;
-    const dragDistance = event.clientY - drag.startY;
-    if (
-      shouldHideJourneyContentDuringDrag(drag.startedExpanded, dragDistance)
-    ) {
-      if (!drag.contentHidden) {
-        drag.contentHidden = true;
-        setJourneyContentVisible(false);
-      }
-    } else if (drag.contentHidden) {
-      drag.contentHidden = false;
-      setJourneyContentVisible(true);
-    }
 
     if (journeyDragFrameRef.current !== null) return;
     journeyDragFrameRef.current = requestAnimationFrame(() => {
@@ -2367,7 +2386,12 @@ export default function App() {
               : "idle"
         }
         onMapClick={() => {
-          if (citiesExpanded) settleJourneySheet(false);
+          if (citiesExpanded)
+            settleJourneySheet(
+              false,
+              undefined,
+              JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
+            );
         }}
         onZoomChange={onZoomChange}
         mapRef={mapRef}
@@ -2702,7 +2726,7 @@ export default function App() {
       {isCityScale && (
         <section
           ref={journeyCardRef}
-          className={`journey-card ${citiesExpanded ? "journey-card--expanded" : ""}`}
+          className="journey-card"
           onPointerDown={beginJourneyDrag}
           onPointerMove={moveJourneyDrag}
           onPointerUp={endJourneyDrag}
@@ -2794,11 +2818,11 @@ export default function App() {
               sample discovery.
             </p>
           )}
-          {journeyContentVisible && (
-            <div
-              className={`discovered-cities${citiesExpanded ? "" : " discovered-cities--collapsed"}`}
-              aria-label="Discovered cities"
-            >
+          <div
+            className="discovered-cities"
+            aria-label="Discovered cities"
+            aria-hidden={!citiesExpanded}
+          >
               <div className="discovered-cities__heading">
                 <span>Your cities</span>
                 <small>
@@ -2886,8 +2910,7 @@ export default function App() {
                   </ul>
                 </section>
               )}
-            </div>
-          )}
+          </div>
         </section>
       )}
 

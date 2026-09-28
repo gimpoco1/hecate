@@ -1,5 +1,4 @@
 const JOURNEY_DRAG_THRESHOLD_PX = 32;
-const JOURNEY_CONTENT_HIDE_THRESHOLD_PX = 6;
 
 /** Translate a full-height sheet so only the requested height remains visible. */
 export function journeySheetOffsetPx(
@@ -46,22 +45,4 @@ export function shouldAllowHeaderGesture(
   pointerOffsetFromTop: number,
 ) {
   return pointerOffsetFromTop < headerHeight * 0.5;
-}
-
-/** Drop expensive drawer content as soon as an expanded sheet moves down. */
-export function shouldHideJourneyContentDuringDrag(
-  wasExpanded: boolean,
-  verticalDragPx: number,
-) {
-  return wasExpanded && verticalDragPx > JOURNEY_CONTENT_HIDE_THRESHOLD_PX;
-}
-
-/** Keep the live city and achievement lists mounted even when the sheet is settled closed. */
-export function shouldKeepJourneyContentMounted(
-  isExpanded: boolean,
-  verticalDragPx: number,
-) {
-  return (
-    !isExpanded || Math.abs(verticalDragPx) <= JOURNEY_CONTENT_HIDE_THRESHOLD_PX
-  );
 }

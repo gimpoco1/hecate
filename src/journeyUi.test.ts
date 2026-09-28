@@ -3,8 +3,6 @@ import {
   journeySheetOffsetPx,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
-  shouldHideJourneyContentDuringDrag,
-  shouldKeepJourneyContentMounted,
   shouldShowExplorationRecap,
   shouldStartJourneyDrag,
 } from "./journeyUi";
@@ -54,15 +52,4 @@ describe("journey drawer gesture", () => {
     expect(shouldExpandJourneySheet(true, 10)).toBe(true);
   });
 
-  it("removes heavy content only once an expanded drawer starts moving down", () => {
-    expect(shouldHideJourneyContentDuringDrag(true, 7)).toBe(true);
-    expect(shouldHideJourneyContentDuringDrag(true, -20)).toBe(false);
-    expect(shouldHideJourneyContentDuringDrag(false, 40)).toBe(false);
-  });
-
-  it("keeps city and achievement data mounted while the sheet is settled closed", () => {
-    expect(shouldKeepJourneyContentMounted(false, 0)).toBe(true);
-    expect(shouldKeepJourneyContentMounted(false, 8)).toBe(true);
-    expect(shouldKeepJourneyContentMounted(true, 0)).toBe(true);
-  });
 });
