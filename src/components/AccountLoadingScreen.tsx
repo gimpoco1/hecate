@@ -10,9 +10,7 @@ export function AccountLoadingScreen({ visible }: { visible: boolean }) {
         <img src="/icon.svg" alt="" />
       </div>
       <div className="account-loading-screen__copy">
-        <span>Your map is returning</span>
-        <strong>Gathering your discoveries.</strong>
-        <p>Routes, cities, and milestones are finding their place.</p>
+        <strong>Loading your map…</strong>
         <i aria-hidden="true" />
       </div>
     </div>

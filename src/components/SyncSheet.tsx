@@ -33,6 +33,7 @@ type Props = {
   onClose: () => void;
   reminderEnabled: boolean;
   nativeApp: boolean;
+  keyboardInset: number;
   cityProgress: {
     cityId: string;
     cityName: string;
@@ -65,6 +66,7 @@ export function SyncSheet({
   onClose,
   reminderEnabled,
   nativeApp,
+  keyboardInset,
   cityProgress,
   favoritePlaces,
   onFavoriteSelect,
@@ -93,6 +95,17 @@ export function SyncSheet({
   const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
   const [favoriteCategoryId, setFavoriteCategoryId] =
     useState<FavoritePlaceIcon | null>(null);
+
+  useEffect(() => {
+    if (!keyboardInset) return;
+    const activeField = document.activeElement;
+    if (!(activeField instanceof HTMLInputElement)) return;
+    const timer = window.setTimeout(
+      () => activeField.scrollIntoView({ block: "center", behavior: "smooth" }),
+      80,
+    );
+    return () => window.clearTimeout(timer);
+  }, [keyboardInset]);
 
   useEffect(() => {
     if (!open) return;
@@ -319,8 +332,19 @@ export function SyncSheet({
     window.open(leaderboardUrl, "_blank", "noopener,noreferrer");
   };
 
+  const keepAuthFieldVisible = (event: React.FocusEvent<HTMLInputElement>) => {
+    const field = event.currentTarget;
+    window.setTimeout(() => {
+      field.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+  };
+
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className={`sheet-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
+      style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
+      onClick={onClose}
+    >
       <section
         className="sheet"
         onClick={(event) => event.stopPropagation()}
@@ -793,6 +817,7 @@ export function SyncSheet({
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
+                onFocus={keepAuthFieldVisible}
                 required
               />
               {signInMethod === "password" && (
@@ -813,6 +838,7 @@ export function SyncSheet({
                         ? "new-password"
                         : "current-password"
                     }
+                    onFocus={keepAuthFieldVisible}
                     minLength={passwordIntent === "signup" ? 8 : undefined}
                     required
                   />
@@ -828,6 +854,7 @@ export function SyncSheet({
                         }
                         placeholder="Type your password again"
                         autoComplete="new-password"
+                        onFocus={keepAuthFieldVisible}
                         minLength={8}
                         required
                       />

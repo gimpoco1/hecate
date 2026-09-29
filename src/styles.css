@@ -52,7 +52,7 @@ button {
   grid-template-rows: auto auto;
   align-content: center;
   place-items: center;
-  gap: 24px;
+  gap: 20px;
   padding: max(34px, env(safe-area-inset-top)) 28px
     max(46px, env(safe-area-inset-bottom));
   overflow: hidden;
@@ -61,8 +61,8 @@ button {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 420ms ease,
-    visibility 0s linear 420ms;
+    opacity 360ms ease-out,
+    visibility 0s linear 360ms;
 }
 .account-loading-screen--visible {
   opacity: 1;
@@ -72,51 +72,38 @@ button {
 }
 .account-loading-screen__artwork {
   position: relative;
+  isolation: isolate;
   display: grid;
   place-items: center;
-  width: 104px;
-  height: 104px;
+  width: 96px;
+  height: 96px;
   color: var(--forest);
   animation: account-loading-breathe 4.8s ease-in-out infinite;
 }
 .account-loading-screen__artwork img {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
 }
 .account-loading-screen__copy {
   position: relative;
-  width: min(100%, 430px);
+  width: min(100%, 320px);
   text-align: center;
-}
-.account-loading-screen__copy > span {
-  display: block;
-  margin-bottom: 9px;
-  color: #78923c;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 2.3px;
-  text-transform: uppercase;
 }
 .account-loading-screen__copy strong {
   display: block;
-  font:
-    700 clamp(25px, 6vw, 34px)/1.08 "Manrope",
-    sans-serif;
-  letter-spacing: -1.2px;
-}
-.account-loading-screen__copy p {
-  margin: 10px auto 20px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
+  color: var(--forest);
+  font: 700 17px/1.35 "Manrope", sans-serif;
+  letter-spacing: -0.25px;
 }
 .account-loading-screen__copy i {
   position: relative;
   display: block;
   width: 112px;
   height: 3px;
-  margin: 0 auto;
+  margin: 17px auto 0;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(24, 60, 47, 0.11);
@@ -300,9 +287,15 @@ button {
   font-size: 13px;
   line-height: 1.5;
 }
+.guest-intro__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(94px, 0.8fr);
+  gap: 10px;
+  margin-top: 19px;
+}
 .guest-intro button {
   width: 100%;
-  margin-top: 19px;
+  margin: 0;
   border: 0;
   border-radius: 14px;
   padding: 13px 16px;
@@ -313,12 +306,11 @@ button {
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(24, 60, 47, 0.18);
 }
-.guest-intro small {
-  display: block;
-  margin-top: 10px;
-  color: #7b8781;
-  font-size: 10px;
-  text-align: center;
+.guest-intro button.guest-intro__sign-in {
+  border: 1px solid rgba(24, 60, 47, 0.18);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: none;
+  color: var(--forest);
 }
 .zoom-hint {
   position: absolute;
@@ -2179,6 +2171,18 @@ button {
   background: var(--paper);
   box-shadow: 0 -16px 60px rgba(11, 32, 24, 0.2);
   animation: sheet-up 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet-backdrop--keyboard {
+  align-items: stretch;
+  padding-top: max(6px, env(safe-area-inset-top));
+}
+.sheet-backdrop--keyboard .sheet {
+  height: 100%;
+  max-height: none;
+  overscroll-behavior: contain;
+  border-radius: 24px 24px 0 0;
+  padding-top: 24px;
+  padding-bottom: 18px;
 }
 @keyframes fade-in {
   from {

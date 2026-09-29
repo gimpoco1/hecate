@@ -936,6 +936,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let retryTimer: number | null = null;
+    let finishFrame: number | null = null;
     setPoints([]);
     setCells([]);
     setAuthoritativeSnapshot(null);
@@ -972,7 +973,7 @@ export default function App() {
 
     const loadRemote = () =>
       void loadSyncedDiscovery(accountUserId)
-        .then(async (remote) => {
+        .then((remote) => {
           if (!active || accountUserIdRef.current !== accountUserId) return;
           const persistedWalkIds = new Set(
             remote.points.flatMap((point) =>
@@ -1015,20 +1016,24 @@ export default function App() {
           if (!activeWalkRef.current)
             lastPointRef.current = mergedPoints.at(-1);
           void flushPendingWalks(accountUserId);
-          await refreshAuthoritativeSnapshot(accountUserId);
+          void refreshAuthoritativeSnapshot(accountUserId).catch((error) => {
+            console.warn("Could not refresh account totals", error);
+          });
+          finishFrame = window.requestAnimationFrame(() => {
+            if (active && accountUserIdRef.current === accountUserId)
+              setDiscoveryLoading(false);
+          });
         })
         .catch((error) => {
           if (!active) return;
           console.warn("Could not load discovery history; retrying", error);
           retryTimer = window.setTimeout(loadRemote, 15_000);
-        })
-        .finally(() => {
-          if (active) setDiscoveryLoading(false);
         });
     loadRemote();
     return () => {
       active = false;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
   }, [accountUserId, refreshAuthoritativeSnapshot]);
 
@@ -2950,16 +2955,27 @@ export default function App() {
             Hecate reveals new ground as you explore. Your routes and exact
             locations stay private.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setSyncInitialIntent("signup");
-              setSyncOpen(true);
-            }}
-          >
-            Create a free account
-          </button>
-          <small>Already exploring? You can sign in there too.</small>
+          <div className="guest-intro__actions">
+            <button
+              type="button"
+              onClick={() => {
+                setSyncInitialIntent("signup");
+                setSyncOpen(true);
+              }}
+            >
+              Create free account
+            </button>
+            <button
+              className="guest-intro__sign-in"
+              type="button"
+              onClick={() => {
+                setSyncInitialIntent("signin");
+                setSyncOpen(true);
+              }}
+            >
+              Sign in
+            </button>
+          </div>
         </section>
       ) : !isCityScale && !accountDataLoading ? (
         <div className="zoom-hint">
@@ -3381,6 +3397,7 @@ export default function App() {
         onClose={() => setSyncOpen(false)}
         reminderEnabled={reminderEnabled}
         nativeApp={nativeApp}
+        keyboardInset={keyboardInset}
         cityProgress={accountCityProgress}
         favoritePlaces={favoritePlaces}
         onFavoriteSelect={openFavoritePlace}
