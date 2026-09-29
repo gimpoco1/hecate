@@ -1,4 +1,5 @@
 export const AUTOMATIC_UPDATES_KEY = "hecate:automatic-updates";
+export const AUTOMATIC_UPDATE_PENDING_EVENT = "hecate:automatic-update-pending";
 const AUTOMATIC_UPDATE_PENDING_PREFIX = "hecate:leaderboard-update-pending:v1:";
 
 function getStorage(): Storage | null {
@@ -48,6 +49,9 @@ export function setAutomaticUpdatePending(userId: string, pending: boolean) {
   try {
     if (pending) storage.setItem(key, "true");
     else storage.removeItem(key);
+    if (pending && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTOMATIC_UPDATE_PENDING_EVENT));
+    }
   } catch {
     // Storage may be unavailable in some restricted contexts.
   }

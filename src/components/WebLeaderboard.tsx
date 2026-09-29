@@ -648,7 +648,7 @@ function LeaderboardAccountPanel({
             <div className="leaderboard-settings-row">
               <div>
                 <small>Live data</small>
-                <strong>Automatic updates</strong>
+                <strong>Automatic data updates</strong>
               </div>
               <button
                 type="button"

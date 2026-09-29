@@ -31,6 +31,7 @@ describe('native location lifecycle', () => {
       expect.objectContaining({
         requestPermissions: true,
         stale: true,
+        showsBackgroundLocationIndicator: false,
       }),
       expect.any(Function),
     )
@@ -44,6 +45,20 @@ describe('native location lifecycle', () => {
     expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38, heading: 135 }))
     await tracker.stop()
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'foreground-watcher' })
+  })
+
+  it('retries native watcher removal so a failed teardown cannot leave iOS tracking active', async () => {
+    native.addWatcher.mockResolvedValue('retry-watcher')
+    native.removeWatcher
+      .mockRejectedValueOnce(new Error('Native watcher is still registering'))
+      .mockResolvedValueOnce(undefined)
+    const tracker = createLocationTracker()
+
+    await tracker.start(() => undefined, () => undefined)
+    await tracker.stop()
+
+    expect(native.removeWatcher).toHaveBeenCalledTimes(2)
+    expect(native.removeWatcher).toHaveBeenLastCalledWith({ id: 'retry-watcher' })
   })
 
   it('uses reminder monitoring only after the app leaves the foreground', () => {

@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOMATIC_UPDATES_KEY,
+  AUTOMATIC_UPDATE_PENDING_EVENT,
   isAutomaticUpdatePending,
   isAutomaticUpdatesEnabled,
   setAutomaticUpdatePending,
@@ -53,11 +54,20 @@ describe("automaticUpdates", () => {
   });
 
   it("tracks pending leaderboard retries independently for each account", () => {
+    const events = new EventTarget();
+    Object.defineProperty(globalThis, "window", {
+      value: events,
+      configurable: true,
+      writable: true,
+    });
+    const notified = vi.fn();
+    events.addEventListener(AUTOMATIC_UPDATE_PENDING_EVENT, notified);
     expect(isAutomaticUpdatePending("user-a")).toBe(false);
 
     setAutomaticUpdatePending("user-a", true);
     expect(isAutomaticUpdatePending("user-a")).toBe(true);
     expect(isAutomaticUpdatePending("user-b")).toBe(false);
+    expect(notified).toHaveBeenCalledOnce();
 
     setAutomaticUpdatePending("user-a", false);
     expect(isAutomaticUpdatePending("user-a")).toBe(false);

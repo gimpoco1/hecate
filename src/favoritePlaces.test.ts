@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createFavoritePlace, favoriteDirectionsUrl, favoriteNativeDirectionsUrl, favoritePlaceIconVector, favoritePlacesFromUnknown, loadFavoritePlaces, saveFavoritePlaces } from './favoritePlaces'
+import { createFavoritePlace, favoriteDirectionsUrl, favoriteNativeDirectionsUrl, favoritePlaceIconVector, favoritePlaceNameFromReverseGeocode, favoritePlacesFromUnknown, loadFavoritePlaces, saveFavoritePlaces } from './favoritePlaces'
 
 describe('favorite places', () => {
   beforeEach(() => {
@@ -67,5 +67,17 @@ describe('favorite places', () => {
     expect(vector.filled).toBe(true)
     expect(vector.markup).toContain('<path')
     expect(vector.markup).not.toContain('<svg')
+  })
+
+  it('chooses a useful reverse-geocoded name without map-label visibility', () => {
+    expect(favoritePlaceNameFromReverseGeocode({
+      address: { road: 'Carrer de Pallars', house_number: '126' },
+      display_name: 'Carrer de Pallars, Barcelona, Spain',
+    })).toBe('Carrer de Pallars 126')
+
+    expect(favoritePlaceNameFromReverseGeocode({
+      name: 'Parc de la Ciutadella',
+      address: { road: 'Passeig de Picasso' },
+    })).toBe('Parc de la Ciutadella')
   })
 })

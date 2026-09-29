@@ -47,7 +47,7 @@ import {
   LocateIcon,
   MapIcon,
   PerspectiveIcon,
-  StarIcon,
+  SaveIcon,
   UserIcon,
   XIcon,
 } from "./components/Icons";
@@ -90,11 +90,16 @@ import {
 } from "./favoritePlaces";
 import { InactivityReminder, isDiscoveredArea } from "./inactivityReminder";
 import {
+  AUTOMATIC_UPDATE_PENDING_EVENT,
   isAutomaticUpdatePending,
   isAutomaticUpdatesEnabled,
   setAutomaticUpdatePending,
 } from "./automaticUpdates";
-import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
+import {
+  buildLeaderboardSnapshot,
+  refreshPublishedLeaderboardSnapshot,
+  type LeaderboardSnapshot,
+} from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
   journeySheetOffsetPx,
@@ -108,7 +113,6 @@ import {
   createLocationTracker,
   createReminderLocationTracker,
   isNativeApp,
-  newestCoordinate,
   openLocationSettings,
   passiveLocationMode,
   type LocationTracker,
@@ -311,8 +315,13 @@ export default function App() {
   >("signin");
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [authoritativeSnapshot, setAuthoritativeSnapshot] =
+    useState<LeaderboardSnapshot | null>(null);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
+  const [selectedFavoritePlaceId, setSelectedFavoritePlaceId] = useState<
+    string | null
+  >(null);
   const [favoritePlacementActive, setFavoritePlacementActive] = useState(false);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
   const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
@@ -368,6 +377,11 @@ export default function App() {
   const walkUploadPromiseRef = useRef<Promise<void> | null>(null);
   const accountUserIdRef = useRef(accountUserId);
   accountUserIdRef.current = accountUserId;
+  const refreshAuthoritativeSnapshot = useCallback(async (userId: string) => {
+    const snapshot = await buildLeaderboardSnapshot(userId);
+    if (accountUserIdRef.current === userId) setAuthoritativeSnapshot(snapshot);
+    return snapshot;
+  }, []);
   const journeyCardRef = useRef<HTMLElement | null>(null);
   const journeyDragRef = useRef<{
     pointerId: number;
@@ -402,6 +416,13 @@ export default function App() {
   const discoveryDistance = useMemo(
     () => discoveredDistanceKm(points),
     [points],
+  );
+  const authoritativeCitiesById = useMemo(
+    () =>
+      new Map(
+        (authoritativeSnapshot?.cities ?? []).map((city) => [city.cityId, city]),
+      ),
+    [authoritativeSnapshot],
   );
   const activeCity =
     currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary)
@@ -445,9 +466,20 @@ export default function App() {
   const currentCityDistance = useMemo(
     () =>
       summaryCity
-        ? discoveredCityDistanceKm(points, summaryCity)
-        : discoveryDistance,
-    [discoveryDistance, points, summaryCity],
+        ? accountUserId
+          ? (authoritativeCitiesById.get(summaryCity.id)?.discoveredKm ?? 0)
+          : discoveredCityDistanceKm(points, summaryCity)
+        : accountUserId
+          ? (authoritativeSnapshot?.totalDiscoveredKm ?? 0)
+          : discoveryDistance,
+    [
+      accountUserId,
+      authoritativeCitiesById,
+      authoritativeSnapshot,
+      discoveryDistance,
+      points,
+      summaryCity,
+    ],
   );
   const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
   const currentCityMilestoneRemaining = currentCityMilestone.next
@@ -457,8 +489,14 @@ export default function App() {
     ? currentCityMilestone.next.level - 1
     : 3;
   const summaryCityPercentage = useMemo(
-    () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
-    [cells, summaryCity],
+    () =>
+      summaryCity
+        ? accountUserId
+          ? (authoritativeCitiesById.get(summaryCity.id)
+              ?.discoveredPercentage ?? 0)
+          : discoveredCityPercentage(cells, summaryCity)
+        : null,
+    [accountUserId, authoritativeCitiesById, cells, summaryCity],
   );
   const discoveryLabel = accountUserId
     ? formatDiscoveryPercentage(
@@ -597,14 +635,25 @@ export default function App() {
     return [...unique.values()]
       .map((city) => ({
         city,
-        percentage: discoveredCityPercentage(cells, city),
-        distance: discoveredCityDistanceKm(points, city),
+        percentage: accountUserId
+          ? (authoritativeCitiesById.get(city.id)?.discoveredPercentage ?? 0)
+          : discoveredCityPercentage(cells, city),
+        distance: accountUserId
+          ? (authoritativeCitiesById.get(city.id)?.discoveredKm ?? 0)
+          : discoveredCityDistanceKm(points, city),
       }))
       .sort(
         (a, b) =>
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
-  }, [cityBoundary, discoveredCities, cells, points]);
+  }, [
+    authoritativeCitiesById,
+    accountUserId,
+    cityBoundary,
+    discoveredCities,
+    cells,
+    points,
+  ]);
   achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
   citiesLoadedUserIdRef.current = citiesLoadedUserId;
   testRouteRunningRef.current = testRouteRunning;
@@ -889,6 +938,7 @@ export default function App() {
     let retryTimer: number | null = null;
     setPoints([]);
     setCells([]);
+    setAuthoritativeSnapshot(null);
     setDiscoveredCities([]);
     setCitiesLoadedUserId(null);
     setCitiesExpanded(false);
@@ -919,12 +969,35 @@ export default function App() {
     cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey));
     setPoints(pointsRef.current);
     setCells(cellsRef.current);
-    void flushPendingWalks(accountUserId);
 
     const loadRemote = () =>
       void loadSyncedDiscovery(accountUserId)
-        .then((remote) => {
+        .then(async (remote) => {
           if (!active || accountUserIdRef.current !== accountUserId) return;
+          const persistedWalkIds = new Set(
+            remote.points.flatMap((point) =>
+              point.walkId ? [point.walkId] : [],
+            ),
+          );
+          if (persistedWalkIds.size) {
+            pendingWalksRef.current = pendingWalksRef.current.filter(
+              (walk) => !persistedWalkIds.has(walk.id),
+            );
+            saveWalkJournal(
+              accountUserId,
+              pendingWalksRef.current,
+              activeWalkRef.current && !activeWalkRef.current.isTest
+                ? {
+                    ...activeWalkRef.current,
+                    finishedAt: Math.max(
+                      activeWalkRef.current.startedAt,
+                      activeWalkRef.current.points.at(-1)?.recordedAt ??
+                        activeWalkRef.current.startedAt,
+                    ),
+                  }
+                : null,
+            );
+          }
           const mergedPoints = mergeRoutePoints(
             pointsRef.current,
             remote.points,
@@ -942,6 +1015,7 @@ export default function App() {
           if (!activeWalkRef.current)
             lastPointRef.current = mergedPoints.at(-1);
           void flushPendingWalks(accountUserId);
+          await refreshAuthoritativeSnapshot(accountUserId);
         })
         .catch((error) => {
           if (!active) return;
@@ -956,7 +1030,7 @@ export default function App() {
       active = false;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [accountUserId]);
+  }, [accountUserId, refreshAuthoritativeSnapshot]);
 
   const flushPendingWalks = async (userId: string) => {
     if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current;
@@ -1019,15 +1093,30 @@ export default function App() {
   useEffect(() => {
     if (!accountUserId) return;
     let retrying = false;
+    let attemptedInitialRefresh = false;
+    let retryTimer: number | null = null;
+    const scheduleRetry = () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      retryTimer = window.setTimeout(retry, 15_000);
+    };
     const retry = () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
-      if (!isAutomaticUpdatePending(accountUserId)) return;
+      // Reconcile the recovery journal with persisted walk IDs before any
+      // upload can overwrite an already-complete server route.
+      if (!discoveryHistoryReadyRef.current) {
+        scheduleRetry();
+        return;
+      }
       if (!isAutomaticUpdatesEnabled()) {
         setAutomaticUpdatePending(accountUserId, false);
         return;
       }
+      const pending = isAutomaticUpdatePending(accountUserId);
+      if (!pending && attemptedInitialRefresh) return;
       if (retrying) return;
+      attemptedInitialRefresh = true;
       retrying = true;
+      if (!pending) setAutomaticUpdatePending(accountUserId, true);
       void (async () => {
         await flushPendingWalks(accountUserId);
         if (pendingWalksRef.current.length) return;
@@ -1039,13 +1128,17 @@ export default function App() {
         .catch(() => undefined)
         .finally(() => {
           retrying = false;
+          if (isAutomaticUpdatePending(accountUserId)) scheduleRetry();
         });
     };
     retry();
     window.addEventListener("online", retry);
+    window.addEventListener(AUTOMATIC_UPDATE_PENDING_EVENT, retry);
     document.addEventListener("visibilitychange", retry);
     return () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       window.removeEventListener("online", retry);
+      window.removeEventListener(AUTOMATIC_UPDATE_PENDING_EVENT, retry);
       document.removeEventListener("visibilitychange", retry);
     };
   }, [accountUserId]);
@@ -1715,6 +1808,9 @@ export default function App() {
           walk => walk.id === completed.id,
         );
         if (completedWalkSynced && discoverySynced) {
+          await refreshAuthoritativeSnapshot(walkOwner).catch((error) =>
+            console.warn("Could not refresh authoritative discovery totals", error),
+          );
           await refreshLiveLeaderboard(walkOwner);
         }
       }
@@ -2534,7 +2630,7 @@ export default function App() {
       saveFavoritePlaces(accountUserId, remotePlaces);
       setFavoritePlaces(remotePlaces);
     }).catch((error) => {
-      console.warn("Favorite places could not be loaded from the database", error);
+      console.warn("Saved places could not be loaded from the database", error);
     });
     return () => {
       cancelled = true;
@@ -2578,7 +2674,7 @@ export default function App() {
       upsertFavoritePlacesInDatabase(supabase, accountUserId, changedPlaces),
       deleteFavoritePlacesFromDatabase(supabase, accountUserId, removedIds),
     ]).catch((error) => {
-      console.warn("Favorite places will retry syncing later", error);
+      console.warn("Saved places will retry syncing later", error);
     });
   };
 
@@ -2601,6 +2697,7 @@ export default function App() {
     persistFavoritePlaces(
       favoritePlaces.filter((place) => place.id !== draft.id),
     );
+    setSelectedFavoritePlaceId(null);
     setFavoriteDraft(null);
   };
 
@@ -2654,10 +2751,15 @@ export default function App() {
     if (journeyExpandedRef.current) settleJourneySheet(false);
     const map = mapRef.current;
     if (!map) {
+      setSelectedFavoritePlaceId(favorite.id);
       setFavoriteDraft({ ...favorite });
       return;
     }
-    map.once("moveend", () => setFavoriteDraft({ ...favorite }));
+    setSelectedFavoritePlaceId(null);
+    map.once("moveend", () => {
+      setSelectedFavoritePlaceId(favorite.id);
+      setFavoriteDraft({ ...favorite });
+    });
     map.flyTo({
       center: [favorite.lng, favorite.lat],
       zoom: Math.max(map.getZoom(), 15.5),
@@ -2684,6 +2786,7 @@ export default function App() {
               : "idle"
         }
         onMapClick={() => {
+          setSelectedFavoritePlaceId(null);
           if (journeyExpandedRef.current)
             settleJourneySheet(
               false,
@@ -2692,6 +2795,7 @@ export default function App() {
             );
         }}
         favoritePlaces={favoritePlaces}
+        selectedFavoritePlaceId={selectedFavoritePlaceId}
         favoritePlacementActive={favoritePlacementActive}
         onFavoritePlaceRequest={({ lat, lng, suggestedName }) => {
           setFavoritePlacementActive(false);
@@ -2975,11 +3079,11 @@ export default function App() {
               setFavoritePlacementActive((active) => !active);
               if (journeyExpandedRef.current) settleJourneySheet(false);
             }}
-            aria-label={favoritePlacementActive ? "Cancel adding a favorite place" : "Add a favorite place"}
+            aria-label={favoritePlacementActive ? "Cancel adding a saved place" : "Save a place"}
             aria-pressed={favoritePlacementActive}
-            title="Add a favorite place"
+            title="Save a place"
           >
-            <StarIcon size={21} />
+            <SaveIcon size={21} />
           </button>
         )}
         <button
@@ -3030,7 +3134,9 @@ export default function App() {
           initialMode={favoriteEditorMode}
           existing={favoritePlaces.some((place) => place.id === favoriteDraft.id)}
           keyboardInset={keyboardInset}
-          onClose={() => setFavoriteDraft(null)}
+          onClose={() => {
+            setFavoriteDraft(null);
+          }}
           onSave={saveFavoriteDraft}
           onDelete={deleteFavoriteDraft}
           onDirections={(favorite) => void chooseFavoriteDirections(favorite)}
