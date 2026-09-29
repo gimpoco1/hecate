@@ -102,6 +102,7 @@ import {
 } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
+  isInSystemGestureZone,
   journeySheetOffsetPx,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
@@ -1020,8 +1021,10 @@ export default function App() {
             console.warn("Could not refresh account totals", error);
           });
           finishFrame = window.requestAnimationFrame(() => {
-            if (active && accountUserIdRef.current === accountUserId)
-              setDiscoveryLoading(false);
+            finishFrame = window.requestAnimationFrame(() => {
+              if (active && accountUserIdRef.current === accountUserId)
+                setDiscoveryLoading(false);
+            });
           });
         })
         .catch((error) => {
@@ -1632,7 +1635,7 @@ export default function App() {
   useEffect(() => {
     if (
       !accountUserId ||
-      discoveryLoading ||
+      !discoveryHistoryReadyRef.current ||
       initialMapFocusUserRef.current === accountUserId
     )
       return;
@@ -1654,11 +1657,13 @@ export default function App() {
     if (!focus) return;
 
     initialMapFocusUserRef.current = accountUserId;
+    const targetZoom = latestDiscovery ? 14.3 : 15;
     setViewCenter({ lng: focus.lng, lat: focus.lat });
+    setZoom(targetZoom);
     setViewedCity(null);
     mapRef.current?.jumpTo({
       center: [focus.lng, focus.lat],
-      zoom: latestDiscovery ? 14.3 : 15,
+      zoom: targetZoom,
       pitch: 0,
       bearing: 0,
     });
@@ -2106,15 +2111,11 @@ export default function App() {
       resetInactivityReminder();
       const tracker = trackerRef.current;
       trackerRef.current = null;
-      try {
-        await tracker?.stop();
-      } catch {
-        /* The in-memory walk must still be finalized. */
-      }
-      await finishActiveWalk();
       reminderRef.current.reset();
       setTracking("idle");
       setPassiveLocationStatus("idle");
+      void Promise.resolve(tracker?.stop()).catch(() => undefined);
+      void finishActiveWalk();
       return;
     }
     if (!accountUserId) {
@@ -2137,11 +2138,7 @@ export default function App() {
     lastBackgroundAchievementCheckRef.current = 0;
     const foregroundTracker = foregroundTrackerRef.current;
     foregroundTrackerRef.current = null;
-    try {
-      await foregroundTracker?.stop();
-    } catch {
-      /* Walk tracking can still start. */
-    }
+    void Promise.resolve(foregroundTracker?.stop()).catch(() => undefined);
     const walkId = createWalkId();
     lastPointRef.current = undefined;
     const startingPoints = pointsRef.current;
@@ -2150,7 +2147,7 @@ export default function App() {
     explorationStartRef.current = {
       cells: new Set(cellKeysRef.current),
       points: startingPoints,
-      discoveryDistance: discoveredDistanceKm(startingPoints),
+      discoveryDistance,
     };
     activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] };
     trackingUserRef.current = accountUserId;
@@ -2160,6 +2157,9 @@ export default function App() {
     });
     const tracker = createLocationTracker();
     trackerRef.current = tracker;
+    // The journey exists locally before the native watcher finishes starting,
+    // so reflect the active session immediately and roll back on failure.
+    setTracking("tracking");
     let trackerFailed = false;
     try {
       await tracker.start(addPoint, (error) => {
@@ -2176,9 +2176,7 @@ export default function App() {
           error.code === "permission-denied" ? "denied" : "unavailable",
         );
       });
-      if (!trackerFailed) {
-        setTracking("tracking");
-      }
+      if (trackerFailed) return;
     } catch {
       focusFirstTrackingPointRef.current = false;
       resetInactivityReminder();
@@ -2312,6 +2310,13 @@ export default function App() {
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    if (
+      nativeApp &&
+      event.pointerType !== "mouse" &&
+      isInSystemGestureZone(viewportHeight, event.clientY)
+    )
+      return;
     const target = event.target as HTMLElement;
     const card = journeyCardRef.current;
     if (!card) return;
@@ -3170,6 +3175,13 @@ export default function App() {
           onPointerCancel={cancelJourneyDrag}
           onClickCapture={suppressClickAfterJourneyDrag}
         >
+          {nativeApp && (
+            <div
+              className="journey-card__system-gesture-guard"
+              aria-hidden="true"
+              onPointerDown={(event) => event.stopPropagation()}
+            />
+          )}
           <div className="journey-card__header">
             <div className="journey-card__handle" aria-hidden="true">
               <span />

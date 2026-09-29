@@ -46,3 +46,11 @@ export function shouldAllowHeaderGesture(
 ) {
   return pointerOffsetFromTop < headerHeight * 0.5;
 }
+
+export function isInSystemGestureZone(
+  viewportHeight: number,
+  pointerY: number,
+  reservedHeight = 48,
+) {
+  return pointerY >= viewportHeight - reservedHeight;
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   journeySheetOffsetPx,
+  isInSystemGestureZone,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
   shouldShowExplorationRecap,
@@ -39,6 +40,11 @@ describe("journey drawer gesture", () => {
   it("reserves the lower half of the header as a no-gesture zone", () => {
     expect(shouldAllowHeaderGesture(100, 49)).toBe(true);
     expect(shouldAllowHeaderGesture(100, 50)).toBe(false);
+  });
+
+  it("ignores native gestures that begin by the home indicator", () => {
+    expect(isInSystemGestureZone(844, 796)).toBe(true);
+    expect(isInSystemGestureZone(844, 795)).toBe(false);
   });
 
   it("opens a collapsed drawer only for a deliberate upward drag", () => {
