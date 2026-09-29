@@ -79,13 +79,24 @@ describe('discovery route geometry', () => {
       .toBe(discoveredAreaKm2([cell]))
   })
 
-  it('does not merge a local walk with its simplified server copy', () => {
+  it('uses the persisted server walk instead of a stale local copy', () => {
     const local = [{ ...a, walkId: 'walk-1' }, { ...b, walkId: 'walk-1' }]
     const remote = [
-      { ...a, walkId: 'walk-1', accuracy: undefined },
-      { ...b, walkId: 'walk-1', accuracy: undefined },
+      { ...a, recordedAt: 1_500, walkId: 'walk-1', accuracy: undefined },
+      { ...b, recordedAt: 2_500, walkId: 'walk-1', accuracy: undefined },
     ]
-    expect(mergeRoutePoints(local, remote)).toEqual(local)
+    expect(mergeRoutePoints(local, remote)).toEqual(remote)
+  })
+
+  it('keeps local walks that have not reached the server yet', () => {
+    const pending = [{ ...a, walkId: 'pending-walk' }, { ...b, walkId: 'pending-walk' }]
+    const remote = [{ ...a, walkId: 'saved-walk', accuracy: undefined }]
+
+    expect(mergeRoutePoints(pending, remote)).toEqual([
+      pending[0],
+      remote[0],
+      pending[1],
+    ])
   })
 
   it('keeps a fixed ground reveal radius across zoom levels', () => {

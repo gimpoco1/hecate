@@ -184,16 +184,22 @@ export function discoveredCellDistanceKm(cells: DiscoveryCell[]) {
 }
 
 export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = []) {
-  const combined = [...local, ...remote]
-  const walksWithDetailedPoints = new Set(
-    combined.filter(point => point.walkId && point.accuracy !== undefined).map(point => point.walkId!),
+  const remoteWalkIds = new Set(
+    remote.flatMap(point => point.walkId ? [point.walkId] : []),
   )
+  const combined = [
+    // Once a completed walk exists on the server, use that complete persisted
+    // route as the source of truth. A local journal copy can survive an upload
+    // or app interruption and may contain only part of the same walk; preferring
+    // it used to hide the server route and made private city totals disagree
+    // with the public snapshot. Walks that have not reached the server remain
+    // available locally, so pending and active recording recovery still works.
+    ...local.filter(point => !point.walkId || !remoteWalkIds.has(point.walkId)),
+    ...remote,
+  ]
   const unique = new Map<string, Coordinate>()
 
   combined.forEach(point => {
-    // A server route is a simplified copy of a locally recorded walk. Keeping
-    // both copies interleaves their timestamps and approximately doubles its distance.
-    if (point.walkId && point.accuracy === undefined && walksWithDetailedPoints.has(point.walkId)) return
     const key = `${point.walkId ?? ''}:${point.recordedAt}:${point.lat.toFixed(6)}:${point.lng.toFixed(6)}`
     unique.set(key, point)
   })

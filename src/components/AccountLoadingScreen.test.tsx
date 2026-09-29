@@ -8,7 +8,7 @@ describe("AccountLoadingScreen", () => {
 
     expect(markup).toContain("account-loading-screen--visible");
     expect(markup).toContain('role="status"');
-    expect(markup).toContain("Gathering your discoveries.");
+    expect(markup).toContain("Loading your map…");
     expect(markup).toContain('/icon.svg');
   });
 

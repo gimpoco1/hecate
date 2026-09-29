@@ -52,7 +52,7 @@ button {
   grid-template-rows: auto auto;
   align-content: center;
   place-items: center;
-  gap: 24px;
+  gap: 20px;
   padding: max(34px, env(safe-area-inset-top)) 28px
     max(46px, env(safe-area-inset-bottom));
   overflow: hidden;
@@ -61,8 +61,8 @@ button {
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity 420ms ease,
-    visibility 0s linear 420ms;
+    opacity 360ms ease-out,
+    visibility 0s linear 360ms;
 }
 .account-loading-screen--visible {
   opacity: 1;
@@ -72,51 +72,38 @@ button {
 }
 .account-loading-screen__artwork {
   position: relative;
+  isolation: isolate;
   display: grid;
   place-items: center;
-  width: 104px;
-  height: 104px;
+  width: 96px;
+  height: 96px;
   color: var(--forest);
   animation: account-loading-breathe 4.8s ease-in-out infinite;
 }
 .account-loading-screen__artwork img {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
 }
 .account-loading-screen__copy {
   position: relative;
-  width: min(100%, 430px);
+  width: min(100%, 320px);
   text-align: center;
-}
-.account-loading-screen__copy > span {
-  display: block;
-  margin-bottom: 9px;
-  color: #78923c;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 2.3px;
-  text-transform: uppercase;
 }
 .account-loading-screen__copy strong {
   display: block;
-  font:
-    700 clamp(25px, 6vw, 34px)/1.08 "Manrope",
-    sans-serif;
-  letter-spacing: -1.2px;
-}
-.account-loading-screen__copy p {
-  margin: 10px auto 20px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
+  color: var(--forest);
+  font: 700 17px/1.35 "Manrope", sans-serif;
+  letter-spacing: -0.25px;
 }
 .account-loading-screen__copy i {
   position: relative;
   display: block;
   width: 112px;
   height: 3px;
-  margin: 0 auto;
+  margin: 17px auto 0;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(24, 60, 47, 0.11);
@@ -300,9 +287,15 @@ button {
   font-size: 13px;
   line-height: 1.5;
 }
+.guest-intro__actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(94px, 0.8fr);
+  gap: 10px;
+  margin-top: 19px;
+}
 .guest-intro button {
   width: 100%;
-  margin-top: 19px;
+  margin: 0;
   border: 0;
   border-radius: 14px;
   padding: 13px 16px;
@@ -313,12 +306,11 @@ button {
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(24, 60, 47, 0.18);
 }
-.guest-intro small {
-  display: block;
-  margin-top: 10px;
-  color: #7b8781;
-  font-size: 10px;
-  text-align: center;
+.guest-intro button.guest-intro__sign-in {
+  border: 1px solid rgba(24, 60, 47, 0.18);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: none;
+  color: var(--forest);
 }
 .zoom-hint {
   position: absolute;
@@ -619,6 +611,15 @@ button {
 }
 .journey-card--dragging {
   cursor: grabbing;
+}
+.journey-card__system-gesture-guard {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: max(24px, env(safe-area-inset-bottom));
+  touch-action: pan-y;
 }
 .journey-card[data-expanded="true"] {
   transform: translate3d(0, 0, 0);
@@ -1799,6 +1800,14 @@ button {
 .favorite-marker:active {
   transform: rotate(-45deg) scale(0.92);
 }
+.favorite-marker--selected {
+  z-index: 1;
+  box-shadow:
+    0 5px 16px rgba(20, 48, 37, 0.34),
+    0 0 0 3px var(--paper),
+    0 0 0 7px var(--lime),
+    0 0 0 9px rgba(24, 60, 47, 0.48);
+}
 
 .favorite-editor-backdrop {
   position: absolute;
@@ -1817,7 +1826,9 @@ button {
   position: relative;
   width: min(440px, 100%);
   max-height: 100%;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid rgba(29, 61, 49, 0.12);
   border-radius: 24px;
   padding: 22px;
@@ -1825,10 +1836,24 @@ button {
   box-shadow: 0 20px 60px rgba(14, 36, 27, 0.24);
   animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+.favorite-editor__header,
+.favorite-editor__actions {
+  flex: 0 0 auto;
+}
+.favorite-editor__header {
+  position: relative;
+}
+.favorite-editor__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+  margin: -3px;
+}
 .favorite-editor__close {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 0;
+  right: 0;
   width: 34px;
   height: 34px;
   display: grid;
@@ -1840,19 +1865,25 @@ button {
   cursor: pointer;
 }
 .favorite-editor h2 {
+  display: -webkit-box;
+  overflow: hidden;
   margin: 8px 40px 16px 0;
   color: var(--forest);
   font:
     700 clamp(18px, 5vw, 23px)/1.15 "Manrope",
     sans-serif;
   letter-spacing: -0.5px;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .favorite-editor__eyebrow-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
+  min-height: 34px;
   margin-right: 48px;
 }
 .favorite-editor__eyebrow-row > span {
@@ -1895,10 +1926,9 @@ button {
   gap: 5px;
   margin-bottom: 10px;
   color: var(--forest);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 .favorite-editor__name input {
   width: 100%;
@@ -2087,6 +2117,48 @@ button {
   color: #934a3a;
 }
 
+.favorite-editor-backdrop--keyboard {
+  align-items: stretch;
+  padding: max(6px, env(safe-area-inset-top)) 8px 6px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor {
+  height: 100%;
+  max-height: none;
+  border-radius: 20px;
+  padding: 14px 16px 0;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor h2 {
+  margin-top: 4px;
+  margin-bottom: 10px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor__icon-picker {
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor__icon-picker button {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor__name {
+  margin-bottom: 7px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor__name input {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor textarea {
+  min-height: 92px;
+}
+.favorite-editor-backdrop--keyboard .favorite-editor__actions {
+  position: relative;
+  z-index: 1;
+  margin: 8px -16px 0;
+  padding: 9px 16px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(29, 61, 49, 0.08);
+  background: var(--paper);
+  box-shadow: 0 -8px 20px rgba(248, 246, 239, 0.96);
+}
+
 .sheet-backdrop {
   position: absolute;
   z-index: 10;
@@ -2108,6 +2180,18 @@ button {
   background: var(--paper);
   box-shadow: 0 -16px 60px rgba(11, 32, 24, 0.2);
   animation: sheet-up 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet-backdrop--keyboard {
+  align-items: stretch;
+  padding-top: max(6px, env(safe-area-inset-top));
+}
+.sheet-backdrop--keyboard .sheet {
+  height: 100%;
+  max-height: none;
+  overscroll-behavior: contain;
+  border-radius: 24px 24px 0 0;
+  padding-top: 24px;
+  padding-bottom: 18px;
 }
 @keyframes fade-in {
   from {
@@ -2307,15 +2391,15 @@ button {
   width: 100%;
   margin-top: 12px;
   padding: 12px 14px;
-  border: 1px solid rgba(24, 60, 47, 0.14);
+  border: 1px solid var(--forest);
   border-radius: 14px;
-  background: linear-gradient(180deg, #f3f7f1 0%, #ecf2eb 100%);
+  background: var(--forest);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   text-align: left;
-  color: var(--forest);
+  color: white;
   cursor: pointer;
   transition:
     border-color 160ms ease,
@@ -2324,8 +2408,8 @@ button {
 }
 .account-quick-link:hover,
 .account-quick-link:focus-visible {
-  border-color: rgba(24, 60, 47, 0.24);
-  box-shadow: 0 10px 18px rgba(24, 60, 47, 0.1);
+  border-color: #285844;
+  box-shadow: 0 10px 20px rgba(24, 60, 47, 0.2);
 }
 .account-quick-link:active {
   transform: translateY(1px);
@@ -2342,37 +2426,65 @@ button {
 .account-quick-link small {
   display: block;
   margin-top: 3px;
-  color: #5c6b65;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 11px;
   line-height: 1.35;
 }
 .account-quick-link > span:last-child {
   flex: 0 0 auto;
-  border: 1px solid rgba(24, 60, 47, 0.16);
+  border: 1px solid rgba(205, 239, 83, 0.42);
   border-radius: 999px;
   padding: 6px 12px;
-  background: #dce7d9;
+  background: var(--lime);
+  color: var(--forest);
   font-size: 11px;
   font-weight: 800;
 }
 .account-favorites {
   overflow: hidden;
-  margin-top: 12px;
+  margin-top: 14px;
   border: 1px solid rgba(29, 61, 49, 0.11);
-  border-radius: 17px;
-  background: rgba(240, 243, 235, 0.72);
+  border-radius: 16px;
+  background: #f7f8f3;
 }
 .account-favorites__heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 14px 11px;
+  padding: 12px 13px;
   border-bottom: 1px solid rgba(29, 61, 49, 0.09);
+  cursor: pointer;
+  list-style: none;
+}
+.account-favorites__heading::-webkit-details-marker {
+  display: none;
+}
+.account-favorites:not([open]) > .account-favorites__heading {
+  border-bottom-color: transparent;
 }
 .account-favorites__heading > span {
+  min-width: 0;
+}
+.account-favorites__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account-favorites__identity > span:last-child {
   display: grid;
+  min-width: 0;
   gap: 2px;
+}
+.account-favorites__mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  background: #e7edda;
+  color: var(--forest);
 }
 .account-favorites__heading strong {
   font-size: 13px;
@@ -2381,13 +2493,84 @@ button {
   color: #748078;
   font-size: 10px;
 }
-.account-favorites__heading > small {
+.account-favorites__summary-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.account-favorites__summary-meta > small {
   min-width: 25px;
   border-radius: 999px;
   padding: 4px 7px;
   background: rgba(29, 61, 49, 0.08);
   text-align: center;
   font-weight: 750;
+}
+.account-favorites__summary-meta > svg {
+  transition: transform 160ms ease;
+}
+.account-favorites[open] .account-favorites__summary-meta > svg {
+  transform: rotate(90deg);
+}
+.account-favorites__groups {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  background: #f1f3eb;
+}
+.account-favorites__categories {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.account-favorites__categories:empty {
+  display: none;
+}
+.account-favorites__categories > button {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  border: 1px solid rgba(29, 61, 49, 0.1);
+  border-radius: 12px;
+  padding: 8px 3px 7px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--forest);
+  cursor: pointer;
+}
+.account-favorites__categories > button.active {
+  border-color: var(--forest);
+  background: var(--forest);
+  color: var(--lime);
+}
+.account-favorites__categories > button strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-favorites__categories > button small {
+  min-width: 18px;
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: rgba(29, 61, 49, 0.08);
+  font-size: 8px;
+  font-weight: 750;
+}
+.account-favorites__categories > button.active small {
+  background: rgba(205, 239, 83, 0.15);
+}
+.account-favorites__categories .account-favorites__category-icon {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  color: inherit;
+}
+.account-favorites__categories .account-favorites__category-icon svg {
+  width: 19px;
+  height: 19px;
 }
 .account-favorites__groups details + details {
   border-top: 1px solid rgba(29, 61, 49, 0.08);
@@ -2449,7 +2632,12 @@ button {
 }
 .account-favorites__places {
   display: grid;
-  padding: 0 8px 8px 48px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(29, 61, 49, 0.09);
+  border-radius: 12px;
+  padding: 0 9px;
+  background: rgba(255, 255, 255, 0.72);
 }
 .account-favorites__places button {
   width: 100%;
@@ -2690,7 +2878,8 @@ button {
   color: #aeb8b2;
 }
 .tracking-help {
-  margin: 12px 2px 0;
+  margin: 0;
+  padding: 12px 0;
   color: #65736d;
   font-size: 12px;
   line-height: 1.45;
@@ -2703,6 +2892,19 @@ button {
   font-weight: 700;
   cursor: pointer;
   list-style: none;
+}
+.tracking-help summary > span {
+  display: grid;
+  gap: 4px;
+}
+.tracking-help summary > span strong {
+  color: var(--forest);
+  font-size: 13px;
+}
+.tracking-help summary > span small {
+  color: #65736d;
+  font-size: 10px;
+  font-weight: 500;
 }
 .tracking-help summary::-webkit-details-marker {
   display: none;

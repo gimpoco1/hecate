@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FAVORITE_PLACE_ICONS,
+  fetchFavoritePlaceName,
   favoritePlaceIconVector,
   type FavoritePlace,
   type FavoritePlaceIcon,
@@ -46,30 +47,56 @@ export function FavoritePlaceEditor({
   const [dateKind, setDateKind] = useState<"created" | "updated">("created");
   const shownAt = dateKind === "created" ? draft.createdAt : draft.updatedAt;
 
+  useEffect(() => {
+    if (existing) return;
+    const controller = new AbortController();
+    void fetchFavoritePlaceName(favorite.lat, favorite.lng, controller.signal)
+      .then((name) => {
+        if (!name) return;
+        setDraft((current) =>
+          current.name !== favorite.name ? current : { ...current, name },
+        );
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          console.warn("Could not find a name for this saved place", error);
+      });
+    return () => controller.abort();
+  }, [existing, favorite.lat, favorite.lng, favorite.name]);
+
   return (
     <div
-      className="favorite-editor-backdrop"
+      className={`favorite-editor-backdrop${keyboardInset ? " favorite-editor-backdrop--keyboard" : ""}`}
       role="presentation"
-      style={keyboardInset ? { paddingBottom: `${keyboardInset + 12}px` } : undefined}
+      style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
       onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <section className="favorite-editor" role="dialog" aria-modal="true" aria-labelledby="favorite-editor-title">
-        <button className="favorite-editor__close" type="button" onClick={onClose} aria-label="Close favorite place editor">
-          <XIcon size={18} />
-        </button>
-        <div className="favorite-editor__eyebrow-row">
-          <div className="favorite-editor__kind">
-            <span className="favorite-editor__place-icon" aria-hidden="true">
-              <FavoriteGlyph icon={draft.icon} />
-            </span>
-            <div className="eyebrow">Favorite place</div>
+        <header className="favorite-editor__header">
+          <button className="favorite-editor__close" type="button" onClick={onClose} aria-label="Close saved place editor">
+            <XIcon size={18} />
+          </button>
+          <div className="favorite-editor__eyebrow-row">
+            <div className="favorite-editor__kind">
+              <span className="favorite-editor__place-icon" aria-hidden="true">
+                <FavoriteGlyph icon={draft.icon} />
+              </span>
+              <div className="eyebrow">{existing ? "Saved place" : "New place"}</div>
+            </div>
+            <span>{draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}</span>
           </div>
-          <span>{draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}</span>
-        </div>
-        <h2 id="favorite-editor-title">{draft.name.trim() || "Favorite place"}</h2>
-        {mode === "view" ? (
+          <h2 id="favorite-editor-title">
+            {draft.name.trim() || "Save a place"}
+          </h2>
+        </header>
+        <div className="favorite-editor__body">
+          {mode === "view" ? (
           <>
             <div className="favorite-editor__comment-card">
               <p className="favorite-editor__comment">{draft.comment}</p>
@@ -86,16 +113,16 @@ export function FavoritePlaceEditor({
               </time>
             </button>
           </>
-        ) : (
+          ) : (
           <>
             <label className="favorite-editor__name">
-              <span>Place name</span>
+              <span>Name</span>
               <input
                 type="text"
                 maxLength={80}
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                placeholder="Give this place a name"
+                placeholder="Add a place name"
                 autoComplete="off"
               />
             </label>
@@ -130,11 +157,12 @@ export function FavoritePlaceEditor({
               value={draft.comment}
               onChange={(event) => setDraft({ ...draft, comment: event.target.value })}
               placeholder="A quiet courtyard, the best view, come back at sunset…"
-              aria-label="Note about this favorite place"
+              aria-label="Note about this saved place"
             />
             <div className="favorite-editor__meta"><span>{draft.comment.length}/240</span></div>
           </>
-        )}
+          )}
+        </div>
         <div className="favorite-editor__actions">
           {mode === "edit" && existing && (
             <button className="favorite-editor__delete" type="button" onClick={() => onDelete(draft)}>Remove</button>

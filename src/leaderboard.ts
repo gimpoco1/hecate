@@ -295,7 +295,6 @@ export async function refreshPublishedLeaderboardSnapshot(userId: string) {
       .from('leaderboard_entries')
       .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
       .eq('entry_id', profile.entryId)
-      .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
       .maybeSingle(),
     buildLeaderboardSnapshot(userId),
   ])

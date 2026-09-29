@@ -25,7 +25,7 @@ import {
 import { publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
-import { ChevronIcon, InfoIcon, XIcon } from "./Icons";
+import { ChevronIcon, InfoIcon, SaveIcon, XIcon } from "./Icons";
 
 type Props = {
   open: boolean;
@@ -33,6 +33,7 @@ type Props = {
   onClose: () => void;
   reminderEnabled: boolean;
   nativeApp: boolean;
+  keyboardInset: number;
   cityProgress: {
     cityId: string;
     cityName: string;
@@ -65,6 +66,7 @@ export function SyncSheet({
   onClose,
   reminderEnabled,
   nativeApp,
+  keyboardInset,
   cityProgress,
   favoritePlaces,
   onFavoriteSelect,
@@ -91,6 +93,19 @@ export function SyncSheet({
     string | null
   >(null);
   const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
+  const [favoriteCategoryId, setFavoriteCategoryId] =
+    useState<FavoritePlaceIcon | null>(null);
+
+  useEffect(() => {
+    if (!keyboardInset) return;
+    const activeField = document.activeElement;
+    if (!(activeField instanceof HTMLInputElement)) return;
+    const timer = window.setTimeout(
+      () => activeField.scrollIntoView({ block: "center", behavior: "smooth" }),
+      80,
+    );
+    return () => window.clearTimeout(timer);
+  }, [keyboardInset]);
 
   useEffect(() => {
     if (!open) return;
@@ -317,8 +332,19 @@ export function SyncSheet({
     window.open(leaderboardUrl, "_blank", "noopener,noreferrer");
   };
 
+  const keepAuthFieldVisible = (event: React.FocusEvent<HTMLInputElement>) => {
+    const field = event.currentTarget;
+    window.setTimeout(() => {
+      field.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 80);
+  };
+
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div
+      className={`sheet-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
+      style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
+      onClick={onClose}
+    >
       <section
         className="sheet"
         onClick={(event) => event.stopPropagation()}
@@ -381,35 +407,61 @@ export function SyncSheet({
               </span>
               <span aria-hidden="true">Open</span>
             </button>
-            <section
+            <details
               className="account-favorites"
-              aria-labelledby="account-favorites-title"
             >
-              <div className="account-favorites__heading">
-                <span>
-                  <strong id="account-favorites-title">
-                    Favorite places
-                  </strong>{" "}
+              <summary className="account-favorites__heading">
+                <span className="account-favorites__identity">
+                  <span className="account-favorites__mark" aria-hidden="true">
+                    <SaveIcon size={17} strokeWidth={2} />
+                  </span>
+                  <span>
+                    <strong id="account-favorites-title">
+                      Saved places
+                    </strong>
+                    <small>
+                      {favoriteGroups.length
+                        ? `${favoriteGroups.length} ${favoriteGroups.length === 1 ? "collection" : "collections"}`
+                        : "Your saved map collection"}
+                    </small>
+                  </span>
                 </span>
-                <small>{favoritePlaces.length}</small>
-              </div>
+                <span className="account-favorites__summary-meta">
+                  <small>{favoritePlaces.length}</small>
+                  <ChevronIcon size={16} strokeWidth={2.3} />
+                </span>
+              </summary>
               <div className="account-favorites__groups">
                 {favoriteGroups.length === 0 && (
                   <p className="account-favorites__empty">
                     Places you save from the map will appear here.
                   </p>
                 )}
-                {favoriteGroups.map((group) => (
-                  <details key={group.id} open={favoriteGroups.length === 1}>
-                    <summary>
+                <div className="account-favorites__categories">
+                  {favoriteGroups.map((group) => (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={favoriteCategoryId === group.id ? "active" : ""}
+                      aria-expanded={favoriteCategoryId === group.id}
+                      onClick={() =>
+                        setFavoriteCategoryId((current) =>
+                          current === group.id ? null : group.id,
+                        )
+                      }
+                    >
                       <span className="account-favorites__category-icon">
                         <FavoriteGlyph icon={group.id} />
                       </span>
                       <strong>{group.label}</strong>
                       <small>{group.places.length}</small>
-                      <ChevronIcon size={16} strokeWidth={2.3} />
-                    </summary>
-                    <div className="account-favorites__places">
+                    </button>
+                  ))}
+                </div>
+                {favoriteGroups
+                  .filter((group) => group.id === favoriteCategoryId)
+                  .map((group) => (
+                    <div className="account-favorites__places" key={group.id}>
                       {group.places.map((place) => (
                         <button
                           key={place.id}
@@ -424,66 +476,9 @@ export function SyncSheet({
                         </button>
                       ))}
                     </div>
-                  </details>
-                ))}
+                  ))}
               </div>
-            </section>
-            {Capacitor.getPlatform() === "ios" && (
-              <details className="tracking-help">
-                <summary>
-                  How tracking works <ChevronIcon size={18} strokeWidth={2.4} />
-                </summary>
-                <div className="tracking-help__content">
-                  <p>
-                    <strong>While Using:</strong> Hecate can check for new areas
-                    in the background, but iPhone may show a blue clock for
-                    Hecate.
-                  </p>
-                  <p>
-                    <strong>Always:</strong> Hecate can send background
-                    reminders without showing the blue clock. Recording a walk
-                    may still show it.
-                  </p>
-                  <p>
-                    <strong>Never:</strong> Location features and discovery
-                    reminders cannot work.
-                  </p>
-                  <p>
-                    Only walks you start recording are saved to your map.
-                    Reminder locations are not saved.
-                  </p>
-                  <p>
-                    While recording, Hecate can suggest stopping after{" "}
-                    {INACTIVITY_REMINDER_MINUTES} minutes within{" "}
-                    {INACTIVITY_RADIUS_M} m of one spot already on your map.
-                    Areas revealed during the current recording count too. The
-                    reminder is a suggestion; recording never stops
-                    automatically.
-                  </p>
-                  <figure className="tracking-help__example">
-                    <img
-                      src="/blue-location-clock.svg"
-                      alt="Example of the blue clock on an iPhone"
-                      width="122"
-                      height="42"
-                    />
-                    <figcaption>
-                      A blue clock means an app is using location in the
-                      background. It may be Hecate or another app.
-                    </figcaption>
-                  </figure>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void openLocationSettings().catch(() => undefined)
-                    }
-                  >
-                    Open iPhone Settings
-                  </button>
-                  <small>Then tap Location → Always.</small>
-                </div>
-              </details>
-            )}
+            </details>
             {reminderError && (
               <div className="form-message form-message--error" role="alert">
                 {reminderError}
@@ -627,6 +622,66 @@ export function SyncSheet({
                   {reminderEnabled ? "On" : "Off"}
                 </button>
               </div>
+              {Capacitor.getPlatform() === "ios" && (
+                <details className="tracking-help">
+                  <summary>
+                    <span>
+                      <strong>Location & tracking</strong>
+                      <small>Permissions, background use, and the blue clock</small>
+                    </span>
+                    <ChevronIcon size={18} strokeWidth={2.4} />
+                  </summary>
+                  <div className="tracking-help__content">
+                    <p>
+                      <strong>While Using:</strong> Hecate can check for new areas
+                      in the background, but iPhone may show a blue clock for
+                      Hecate.
+                    </p>
+                    <p>
+                      <strong>Always:</strong> Hecate can send background
+                      reminders without showing the blue clock. Recording a walk
+                      may still show it.
+                    </p>
+                    <p>
+                      <strong>Never:</strong> Location features and discovery
+                      reminders cannot work.
+                    </p>
+                    <p>
+                      Only walks you start recording are saved to your map.
+                      Reminder locations are not saved.
+                    </p>
+                    <p>
+                      While recording, Hecate can suggest stopping after{" "}
+                      {INACTIVITY_REMINDER_MINUTES} minutes within{" "}
+                      {INACTIVITY_RADIUS_M} m of one spot already on your map.
+                      Areas revealed during the current recording count too. The
+                      reminder is a suggestion; recording never stops
+                      automatically.
+                    </p>
+                    <figure className="tracking-help__example">
+                      <img
+                        src="/blue-location-clock.svg"
+                        alt="Example of the blue clock on an iPhone"
+                        width="122"
+                        height="42"
+                      />
+                      <figcaption>
+                        A blue clock means an app is using location in the
+                        background. It may be Hecate or another app.
+                      </figcaption>
+                    </figure>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void openLocationSettings().catch(() => undefined)
+                      }
+                    >
+                      Open iPhone Settings
+                    </button>
+                    <small>Then tap Location → Always.</small>
+                  </div>
+                </details>
+              )}
             </section>
             <button
               className="sign-out-button"
@@ -762,6 +817,7 @@ export function SyncSheet({
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
+                onFocus={keepAuthFieldVisible}
                 required
               />
               {signInMethod === "password" && (
@@ -782,6 +838,7 @@ export function SyncSheet({
                         ? "new-password"
                         : "current-password"
                     }
+                    onFocus={keepAuthFieldVisible}
                     minLength={passwordIntent === "signup" ? 8 : undefined}
                     required
                   />
@@ -797,6 +854,7 @@ export function SyncSheet({
                         }
                         placeholder="Type your password again"
                         autoComplete="new-password"
+                        onFocus={keepAuthFieldVisible}
                         minLength={8}
                         required
                       />

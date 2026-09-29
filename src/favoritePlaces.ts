@@ -136,7 +136,7 @@ export function favoritePlacesFromUnknown(value: unknown): FavoritePlace[] {
         .filter(isFavoritePlace)
         .map((place) => ({
           ...place,
-          name: place.name === undefined ? "Favorite place" : place.name,
+          name: place.name === undefined ? "Saved place" : place.name,
           icon: place.icon ?? "star",
         }))
     : [];
@@ -235,7 +235,7 @@ export async function deleteFavoritePlacesFromDatabase(
 export function createFavoritePlace(
   lat: number,
   lng: number,
-  suggestedName = "Favorite place",
+  suggestedName = "",
 ): FavoritePlace {
   const now = Date.now();
   const id =
@@ -244,7 +244,7 @@ export function createFavoritePlace(
       : `favorite-${now}-${Math.random().toString(36).slice(2)}`;
   return {
     id,
-    name: suggestedName.trim().slice(0, 80) || "Favorite place",
+    name: suggestedName.trim().slice(0, 80),
     lat,
     lng,
     comment: "",
@@ -252,6 +252,62 @@ export function createFavoritePlace(
     createdAt: now,
     updatedAt: now,
   };
+}
+
+type ReverseGeocodeResult = {
+  name?: string;
+  display_name?: string;
+  namedetails?: Record<string, string>;
+  address?: Record<string, string>;
+};
+
+export function favoritePlaceNameFromReverseGeocode(result: ReverseGeocodeResult) {
+  const address = result.address ?? {};
+  const directName = result.namedetails?.name || result.name;
+  const namedFeature = [
+    address.amenity,
+    address.tourism,
+    address.leisure,
+    address.shop,
+    address.historic,
+  ].find((value) => value?.trim());
+  const street = address.road || address.pedestrian || address.footway;
+  const streetAddress = street
+    ? [street, address.house_number].filter(Boolean).join(" ")
+    : undefined;
+  const area =
+    address.neighbourhood || address.suburb || address.quarter || address.city;
+  const displayName = result.display_name?.split(",")[0];
+  return (directName || namedFeature || streetAddress || area || displayName || "")
+    .trim()
+    .slice(0, 80);
+}
+
+export async function fetchFavoritePlaceName(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    format: "jsonv2",
+    lat: lat.toFixed(6),
+    lon: lng.toFixed(6),
+    zoom: "18",
+    addressdetails: "1",
+    namedetails: "1",
+  });
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?${query}`,
+    {
+      signal,
+      headers: { "Accept-Language": navigator.language || "en" },
+    },
+  );
+  if (!response.ok)
+    throw new Error(`Saved place lookup failed (${response.status})`);
+  return favoritePlaceNameFromReverseGeocode(
+    (await response.json()) as ReverseGeocodeResult,
+  );
 }
 
 export function favoriteDirectionsUrl(
