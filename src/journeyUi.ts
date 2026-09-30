@@ -26,7 +26,6 @@ export function shouldExpandJourneySheet(
     : verticalDragPx <= -JOURNEY_DRAG_THRESHOLD_PX;
 }
 
-/**
 /** The whole collapsed summary is a drag surface. Once expanded, only the
  * header can start a downward drag to close the sheet without interrupting the
  * list's scroll interaction. Keep the lower half of the header as a reserved

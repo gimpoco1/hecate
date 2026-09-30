@@ -99,6 +99,25 @@ describe('discovery route geometry', () => {
     ])
   })
 
+  it('preserves complete walk segments when synced and pending timestamps overlap', () => {
+    const pending = [
+      { ...a, recordedAt: 1_000, walkId: 'pending-walk' },
+      { ...b, recordedAt: 20_000, walkId: 'pending-walk' },
+    ]
+    const savedStart = { ...a, lat: 41.39, recordedAt: 5_000, walkId: 'saved-walk', accuracy: undefined }
+    const savedEnd = { ...b, lat: 41.39, recordedAt: 15_000, walkId: 'saved-walk', accuracy: undefined }
+    const merged = mergeRoutePoints(pending, [savedStart, savedEnd])
+    const segments = splitRoute(merged)
+
+    expect(segments.map(segment => segment.map(point => point.walkId))).toEqual([
+      ['pending-walk', 'pending-walk'],
+      ['saved-walk', 'saved-walk'],
+    ])
+    expect(routeDistanceKm(merged)).toBeCloseTo(
+      distanceKm(pending[0], pending[1]) + distanceKm(savedStart, savedEnd),
+    )
+  })
+
   it('keeps a fixed ground reveal radius across zoom levels', () => {
     const atZoom14 = metersToPixels(120, 41.38, 14)
     const atZoom15 = metersToPixels(120, 41.38, 15)

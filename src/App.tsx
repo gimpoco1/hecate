@@ -95,11 +95,7 @@ import {
   isAutomaticUpdatesEnabled,
   setAutomaticUpdatePending,
 } from "./automaticUpdates";
-import {
-  buildLeaderboardSnapshot,
-  refreshPublishedLeaderboardSnapshot,
-  type LeaderboardSnapshot,
-} from "./leaderboard";
+import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import {
   isInSystemGestureZone,
@@ -316,8 +312,6 @@ export default function App() {
   >("signin");
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [authoritativeSnapshot, setAuthoritativeSnapshot] =
-    useState<LeaderboardSnapshot | null>(null);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
   const [selectedFavoritePlaceId, setSelectedFavoritePlaceId] = useState<
@@ -378,11 +372,6 @@ export default function App() {
   const walkUploadPromiseRef = useRef<Promise<void> | null>(null);
   const accountUserIdRef = useRef(accountUserId);
   accountUserIdRef.current = accountUserId;
-  const refreshAuthoritativeSnapshot = useCallback(async (userId: string) => {
-    const snapshot = await buildLeaderboardSnapshot(userId);
-    if (accountUserIdRef.current === userId) setAuthoritativeSnapshot(snapshot);
-    return snapshot;
-  }, []);
   const journeyCardRef = useRef<HTMLElement | null>(null);
   const journeyDragRef = useRef<{
     pointerId: number;
@@ -417,13 +406,6 @@ export default function App() {
   const discoveryDistance = useMemo(
     () => discoveredDistanceKm(points),
     [points],
-  );
-  const authoritativeCitiesById = useMemo(
-    () =>
-      new Map(
-        (authoritativeSnapshot?.cities ?? []).map((city) => [city.cityId, city]),
-      ),
-    [authoritativeSnapshot],
   );
   const activeCity =
     currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary)
@@ -467,20 +449,9 @@ export default function App() {
   const currentCityDistance = useMemo(
     () =>
       summaryCity
-        ? accountUserId
-          ? (authoritativeCitiesById.get(summaryCity.id)?.discoveredKm ?? 0)
-          : discoveredCityDistanceKm(points, summaryCity)
-        : accountUserId
-          ? (authoritativeSnapshot?.totalDiscoveredKm ?? 0)
-          : discoveryDistance,
-    [
-      accountUserId,
-      authoritativeCitiesById,
-      authoritativeSnapshot,
-      discoveryDistance,
-      points,
-      summaryCity,
-    ],
+        ? discoveredCityDistanceKm(points, summaryCity)
+        : discoveryDistance,
+    [discoveryDistance, points, summaryCity],
   );
   const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
   const currentCityMilestoneRemaining = currentCityMilestone.next
@@ -490,14 +461,8 @@ export default function App() {
     ? currentCityMilestone.next.level - 1
     : 3;
   const summaryCityPercentage = useMemo(
-    () =>
-      summaryCity
-        ? accountUserId
-          ? (authoritativeCitiesById.get(summaryCity.id)
-              ?.discoveredPercentage ?? 0)
-          : discoveredCityPercentage(cells, summaryCity)
-        : null,
-    [accountUserId, authoritativeCitiesById, cells, summaryCity],
+    () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
+    [cells, summaryCity],
   );
   const discoveryLabel = accountUserId
     ? formatDiscoveryPercentage(
@@ -636,25 +601,14 @@ export default function App() {
     return [...unique.values()]
       .map((city) => ({
         city,
-        percentage: accountUserId
-          ? (authoritativeCitiesById.get(city.id)?.discoveredPercentage ?? 0)
-          : discoveredCityPercentage(cells, city),
-        distance: accountUserId
-          ? (authoritativeCitiesById.get(city.id)?.discoveredKm ?? 0)
-          : discoveredCityDistanceKm(points, city),
+        percentage: discoveredCityPercentage(cells, city),
+        distance: discoveredCityDistanceKm(points, city),
       }))
       .sort(
         (a, b) =>
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
-  }, [
-    authoritativeCitiesById,
-    accountUserId,
-    cityBoundary,
-    discoveredCities,
-    cells,
-    points,
-  ]);
+  }, [cityBoundary, discoveredCities, cells, points]);
   achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
   citiesLoadedUserIdRef.current = citiesLoadedUserId;
   testRouteRunningRef.current = testRouteRunning;
@@ -940,7 +894,6 @@ export default function App() {
     let finishFrame: number | null = null;
     setPoints([]);
     setCells([]);
-    setAuthoritativeSnapshot(null);
     setDiscoveredCities([]);
     setCitiesLoadedUserId(null);
     setCitiesExpanded(false);
@@ -1017,9 +970,6 @@ export default function App() {
           if (!activeWalkRef.current)
             lastPointRef.current = mergedPoints.at(-1);
           void flushPendingWalks(accountUserId);
-          void refreshAuthoritativeSnapshot(accountUserId).catch((error) => {
-            console.warn("Could not refresh account totals", error);
-          });
           finishFrame = window.requestAnimationFrame(() => {
             finishFrame = window.requestAnimationFrame(() => {
               if (active && accountUserIdRef.current === accountUserId)
@@ -1030,6 +980,9 @@ export default function App() {
         .catch((error) => {
           if (!active) return;
           console.warn("Could not load discovery history; retrying", error);
+          // Keep recording available offline. Upload/reconciliation remains
+          // gated by discoveryHistoryReadyRef until a later retry succeeds.
+          setDiscoveryLoading(false);
           retryTimer = window.setTimeout(loadRemote, 15_000);
         });
     loadRemote();
@@ -1038,7 +991,7 @@ export default function App() {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
-  }, [accountUserId, refreshAuthoritativeSnapshot]);
+  }, [accountUserId]);
 
   const flushPendingWalks = async (userId: string) => {
     if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current;
@@ -1818,9 +1771,6 @@ export default function App() {
           walk => walk.id === completed.id,
         );
         if (completedWalkSynced && discoverySynced) {
-          await refreshAuthoritativeSnapshot(walkOwner).catch((error) =>
-            console.warn("Could not refresh authoritative discovery totals", error),
-          );
           await refreshLiveLeaderboard(walkOwner);
         }
       }
@@ -2163,6 +2113,7 @@ export default function App() {
     let trackerFailed = false;
     try {
       await tracker.start(addPoint, (error) => {
+        if (trackerRef.current !== tracker) return;
         trackerFailed = true;
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
@@ -2176,8 +2127,12 @@ export default function App() {
           error.code === "permission-denied" ? "denied" : "unavailable",
         );
       });
-      if (trackerFailed) return;
+      if (trackerFailed || trackerRef.current !== tracker) return;
     } catch {
+      // A user can stop while native watcher registration is still pending.
+      // Do not let that stale rejection overwrite the idle state or clear a
+      // newer walk that may already be starting.
+      if (trackerRef.current !== tracker) return;
       focusFirstTrackingPointRef.current = false;
       resetInactivityReminder();
       trackerRef.current = null;
@@ -2814,6 +2769,7 @@ export default function App() {
         }}
         onFavoriteSelect={openFavoritePlace}
         onZoomChange={onZoomChange}
+        onViewChange={onViewChange}
         mapRef={mapRef}
       />
       {devToolsEnabled && devToolsVisible && (
@@ -3156,6 +3112,7 @@ export default function App() {
           existing={favoritePlaces.some((place) => place.id === favoriteDraft.id)}
           keyboardInset={keyboardInset}
           onClose={() => {
+            setSelectedFavoritePlaceId(null);
             setFavoriteDraft(null);
           }}
           onSave={saveFavoriteDraft}

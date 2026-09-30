@@ -61,6 +61,26 @@ describe('native location lifecycle', () => {
     expect(native.removeWatcher).toHaveBeenLastCalledWith({ id: 'retry-watcher' })
   })
 
+  it('ignores queued native callbacks as soon as watcher teardown begins', async () => {
+    let resolveRemoval!: () => void
+    native.addWatcher.mockResolvedValue('slow-removal-watcher')
+    native.removeWatcher.mockReturnValue(new Promise<void>(resolve => { resolveRemoval = resolve }))
+    const onPoint = vi.fn()
+    const onError = vi.fn()
+    const tracker = createLocationTracker()
+
+    await tracker.start(onPoint, onError)
+    const callback = native.addWatcher.mock.calls[0][1]
+    const stopping = tracker.stop()
+    callback({ longitude: 2.17, latitude: 41.38, accuracy: 5, time: Date.now() })
+    callback(undefined, { code: 'NOT_AUTHORIZED', message: 'Too late' })
+
+    expect(onPoint).not.toHaveBeenCalled()
+    expect(onError).not.toHaveBeenCalled()
+    resolveRemoval()
+    await stopping
+  })
+
   it('uses reminder monitoring only after the app leaves the foreground', () => {
     expect(passiveLocationMode(true, true)).toBe('foreground')
     expect(passiveLocationMode(true, false)).toBe('foreground')

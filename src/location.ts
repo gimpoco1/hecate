@@ -41,6 +41,7 @@ export function newestCoordinate(
 
 class WebLocationTracker implements LocationTracker {
   private watchId: number | null = null;
+  private active = false;
 
   constructor(private readonly recordingWalk: boolean) {}
 
@@ -49,23 +50,28 @@ class WebLocationTracker implements LocationTracker {
     onError: (error: LocationTrackerError) => void,
   ) {
     if (!navigator.geolocation) throw new Error("Geolocation is unavailable");
+    this.active = true;
     this.watchId = navigator.geolocation.watchPosition(
-      ({ coords, timestamp }) =>
+      ({ coords, timestamp }) => {
+        if (!this.active) return;
         onPoint({
           lng: coords.longitude,
           lat: coords.latitude,
           recordedAt: timestamp,
           accuracy: coords.accuracy,
           heading: coords.heading === null ? undefined : coords.heading,
-        }),
-      (error) =>
+        });
+      },
+      (error) => {
+        if (!this.active) return;
         onError({
           code:
             error.code === error.PERMISSION_DENIED
               ? "permission-denied"
               : "unavailable",
           message: error.message,
-        }),
+        });
+      },
       {
         enableHighAccuracy: this.recordingWalk,
         maximumAge: this.recordingWalk ? 3_000 : 15_000,
@@ -75,6 +81,7 @@ class WebLocationTracker implements LocationTracker {
   }
 
   stop() {
+    this.active = false;
     if (this.watchId !== null) navigator.geolocation.clearWatch(this.watchId);
     this.watchId = null;
   }
@@ -118,6 +125,7 @@ class NativeLocationTracker implements LocationTracker {
   private watcherId: string | null = null;
   private stopRequested = false;
   private removalPromise: Promise<void> | null = null;
+  private active = false;
 
   constructor(private readonly mode: "walk" | "foreground" | "reminder") {}
 
@@ -126,6 +134,7 @@ class NativeLocationTracker implements LocationTracker {
     onError: (error: LocationTrackerError) => void,
   ) {
     this.stopRequested = false;
+    this.active = true;
     const options: Parameters<BackgroundGeolocationPlugin["addWatcher"]>[0] & {
       showsBackgroundLocationIndicator?: boolean;
     } = {
@@ -154,6 +163,7 @@ class NativeLocationTracker implements LocationTracker {
     const watcherId = await BackgroundGeolocation.addWatcher(
       options,
       (location, error) => {
+        if (!this.active) return;
         if (error) {
           onError(nativeError(error));
           return;
@@ -179,6 +189,9 @@ class NativeLocationTracker implements LocationTracker {
 
   async stop() {
     this.stopRequested = true;
+    // Native watcher removal is asynchronous. Ignore callbacks immediately so
+    // a final queued fix cannot leak into a completed or newly started walk.
+    this.active = false;
     if (!this.watcherId) {
       await this.removalPromise;
       return;

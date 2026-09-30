@@ -208,17 +208,45 @@ export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = [])
 }
 
 export function splitRoute(points: Coordinate[]) {
-  return points.reduce<Coordinate[][]>((segments, point) => {
-    const segment = segments.at(-1)
-    const previous = segment?.at(-1)
-    const isNewJourney = previous && (
-      Boolean((previous.walkId || point.walkId) && previous.walkId !== point.walkId) ||
-      point.recordedAt - previous.recordedAt > 2 * 60 * 60 * 1000 || distanceKm(previous, point) > 5
-    )
-    if (!segment || isNewJourney) segments.push([point])
-    else segment.push(point)
-    return segments
-  }, [])
+  const explicitWalks = new Map<string, Coordinate[]>()
+  const legacyRuns: Coordinate[][] = []
+  let legacyRun: Coordinate[] | null = null
+
+  for (const point of points) {
+    if (!point.walkId) {
+      if (!legacyRun) {
+        legacyRun = []
+        legacyRuns.push(legacyRun)
+      }
+      legacyRun.push(point)
+      continue
+    }
+    legacyRun = null
+    const walk = explicitWalks.get(point.walkId) ?? []
+    walk.push(point)
+    explicitWalks.set(point.walkId, walk)
+  }
+
+  const splitDiscontinuities = (route: Coordinate[]) => (
+    [...route]
+      .sort((a, b) => a.recordedAt - b.recordedAt)
+      .reduce<Coordinate[][]>((segments, point) => {
+        const segment = segments.at(-1)
+        const previous = segment?.at(-1)
+        const isNewSegment = previous && (
+          point.recordedAt - previous.recordedAt > 2 * 60 * 60 * 1000 ||
+          distanceKm(previous, point) > 5
+        )
+        if (!segment || isNewSegment) segments.push([point])
+        else segment.push(point)
+        return segments
+      }, [])
+  )
+
+  return [
+    ...[...explicitWalks.values()].flatMap(splitDiscontinuities),
+    ...legacyRuns.flatMap(splitDiscontinuities),
+  ].sort((a, b) => a[0].recordedAt - b[0].recordedAt)
 }
 
 export function pointToDiscoveryCell(point: Coordinate, z = DISCOVERY_CELL_ZOOM): DiscoveryCell {
