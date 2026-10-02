@@ -14,6 +14,7 @@ import { earnedCityMilestones } from "../badges";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { AchievementCard } from "./AchievementCard";
 import { CityLevelStars } from "./CityLevelStars";
+import { TopographyBackground } from "./TopographyBackground";
 import {
   buildLeaderboardSnapshot,
   cityLeaderboardGroups,
@@ -876,6 +877,7 @@ export function WebLeaderboard() {
 
   return (
     <main className="leaderboard-page">
+      <TopographyBackground />
       <header className="leaderboard-header">
         <a
           className="leaderboard-brand"
@@ -907,7 +909,7 @@ export function WebLeaderboard() {
         </h1>
         <p>
           Every walk reveals a little more. See who has uncovered the most new
-          ground—and how your favorite cities compare.
+          ground and how your favorite cities compare.
         </p>
         <div
           className="leaderboard-app-actions"
@@ -1010,75 +1012,94 @@ export function WebLeaderboard() {
         )}
 
         {!focusedCity && cityGroups.length > 0 && (
-          <div
-            className={`city-treemap${cityGroups.length > 2 ? " city-treemap--stacked" : ""}`}
-            aria-label="City rankings"
-            style={
-              {
-                "--city-stack-size": Math.max(cityGroups.length - 1, 1),
-              } as CSSProperties
-            }
-          >
-            {cityGroups.map((group, index) => (
-              <article
-                key={group.cityId}
-                className={`city-treemap__tile${index === 0 ? " city-treemap__tile--featured" : ""}`}
-              >
-                <button
-                  className="city-treemap__open-card"
-                  type="button"
-                  aria-label={`View the ${group.cityName} ranking`}
-                  onClick={() => setFocusedCityId(group.cityId)}
-                />
-                <span className="city-treemap__number">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span className="city-treemap__content">
-                  <span className="city-treemap__name">{group.cityName}</span>
-                  <span className="city-treemap__meta">
-                    {formatDistance(group.totalDiscoveredKm)} ·{" "}
-                    {group.explorers.length}{" "}
-                    {group.explorers.length === 1 ? "explorer" : "explorers"}
-                  </span>
-                </span>
-                <ol
-                  className="city-treemap__leaders"
-                  aria-label={`Top explorers in ${group.cityName}`}
+          <div className="city-treemap" aria-label="City rankings">
+            {cityGroups.map((group, index) => {
+              const size = Math.sqrt(
+                group.totalDiscoveredKm / cityGroups[0].totalDiscoveredKm,
+              );
+              const compact =
+                group.totalDiscoveredKm < cityGroups[0].totalDiscoveredKm * 0.1;
+              const myRank = group.explorers.findIndex(
+                ({ entry }) => entry.entryId === myEntryId,
+              );
+              const myCity = myEntry?.cities.some(
+                (city) => city.cityId === group.cityId,
+              );
+              return (
+                <article
+                  key={group.cityId}
+                  className={`city-treemap__tile${compact ? " city-treemap__tile--compact" : ""}${myCity ? " city-treemap__tile--personal" : ""}`}
+                  style={{
+                    "--city-size": `${50 * size}%`,
+                    "--city-grow": 1 + size,
+                    "--city-height": `${compact ? 126 + 35 * size : 180 + 100 * size}px`,
+                    "--city-title-size": `${16 + 11 * size}px`,
+                  } as CSSProperties}
                 >
-                  {group.explorers
-                    .slice(0, 5)
-                    .map(({ entry, city }, explorerIndex) => (
-                      <li key={entry.entryId}>
-                        <button
-                          className="city-treemap__leader-button"
-                          type="button"
-                          onClick={() => setFocusedEntryId(entry.entryId)}
-                          aria-label={`View ${entry.displayName}'s explorer passport`}
-                        >
-                          <span className="city-treemap__leader-rank">
-                            {explorerIndex + 1}
-                          </span>
-                          <span
-                            className="city-treemap__leader-avatar"
-                            aria-hidden="true"
-                          >
-                            {entry.displayName.trim().charAt(0).toUpperCase()}
-                          </span>
-                          <span className="city-treemap__leader-name">
-                            {entry.displayName}
-                          </span>
-                          <strong>{formatDistance(city.discoveredKm)}</strong>
-                        </button>
-                      </li>
-                    ))}
-                </ol>
-                {group.explorers.length > 5 && (
-                  <span className="city-treemap__view-all" aria-hidden="true">
-                    View all <ChevronIcon size={15} />
+                  <button
+                    className="city-treemap__open-card"
+                    type="button"
+                    aria-label={`View the ${group.cityName} ranking`}
+                    onClick={() => setFocusedCityId(group.cityId)}
+                  />
+                  <span className="city-treemap__top">
+                    <span className="city-treemap__number">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    {myCity && (
+                      <span className="city-treemap__personal">
+                        {myRank >= 0 ? `Your rank #${myRank + 1}` : "Your city"}
+                      </span>
+                    )}
                   </span>
-                )}
-              </article>
-            ))}
+                  <span className="city-treemap__content">
+                    <span className="city-treemap__headline">
+                      <span className="city-treemap__name">{group.cityName}</span>
+                      <span className="city-treemap__distance">
+                        {formatDistance(group.totalDiscoveredKm)}
+                        <small>total</small>
+                      </span>
+                    </span>
+                  </span>
+                  <ol
+                    className="city-treemap__leaders"
+                    aria-label={`Top explorers in ${group.cityName}`}
+                  >
+                    {group.explorers
+                      .slice(0, 2)
+                      .map(({ entry, city }, explorerIndex) => (
+                        <li key={entry.entryId}>
+                          <button
+                            className="city-treemap__leader-button"
+                            type="button"
+                            onClick={() => setFocusedEntryId(entry.entryId)}
+                            aria-label={`View ${entry.displayName}'s explorer passport`}
+                          >
+                            <span className="city-treemap__leader-rank">
+                              {explorerIndex + 1}
+                            </span>
+                            <span
+                              className="city-treemap__leader-avatar"
+                              aria-hidden="true"
+                            >
+                              {entry.displayName.trim().charAt(0).toUpperCase()}
+                            </span>
+                            <span className="city-treemap__leader-name">
+                              {entry.displayName}
+                            </span>
+                            {group.explorers.length > 1 && (
+                              <strong>{formatDistance(city.discoveredKm)}</strong>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                  </ol>
+                  <span className="city-treemap__action" aria-hidden="true">
+                    View city ranking <ChevronIcon size={14} />
+                  </span>
+                </article>
+              );
+            })}
           </div>
         )}
 
