@@ -6,14 +6,18 @@ import {
   type CSSProperties,
 } from "react";
 import type { User } from "@supabase/supabase-js";
-import {
-  personalAchievementDefinition,
-} from "../achievements";
+import { personalAchievementDefinition } from "../achievements";
 import { authRedirectUrl } from "../auth";
+import {
+  leaderboardCityHash,
+  leaderboardCitySlug,
+  leaderboardCitySlugFromHash,
+} from "../routes";
 import { earnedCityMilestones } from "../badges";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { AchievementCard } from "./AchievementCard";
 import { CityLevelStars } from "./CityLevelStars";
+import { TopographyBackground } from "./TopographyBackground";
 import {
   buildLeaderboardSnapshot,
   cityLeaderboardGroups,
@@ -719,8 +723,11 @@ function LeaderboardAccountPanel({
 
 export function WebLeaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [focusedCityId, setFocusedCityId] = useState<string | null>(null);
+  const [focusedCitySlug, setFocusedCitySlug] = useState<string | null>(() =>
+    leaderboardCitySlugFromHash(window.location.hash),
+  );
   const [focusedEntryId, setFocusedEntryId] = useState<string | null>(null);
+  const [showingMoreCities, setShowingMoreCities] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
@@ -732,6 +739,32 @@ export function WebLeaderboard() {
   const boardRef = useRef<HTMLElement | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = user?.id ?? null;
+
+  const navigateToCity = (cityName: string | null): void => {
+    setShowingMoreCities(false);
+    const hash = leaderboardCityHash(cityName);
+    if (window.location.hash !== hash) {
+      window.history.pushState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}${hash}`,
+      );
+    }
+    setFocusedCitySlug(leaderboardCitySlugFromHash(hash));
+  };
+
+  useEffect(() => {
+    const syncCityFromUrl = (): void => {
+      setShowingMoreCities(false);
+      setFocusedCitySlug(leaderboardCitySlugFromHash(window.location.hash));
+    };
+    window.addEventListener("popstate", syncCityFromUrl);
+    window.addEventListener("hashchange", syncCityFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncCityFromUrl);
+      window.removeEventListener("hashchange", syncCityFromUrl);
+    };
+  }, []);
 
   const refresh = async () => {
     try {
@@ -854,19 +887,16 @@ export function WebLeaderboard() {
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!focusedCityId) return;
-    boardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [focusedCityId]);
-
   const cityGroups = useMemo(() => cityLeaderboardGroups(entries), [entries]);
+  const remainingCities = cityGroups.slice(9);
   const focusedCity =
-    cityGroups.find((group) => group.cityId === focusedCityId) ?? null;
-  const totalCities = cityGroups.length;
-  const totalDistance = entries.reduce(
-    (sum, entry) => sum + entry.totalDiscoveredKm,
-    0,
-  );
+    cityGroups.find(
+      (group) => leaderboardCitySlug(group.cityName) === focusedCitySlug,
+    ) ?? null;
+  useEffect(() => {
+    if (!focusedCity && !showingMoreCities) return;
+    boardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusedCity?.cityId, showingMoreCities]);
   const profileLoaded = !user || profileLoadedUserId === user.id;
   const currentProfile = profileLoaded ? myProfile : null;
   const myEntryId = currentProfile?.entryId ?? null;
@@ -876,6 +906,7 @@ export function WebLeaderboard() {
 
   return (
     <main className="leaderboard-page">
+      <TopographyBackground />
       <header className="leaderboard-header">
         <a
           className="leaderboard-brand"
@@ -907,7 +938,7 @@ export function WebLeaderboard() {
         </h1>
         <p>
           Every walk reveals a little more. See who has uncovered the most new
-          ground—and how your favorite cities compare.
+          ground and how your favorite cities compare.
         </p>
         <div
           className="leaderboard-app-actions"
@@ -949,13 +980,15 @@ export function WebLeaderboard() {
         aria-labelledby="ranking-title"
       >
         <div className="leaderboard-board__header">
-          {focusedCity ? (
+          {focusedCity || showingMoreCities ? (
             <div className="city-detail-heading">
-              <button type="button" onClick={() => setFocusedCityId(null)}>
+              <button type="button" onClick={() => navigateToCity(null)}>
                 <ChevronIcon size={17} /> All cities
               </button>
               <div className="eyebrow">City leaderboard</div>
-              <h2 id="ranking-title">{focusedCity.cityName}</h2>
+              <h2 id="ranking-title">
+                {focusedCity ? focusedCity.cityName : "More cities"}
+              </h2>
             </div>
           ) : (
             <div>
@@ -1009,77 +1042,150 @@ export function WebLeaderboard() {
           </div>
         )}
 
-        {!focusedCity && cityGroups.length > 0 && (
-          <div
-            className={`city-treemap${cityGroups.length > 2 ? " city-treemap--stacked" : ""}`}
-            aria-label="City rankings"
-            style={
-              {
-                "--city-stack-size": Math.max(cityGroups.length - 1, 1),
-              } as CSSProperties
-            }
-          >
-            {cityGroups.map((group, index) => (
-              <article
-                key={group.cityId}
-                className={`city-treemap__tile${index === 0 ? " city-treemap__tile--featured" : ""}`}
-              >
-                <button
-                  className="city-treemap__open-card"
-                  type="button"
-                  aria-label={`View the ${group.cityName} ranking`}
-                  onClick={() => setFocusedCityId(group.cityId)}
-                />
-                <span className="city-treemap__number">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <span className="city-treemap__content">
-                  <span className="city-treemap__name">{group.cityName}</span>
-                  <span className="city-treemap__meta">
-                    {formatDistance(group.totalDiscoveredKm)} ·{" "}
-                    {group.explorers.length}{" "}
-                    {group.explorers.length === 1 ? "explorer" : "explorers"}
-                  </span>
-                </span>
-                <ol
-                  className="city-treemap__leaders"
-                  aria-label={`Top explorers in ${group.cityName}`}
+        {!focusedCity && !showingMoreCities && cityGroups.length > 0 && (
+          <div className="city-treemap" aria-label="City rankings">
+            {cityGroups.slice(0, 9).map((group, index) => {
+              const size = Math.sqrt(
+                group.totalDiscoveredKm / cityGroups[0].totalDiscoveredKm,
+              );
+              const compact =
+                group.totalDiscoveredKm < cityGroups[0].totalDiscoveredKm * 0.1;
+              const myRank = group.explorers.findIndex(
+                ({ entry }) => entry.entryId === myEntryId,
+              );
+              const myCity = myEntry?.cities.some(
+                (city) => city.cityId === group.cityId,
+              );
+              const cityCard = (
+                <article
+                  key={group.cityId}
+                  className={`city-treemap__tile${compact ? " city-treemap__tile--compact" : ""}${myCity ? " city-treemap__tile--personal" : ""}`}
+                  style={
+                    {
+                      "--city-size": `${50 * size}%`,
+                      "--city-grow": 1 + size,
+                      "--city-height": `${compact ? 126 + 35 * size : 180 + 100 * size}px`,
+                      "--city-title-size": `${16 + 11 * size}px`,
+                    } as CSSProperties
+                  }
                 >
-                  {group.explorers
-                    .slice(0, 5)
-                    .map(({ entry, city }, explorerIndex) => (
-                      <li key={entry.entryId}>
-                        <button
-                          className="city-treemap__leader-button"
-                          type="button"
-                          onClick={() => setFocusedEntryId(entry.entryId)}
-                          aria-label={`View ${entry.displayName}'s explorer passport`}
-                        >
-                          <span className="city-treemap__leader-rank">
-                            {explorerIndex + 1}
-                          </span>
-                          <span
-                            className="city-treemap__leader-avatar"
-                            aria-hidden="true"
-                          >
-                            {entry.displayName.trim().charAt(0).toUpperCase()}
-                          </span>
-                          <span className="city-treemap__leader-name">
-                            {entry.displayName}
-                          </span>
-                          <strong>{formatDistance(city.discoveredKm)}</strong>
-                        </button>
-                      </li>
-                    ))}
-                </ol>
-                {group.explorers.length > 5 && (
-                  <span className="city-treemap__view-all" aria-hidden="true">
-                    View all <ChevronIcon size={15} />
+                  <button
+                    className="city-treemap__open-card"
+                    type="button"
+                    aria-label={`View the ${group.cityName} ranking`}
+                    onClick={() => navigateToCity(group.cityName)}
+                  />
+                  <span className="city-treemap__top">
+                    <span className="city-treemap__number">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    {myCity && (
+                      <span className="city-treemap__personal">
+                        {myRank >= 0 ? `Your rank #${myRank + 1}` : "Your city"}
+                      </span>
+                    )}
                   </span>
-                )}
-              </article>
-            ))}
+                  <span className="city-treemap__content">
+                    <span className="city-treemap__headline">
+                      <span className="city-treemap__name">
+                        {group.cityName}
+                      </span>
+                      <span className="city-treemap__distance">
+                        {formatDistance(group.totalDiscoveredKm)}
+                        <small>total</small>
+                      </span>
+                    </span>
+                  </span>
+                  <ol
+                    className="city-treemap__leaders"
+                    aria-label={`Top explorers in ${group.cityName}`}
+                  >
+                    {group.explorers
+                      .slice(0, 2)
+                      .map(({ entry, city }, explorerIndex) => (
+                        <li key={entry.entryId}>
+                          <button
+                            className="city-treemap__leader-button"
+                            type="button"
+                            onClick={() => setFocusedEntryId(entry.entryId)}
+                            aria-label={`View ${entry.displayName}'s explorer passport`}
+                          >
+                            <span className="city-treemap__leader-rank">
+                              {explorerIndex + 1}
+                            </span>
+                            <span
+                              className="city-treemap__leader-avatar"
+                              aria-hidden="true"
+                            >
+                              {entry.displayName.trim().charAt(0).toUpperCase()}
+                            </span>
+                            <span className="city-treemap__leader-name">
+                              {entry.displayName}
+                            </span>
+                            {group.explorers.length > 1 && (
+                              <strong>
+                                {formatDistance(city.discoveredKm)}
+                              </strong>
+                            )}
+                          </button>
+                        </li>
+                      ))}
+                  </ol>
+                  <span className="city-treemap__action" aria-hidden="true">
+                    View city ranking <ChevronIcon size={14} />
+                  </span>
+                </article>
+              );
+              return remainingCities.length > 0 && index === 8 ? (
+                <div
+                  key={group.cityId}
+                  className="city-treemap__last"
+                  style={
+                    {
+                      "--city-size": `${50 * size}%`,
+                      "--city-grow": 1 + size,
+                    } as CSSProperties
+                  }
+                >
+                  {cityCard}
+                  <button
+                    type="button"
+                    className="city-treemap__more"
+                    onClick={() => setShowingMoreCities(true)}
+                  >
+                    <strong>More cities</strong>
+                    <span>
+                      {remainingCities.length} more <ChevronIcon size={16} />
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                cityCard
+              );
+            })}
           </div>
+        )}
+
+        {showingMoreCities && (
+          <ol
+            className="city-directory"
+            start={10}
+            aria-label="More city rankings"
+          >
+            {remainingCities.map((group, index) => (
+              <li key={group.cityId}>
+                <a href={leaderboardCityHash(group.cityName)}>
+                  <span className="city-detail-list__rank">{index + 10}</span>
+                  <strong>{group.cityName}</strong>
+                  <span>
+                    {formatDistance(group.totalDiscoveredKm)}{" "}
+                    <small>total</small>
+                  </span>
+                  <ChevronIcon size={16} />
+                </a>
+              </li>
+            ))}
+          </ol>
         )}
 
         {focusedCity && (
