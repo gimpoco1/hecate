@@ -3478,6 +3478,74 @@ button {
   align-items: stretch;
   gap: 12px;
 }
+.city-treemap__last {
+  display: flex;
+  gap: 12px;
+  flex-grow: var(--city-grow);
+  flex-basis: clamp(340px, var(--city-size), 65%);
+  min-width: 0;
+}
+.city-treemap__last > .city-treemap__tile {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.city-treemap__more {
+  flex: 0 0 96px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 10px;
+  border: 1px solid rgba(24, 60, 47, 0.1);
+  border-radius: 16px;
+  background: #edf0eb;
+  color: var(--forest);
+  text-decoration: none;
+  text-align: center;
+  font: inherit;
+  cursor: pointer;
+}
+.city-treemap__more span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.city-treemap__more:hover,
+.city-directory a:hover {
+  background: #e4eee4;
+}
+.city-directory {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.city-directory li + li {
+  border-top: 1px solid rgba(24, 60, 47, 0.08);
+}
+.city-directory a {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 8px;
+  border-radius: 8px;
+  color: var(--forest);
+  text-decoration: none;
+}
+.city-directory strong {
+  overflow-wrap: anywhere;
+}
+.city-directory a > span:nth-last-child(2) {
+  white-space: nowrap;
+  color: #587568;
+  font-variant-numeric: tabular-nums;
+}
+.city-directory small {
+  font-size: 10px;
+}
 .city-treemap__tile {
   position: relative;
   flex-grow: var(--city-grow);
@@ -3529,27 +3597,27 @@ button {
 .city-treemap__tile:nth-child(5n)::before {
   background-image: url("https://thumb.wikimedia.org/wikipedia/commons/thumb/6/69/Plan_of_London.jpg/500px-Plan_of_London.jpg");
 }
-.city-treemap__tile:nth-child(-n + 2) {
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(110px, 38%);
   grid-template-rows: auto 1fr auto;
   column-gap: 18px;
 }
-.city-treemap__tile:nth-child(-n + 2) .city-treemap__top,
-.city-treemap__tile:nth-child(-n + 2) .city-treemap__action {
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__top,
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__action {
   grid-column: 1 / -1;
 }
-.city-treemap__tile:nth-child(-n + 2) .city-treemap__leaders {
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__leaders {
   grid-column: 2;
   grid-row: 2;
   align-self: start;
 }
-.city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-button {
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-button {
   grid-template-columns: 27px minmax(0, 1fr) auto;
   gap: 4px 6px;
   font-size: 11px;
 }
-.city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-rank {
+.city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-rank {
   display: none;
 }
 .city-treemap__tile--compact {
@@ -4636,7 +4704,7 @@ button {
     gap: 10px;
   }
   .city-treemap__tile,
-  .city-treemap__tile:nth-child(-n + 2) {
+  .city-treemap > .city-treemap__tile:nth-child(-n + 2) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(104px, 40%);
     grid-template-rows: auto 1fr auto;
@@ -4679,7 +4747,7 @@ button {
   }
   .city-treemap__leader-button,
   .city-treemap__tile--compact .city-treemap__leader-button,
-  .city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-button {
+  .city-treemap > .city-treemap__tile:nth-child(-n + 2) .city-treemap__leader-button {
     grid-template-columns: 24px minmax(0, 1fr) auto;
     gap: 3px 6px;
   }
@@ -4728,7 +4796,19 @@ button {
 }
 @media (max-width: 440px) {
   .city-treemap__tile,
-  .city-treemap__tile:nth-child(-n + 2) {
+  .city-treemap > .city-treemap__tile:nth-child(-n + 2) {
     grid-template-columns: minmax(0, 1fr) minmax(126px, 48%);
+  }
+}
+
+@media (max-width: 680px) {
+  .city-treemap__last {
+    flex-basis: 100%;
+  }
+  .city-treemap__last > .city-treemap__tile {
+    display: flex;
+  }
+  .city-treemap__more {
+    flex-basis: 76px;
   }
 }
