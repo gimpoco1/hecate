@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { isLeaderboardPath, publicLeaderboardUrl, shouldRedirectBrowserToLeaderboard } from './routes'
+import { isLeaderboardPath, leaderboardCityHash, leaderboardCitySlugFromHash, publicLeaderboardUrl, shouldRedirectBrowserToLeaderboard } from './routes'
 
 describe('browser routes', () => {
+  it('uses card city names with spaces replaced by dashes in shareable links', () => {
+    expect(leaderboardCityHash('Barcelona')).toBe('#barcelona')
+    expect(leaderboardCityHash('Greater London')).toBe('#greater-london')
+    const cityName = 'Dún Laoghaire-Rathdown'
+    expect(leaderboardCitySlugFromHash(leaderboardCityHash(cityName))).toBe('dún-laoghaire-rathdown')
+    expect(leaderboardCitySlugFromHash(leaderboardCityHash('City & Coast'))).toBe('city-&-coast')
+    expect(leaderboardCityHash(null)).toBe('')
+    expect(leaderboardCitySlugFromHash('')).toBeNull()
+  })
+
   it('serves the leaderboard only from its dedicated route', () => {
     expect(isLeaderboardPath('/leaderboard')).toBe(true)
     expect(isLeaderboardPath('/leaderboard/')).toBe(true)

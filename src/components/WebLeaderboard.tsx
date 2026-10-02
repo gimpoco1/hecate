@@ -10,6 +10,7 @@ import {
   personalAchievementDefinition,
 } from "../achievements";
 import { authRedirectUrl } from "../auth";
+import { leaderboardCityHash, leaderboardCitySlug, leaderboardCitySlugFromHash } from "../routes";
 import { earnedCityMilestones } from "../badges";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { AchievementCard } from "./AchievementCard";
@@ -720,7 +721,9 @@ function LeaderboardAccountPanel({
 
 export function WebLeaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [focusedCityId, setFocusedCityId] = useState<string | null>(null);
+  const [focusedCitySlug, setFocusedCitySlug] = useState<string | null>(() =>
+    leaderboardCitySlugFromHash(window.location.hash),
+  );
   const [focusedEntryId, setFocusedEntryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -733,6 +736,26 @@ export function WebLeaderboard() {
   const boardRef = useRef<HTMLElement | null>(null);
   const userIdRef = useRef<string | null>(null);
   userIdRef.current = user?.id ?? null;
+
+  const navigateToCity = (cityName: string | null): void => {
+    const hash = leaderboardCityHash(cityName);
+    if (window.location.hash !== hash) {
+      window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`);
+    }
+    setFocusedCitySlug(leaderboardCitySlugFromHash(hash));
+  };
+
+  useEffect(() => {
+    const syncCityFromUrl = (): void => {
+      setFocusedCitySlug(leaderboardCitySlugFromHash(window.location.hash));
+    };
+    window.addEventListener("popstate", syncCityFromUrl);
+    window.addEventListener("hashchange", syncCityFromUrl);
+    return () => {
+      window.removeEventListener("popstate", syncCityFromUrl);
+      window.removeEventListener("hashchange", syncCityFromUrl);
+    };
+  }, []);
 
   const refresh = async () => {
     try {
@@ -855,14 +878,13 @@ export function WebLeaderboard() {
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!focusedCityId) return;
-    boardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [focusedCityId]);
-
   const cityGroups = useMemo(() => cityLeaderboardGroups(entries), [entries]);
   const focusedCity =
-    cityGroups.find((group) => group.cityId === focusedCityId) ?? null;
+    cityGroups.find((group) => leaderboardCitySlug(group.cityName) === focusedCitySlug) ?? null;
+  useEffect(() => {
+    if (!focusedCity) return;
+    boardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focusedCity?.cityId]);
   const totalCities = cityGroups.length;
   const totalDistance = entries.reduce(
     (sum, entry) => sum + entry.totalDiscoveredKm,
@@ -953,7 +975,7 @@ export function WebLeaderboard() {
         <div className="leaderboard-board__header">
           {focusedCity ? (
             <div className="city-detail-heading">
-              <button type="button" onClick={() => setFocusedCityId(null)}>
+              <button type="button" onClick={() => navigateToCity(null)}>
                 <ChevronIcon size={17} /> All cities
               </button>
               <div className="eyebrow">City leaderboard</div>
@@ -1040,7 +1062,7 @@ export function WebLeaderboard() {
                     className="city-treemap__open-card"
                     type="button"
                     aria-label={`View the ${group.cityName} ranking`}
-                    onClick={() => setFocusedCityId(group.cityId)}
+                    onClick={() => navigateToCity(group.cityName)}
                   />
                   <span className="city-treemap__top">
                     <span className="city-treemap__number">
