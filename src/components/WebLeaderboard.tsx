@@ -1050,6 +1050,7 @@ export function WebLeaderboard() {
               );
               const compact =
                 group.totalDiscoveredKm < cityGroups[0].totalDiscoveredKm * 0.1;
+              const visibleExplorerCount = compact || index >= 2 ? 2 : 5;
               const myRank = group.explorers.findIndex(
                 ({ entry }) => entry.entryId === myEntryId,
               );
@@ -1101,7 +1102,7 @@ export function WebLeaderboard() {
                     aria-label={`Top explorers in ${group.cityName}`}
                   >
                     {group.explorers
-                      .slice(0, 2)
+                      .slice(0, visibleExplorerCount)
                       .map(({ entry, city }, explorerIndex) => (
                         <li key={entry.entryId}>
                           <button
