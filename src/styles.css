@@ -1819,7 +1819,6 @@ button {
   padding: 18px;
   overflow-y: auto;
   background: rgba(18, 34, 28, 0.2);
-  backdrop-filter: blur(3px);
   animation: fade-in 150ms ease;
 }
 .favorite-editor {

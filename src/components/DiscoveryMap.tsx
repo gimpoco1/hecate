@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -85,11 +85,15 @@ function updateUserMarkerHeading(
 ) {
   const validHeading =
     typeof heading === "number" && Number.isFinite(heading) && heading >= 0;
-  element.classList.toggle("user-marker--has-heading", validHeading);
+  if (element.classList.contains("user-marker--has-heading") !== validHeading)
+    element.classList.toggle("user-marker--has-heading", validHeading);
   if (validHeading) {
-    element.style.setProperty("--user-heading", `${heading - mapBearing}deg`);
+    const value = `${heading - mapBearing}deg`;
+    if (element.style.getPropertyValue("--user-heading") !== value)
+      element.style.setProperty("--user-heading", value);
   } else {
-    element.style.removeProperty("--user-heading");
+    if (element.style.getPropertyValue("--user-heading"))
+      element.style.removeProperty("--user-heading");
   }
 }
 
@@ -106,6 +110,7 @@ function createFavoriteMarkerElement(
     "aria-label",
     favorite.name ? `Saved place: ${favorite.name}` : "Saved place",
   );
+  element.dataset.favoriteId = favorite.id;
   const vector = favoritePlaceIconVector(favorite.icon);
   element.innerHTML = `<svg class="${vector.filled ? "favorite-icon--filled" : ""}" viewBox="${vector.viewBox}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${vector.markup}</svg>`;
   element.addEventListener("click", (event) => {
@@ -137,12 +142,12 @@ function drawMist(
   map: MapLibreMap,
   geometry: MistGeometry,
   mode: MapMode,
+  pixelRatio: number,
+  viewportSize: { width: number; height: number },
 ) {
-  const rect = canvas.getBoundingClientRect();
   const moving = map.isMoving();
-  const ratio = Math.min(window.devicePixelRatio || 1, moving ? 1 : 2);
-  const width = Math.round(rect.width * ratio);
-  const height = Math.round(rect.height * ratio);
+  const width = Math.round(viewportSize.width * pixelRatio);
+  const height = Math.round(viewportSize.height * pixelRatio);
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -150,15 +155,15 @@ function drawMist(
 
   const context = canvas.getContext("2d");
   if (!context) return;
-  context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  context.clearRect(0, 0, rect.width, rect.height);
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  context.clearRect(0, 0, viewportSize.width, viewportSize.height);
 
   const zoomFade = Math.max(0, Math.min(1, (map.getZoom() - 5.5) / 2.5));
   if (mode !== "discover" || zoomFade === 0) return;
 
   const fogColor = `rgba(239, 240, 234, ${0.9 * zoomFade})`;
   context.fillStyle = fogColor;
-  context.fillRect(0, 0, rect.width, rect.height);
+  context.fillRect(0, 0, viewportSize.width, viewportSize.height);
 
   if (
     geometry.routeSegments.length === 0 &&
@@ -169,8 +174,8 @@ function drawMist(
     context.textAlign = "center";
     context.fillText(
       "Your first discovery will reveal the map",
-      rect.width / 2,
-      rect.height / 2 - 36,
+      viewportSize.width / 2,
+      viewportSize.height / 2 - 36,
     );
     return;
   }
@@ -199,9 +204,9 @@ function drawMist(
     .filter(
       (point) =>
         point.x > -200 &&
-        point.x < rect.width + 200 &&
+        point.x < viewportSize.width + 200 &&
         point.y > -200 &&
-        point.y < rect.height + 200,
+        point.y < viewportSize.height + 200,
     );
   const path = new Path2D();
   projectedSegments.forEach((projected) =>
@@ -285,7 +290,7 @@ function drawMist(
   context.stroke(path);
 }
 
-export function DiscoveryMap({
+export const DiscoveryMap = memo(function DiscoveryMap({
   mode,
   points,
   cells,
@@ -379,20 +384,28 @@ export function DiscoveryMap({
   }, [locationState]);
 
   useEffect(() => {
+    let headingFrame: number | null = null;
+    let pendingHeading: number | undefined;
     const updateHeading = (rawEvent: Event) => {
       const heading = compassHeadingFromEvent(
         rawEvent as CompassOrientationEvent,
       );
       if (heading === undefined) return;
-      compassHeadingRef.current = heading;
-      const element = markerRef.current?.getElement();
-      const map = mapRef.current;
-      if (element && map)
-        updateUserMarkerHeading(element, heading, map.getBearing());
+      pendingHeading = heading;
+      if (headingFrame !== null) return;
+      headingFrame = requestAnimationFrame(() => {
+        headingFrame = null;
+        compassHeadingRef.current = pendingHeading;
+        const element = markerRef.current?.getElement();
+        const map = mapRef.current;
+        if (element && map)
+          updateUserMarkerHeading(element, pendingHeading, map.getBearing());
+      });
     };
     window.addEventListener("deviceorientationabsolute", updateHeading, true);
     window.addEventListener("deviceorientation", updateHeading, true);
     return () => {
+      if (headingFrame !== null) cancelAnimationFrame(headingFrame);
       window.removeEventListener(
         "deviceorientationabsolute",
         updateHeading,
@@ -403,10 +416,15 @@ export function DiscoveryMap({
   }, [mapRef]);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !mapStyle) return;
+    const container = containerRef.current;
+    if (!container || mapRef.current || !mapStyle) return;
     const nativeApp = Capacitor.isNativePlatform();
+    const mistPixelRatio = Math.min(
+      window.devicePixelRatio || 1,
+      nativeApp ? 1 : 1.5,
+    );
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container,
       style: mapStyle,
       center: initialCenter,
       zoom: initialZoom,
@@ -447,6 +465,10 @@ export function DiscoveryMap({
     });
 
     let lastInteractionDrawAt = 0;
+    let viewportSize = {
+      width: container.clientWidth,
+      height: container.clientHeight,
+    };
     const redraw = (force = false) => {
       if (!canvasRef.current) return;
       const now = performance.now();
@@ -457,6 +479,8 @@ export function DiscoveryMap({
         map,
         stateRef.current.geometry,
         stateRef.current.mode,
+        mistPixelRatio,
+        viewportSize,
       );
     };
     redrawRef.current = redraw;
@@ -481,7 +505,13 @@ export function DiscoveryMap({
         settledZoom,
       );
     };
-    const handleResize = () => redraw(true);
+    const handleResize = () => {
+      viewportSize = {
+        width: container.clientWidth,
+        height: container.clientHeight,
+      };
+      redraw(true);
+    };
     map.on("move", handleMove);
     map.on("click", (event) => {
       if (favoritePlacementActiveRef.current) {
@@ -554,7 +584,16 @@ export function DiscoveryMap({
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
     };
-  }, [favoritePlaces, mapRef, selectedFavoritePlaceId]);
+  }, [favoritePlaces, mapRef]);
+
+  useEffect(() => {
+    favoriteMarkersRef.current.forEach((marker) => {
+      const element = marker.getElement();
+      const selected = element.dataset.favoriteId === selectedFavoritePlaceId;
+      element.classList.toggle("favorite-marker--selected", selected);
+      element.setAttribute("aria-current", selected ? "true" : "false");
+    });
+  }, [selectedFavoritePlaceId]);
 
   return (
     <div
@@ -572,4 +611,4 @@ export function DiscoveryMap({
       />
     </div>
   );
-}
+});
