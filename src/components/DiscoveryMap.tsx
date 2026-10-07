@@ -331,8 +331,18 @@ export const DiscoveryMap = memo(function DiscoveryMap({
           map.getBearing(),
         );
     };
+    let touchGestureActive = false;
+    const handleTouchStart = (): void => {
+      touchGestureActive = true;
+    };
+    const handleTouchEnd = (event: maplibregl.MapTouchEvent): void => {
+      touchGestureActive = event.originalEvent.touches.length > 0;
+    };
+    const handleTouchCancel = (): void => {
+      touchGestureActive = false;
+    };
     const handleMoveEnd = (event: FollowCameraEvent) => {
-      if (event.hecateFollowCamera) return;
+      if (event.hecateFollowCamera || touchGestureActive) return;
       const center = map.getCenter();
       const settledZoom = map.getZoom();
       onZoomChange(settledZoom);
@@ -341,6 +351,9 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         settledZoom,
       );
     };
+    map.on("touchstart", handleTouchStart);
+    map.on("touchend", handleTouchEnd);
+    map.on("touchcancel", handleTouchCancel);
     map.on("rotate", handleRotate);
     map.on("dragstart", () => onUserNavigationRef.current?.());
     map.on("click", (event) => {

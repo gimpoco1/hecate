@@ -482,6 +482,8 @@ export default function App() {
     null,
   );
   const cityLookupAbortRef = useRef<AbortController | null>(null);
+  const viewCityLookupAbortRef = useRef<AbortController | null>(null);
+  const viewCityLookupGenerationRef = useRef(0);
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
   const trackingUserRef = useRef<string | null>(null);
@@ -581,6 +583,7 @@ export default function App() {
   const suspendFollowCamera = useCallback(() => {
     followCameraEnabledRef.current = false;
     stopFollowCameraAnimation();
+    viewCityLookupGenerationRef.current += 1;
   }, [stopFollowCameraAnimation]);
   const scheduleDiscoveryUiRefresh = useCallback(() => {
     if (discoveryUiRefreshTimerRef.current !== null) return;
@@ -1743,6 +1746,10 @@ export default function App() {
   }, [activeCity, currentPoint]);
 
   useEffect(() => {
+    viewCityLookupGenerationRef.current += 1;
+    const generation = viewCityLookupGenerationRef.current;
+    viewCityLookupAbortRef.current?.abort();
+    viewCityLookupAbortRef.current = null;
     if (!isCityScale || !viewCenter) {
       setViewCityLoading(false);
       return;
@@ -1757,23 +1764,35 @@ export default function App() {
     setViewedCity(null);
     setViewCityLoading(true);
     const controller = new AbortController();
+    viewCityLookupAbortRef.current = controller;
     // A map pan should settle before asking for an uncached city boundary.
     const timer = window.setTimeout(() => {
+      if (viewCityLookupGenerationRef.current !== generation) return;
       void fetchCityBoundary(viewCenter, controller.signal)
         .then((city) => {
-          if (!controller.signal.aborted) setViewedCity(city);
+          if (
+            !controller.signal.aborted &&
+            viewCityLookupGenerationRef.current === generation
+          )
+            setViewedCity(city);
         })
         .catch((error) => {
           if (!controller.signal.aborted)
             console.warn("Map city lookup failed", error);
         })
         .finally(() => {
-          if (!controller.signal.aborted) setViewCityLoading(false);
+          if (
+            !controller.signal.aborted &&
+            viewCityLookupGenerationRef.current === generation
+          )
+            setViewCityLoading(false);
         });
     }, 500);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
+      if (viewCityLookupAbortRef.current === controller)
+        viewCityLookupAbortRef.current = null;
     };
   }, [cachedViewCity, isCityScale, viewCenter]);
 
@@ -1845,7 +1864,11 @@ export default function App() {
     };
   }, [accountUserId, cells, citiesLoadedUserId, points]);
 
-  const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), []);
+  const onZoomChange = useCallback((nextZoom: number) => {
+    setZoom((currentZoom) =>
+      (currentZoom >= 6) === (nextZoom >= 6) ? currentZoom : nextZoom,
+    );
+  }, []);
   const onViewChange = useCallback((center: { lng: number; lat: number }) => {
     setViewCenter(center);
   }, []);
