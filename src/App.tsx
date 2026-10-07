@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
@@ -6,6 +6,7 @@ import { Browser } from "@capacitor/browser";
 import { Keyboard } from "@capacitor/keyboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import type { DiscoveryFogLayer } from "./fogLayer";
 import {
   evaluatePersonalAchievements,
   isPersonalAchievementId,
@@ -45,8 +46,8 @@ import {
   HecateMark,
   InfoIcon,
   LocateIcon,
-  MapIcon,
-  PerspectiveIcon,
+  FogIcon,
+  ViewDimensionIcon,
   SaveIcon,
   UserIcon,
   XIcon,
@@ -241,6 +242,122 @@ function formatDiscoveryPercentage(
   return `${Math.round(percentage)}%`;
 }
 
+type CityProgress = {
+  city: CityBoundary;
+  percentage: number;
+  distance: number;
+};
+
+type AchievementEvaluation = ReturnType<
+  typeof evaluatePersonalAchievements
+>[number];
+
+type JourneyDetailsProps = {
+  accountUserId: string | null;
+  expanded: boolean;
+  loading: boolean;
+  cityProgresses: CityProgress[];
+  totalCityDistance: number;
+  achievementEvaluations: AchievementEvaluation[];
+  onCitySelect: (city: CityBoundary) => void;
+};
+
+const JourneyDetails = memo(function JourneyDetails({
+  accountUserId,
+  expanded,
+  loading,
+  cityProgresses,
+  totalCityDistance,
+  achievementEvaluations,
+  onCitySelect,
+}: JourneyDetailsProps) {
+  const earnedAchievementCount = achievementEvaluations.filter(
+    ({ earned }) => earned,
+  ).length;
+
+  return (
+    <div
+      className="discovered-cities"
+      aria-label="Discovered cities"
+      aria-hidden={!expanded}
+    >
+      <div className="discovered-cities__heading">
+        <span>Your cities</span>
+        <small>
+          {loading
+            ? "Finding past cities…"
+            : `${cityProgresses.length} ${cityProgresses.length === 1 ? "city" : "cities"} · ${formatDistance(totalCityDistance)} new ground`}
+        </small>
+      </div>
+      {accountUserId ? (
+        cityProgresses.length ? (
+          <ul>
+            {cityProgresses.map(({ city, percentage, distance }) => {
+              const earned = earnedCityMilestones(city.id, city.name, distance);
+              const next = cityMilestoneProgress(distance).next;
+              return (
+                <li key={city.id}>
+                  <button type="button" onClick={() => onCitySelect(city)}>
+                    <span className="discovered-cities__identity">
+                      <span>{city.name}</span>
+                      <small>
+                        {next
+                          ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
+                          : `${earned.at(-1)?.title} · all 3 stars earned`}
+                      </small>
+                    </span>
+                    <span className="discovered-cities__metrics">
+                      <CityLevelStars level={earned.length} />
+                      <strong>
+                        {formatDiscoveryPercentage(percentage, false)}
+                      </strong>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p>Start a walk to add your first city.</p>
+        )
+      ) : (
+        <p>Sign in to see your cities and keep them in sync.</p>
+      )}
+      {accountUserId && (
+        <section
+          className="personal-achievements"
+          aria-labelledby="personal-achievements-title"
+        >
+          <div className="personal-achievements__heading">
+            <span id="personal-achievements-title">Achievements</span>
+            <small>
+              {earnedAchievementCount} / {achievementEvaluations.length} earned
+            </small>
+          </div>
+          <ul>
+            {achievementEvaluations.map(
+              ({ definition, earned, progress, progressLabel }) => (
+                <li
+                  key={definition.id}
+                  className={earned ? "personal-achievements__earned" : ""}
+                >
+                  <AchievementCard
+                    achievement={definition}
+                    earned={earned}
+                    progress={progress}
+                    progressLabel={progressLabel}
+                    compact
+                  />
+                </li>
+              ),
+            )}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+});
+
 function formatRecapPercentage(percentage: number) {
   if (percentage <= 0) return "0%";
   if (percentage < 0.01) return "<0.01%";
@@ -333,7 +450,6 @@ export default function App() {
     null,
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
-  const [journeyContentVisible, setJourneyContentVisible] = useState(false);
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
@@ -344,6 +460,7 @@ export default function App() {
     useState<PersonalAchievementId | null>(null);
   const [testRouteRunning, setTestRouteRunning] = useState(false);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
   const latestPassivePointRef = useRef<Coordinate | null>(null);
@@ -365,6 +482,8 @@ export default function App() {
     null,
   );
   const cityLookupAbortRef = useRef<AbortController | null>(null);
+  const viewCityLookupAbortRef = useRef<AbortController | null>(null);
+  const viewCityLookupGenerationRef = useRef(0);
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
   const trackingUserRef = useRef<string | null>(null);
@@ -385,6 +504,12 @@ export default function App() {
   } | null>(null);
   const journeyDragFrameRef = useRef<number | null>(null);
   const journeySettleFrameRef = useRef<number | null>(null);
+  const resumeCenterFrameRef = useRef<number | null>(null);
+  const followCameraFrameRef = useRef<number | null>(null);
+  const followCameraTargetRef = useRef<Coordinate | null>(null);
+  const followCameraTimestampRef = useRef<number | null>(null);
+  const followCameraEnabledRef = useRef(true);
+  const discoveryUiRefreshTimerRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
   const initialMapFocusUserRef = useRef<string | null>(null);
@@ -395,11 +520,105 @@ export default function App() {
   const discoveryHistoryReadyRef = useRef(false);
   const pointsRef = useRef<Coordinate[]>([]);
   const deferredLocationUiRef = useRef(false);
+  const centerOnNextPassivePointRef = useRef(false);
   const explorationStartRef = useRef<{
     cells: Set<string>;
     points: Coordinate[];
     discoveryDistance: number;
   } | null>(null);
+  const stopFollowCameraAnimation = useCallback(() => {
+    if (followCameraFrameRef.current !== null)
+      cancelAnimationFrame(followCameraFrameRef.current);
+    followCameraFrameRef.current = null;
+    followCameraTargetRef.current = null;
+    followCameraTimestampRef.current = null;
+  }, []);
+  const animateFollowCamera = useCallback((point: Coordinate) => {
+    followCameraTargetRef.current = point;
+    if (
+      !followCameraEnabledRef.current ||
+      followCameraFrameRef.current !== null
+    )
+      return;
+    const animate = (timestamp: number): void => {
+      const map = mapRef.current;
+      const target = followCameraTargetRef.current;
+      if (!map || !target || !followCameraEnabledRef.current) {
+        followCameraFrameRef.current = null;
+        followCameraTimestampRef.current = null;
+        return;
+      }
+      const previousTimestamp = followCameraTimestampRef.current ?? timestamp;
+      const elapsed = Math.min(50, Math.max(0, timestamp - previousTimestamp));
+      followCameraTimestampRef.current = timestamp;
+      const center = map.getCenter();
+      const longitudeDelta = ((target.lng - center.lng + 540) % 360) - 180;
+      const blend = 1 - Math.exp(-elapsed / 180);
+      const next = {
+        lng: center.lng + longitudeDelta * blend,
+        lat: center.lat + (target.lat - center.lat) * blend,
+      };
+      map.jumpTo(
+        { center: [next.lng, next.lat] },
+        { hecateFollowCamera: true },
+      );
+      if (
+        distanceKm(
+          { ...next, recordedAt: target.recordedAt },
+          target,
+        ) < 0.0005
+      ) {
+        map.jumpTo(
+          { center: [target.lng, target.lat] },
+          { hecateFollowCamera: true },
+        );
+        followCameraFrameRef.current = null;
+        followCameraTimestampRef.current = null;
+        return;
+      }
+      followCameraFrameRef.current = requestAnimationFrame(animate);
+    };
+    followCameraFrameRef.current = requestAnimationFrame(animate);
+  }, []);
+  const suspendFollowCamera = useCallback(() => {
+    followCameraEnabledRef.current = false;
+    stopFollowCameraAnimation();
+    viewCityLookupGenerationRef.current += 1;
+  }, [stopFollowCameraAnimation]);
+  const scheduleDiscoveryUiRefresh = useCallback(() => {
+    if (discoveryUiRefreshTimerRef.current !== null) return;
+    discoveryUiRefreshTimerRef.current = window.setTimeout(() => {
+      discoveryUiRefreshTimerRef.current = null;
+      setPoints([...pointsRef.current]);
+    }, 3_000);
+  }, []);
+  const flushDiscoveryUiRefresh = useCallback(() => {
+    if (discoveryUiRefreshTimerRef.current !== null)
+      window.clearTimeout(discoveryUiRefreshTimerRef.current);
+    discoveryUiRefreshTimerRef.current = null;
+    setPoints([...pointsRef.current]);
+  }, []);
+  const centerMapOnPoint = useCallback((point: Coordinate) => {
+    followCameraEnabledRef.current = true;
+    stopFollowCameraAnimation();
+    setViewCenter({ lng: point.lng, lat: point.lat });
+    setViewedCity(null);
+    if (resumeCenterFrameRef.current !== null)
+      cancelAnimationFrame(resumeCenterFrameRef.current);
+    resumeCenterFrameRef.current = requestAnimationFrame(() => {
+      const map = mapRef.current;
+      if (!map) {
+        resumeCenterFrameRef.current = null;
+        return;
+      }
+      map.resize();
+      resumeCenterFrameRef.current = requestAnimationFrame(() => {
+        resumeCenterFrameRef.current = null;
+        map.stop();
+        map.jumpTo({ center: [point.lng, point.lat] });
+      });
+    });
+  }, [stopFollowCameraAnimation]);
   // A cell is a revealed area, not a piece of route. The saved walks preserve
   // the real route boundaries, then this function credits only portions that
   // unlock new cells.
@@ -585,9 +804,14 @@ export default function App() {
         cancelAnimationFrame(journeyDragFrameRef.current);
       if (journeySettleFrameRef.current !== null)
         cancelAnimationFrame(journeySettleFrameRef.current);
+      if (resumeCenterFrameRef.current !== null)
+        cancelAnimationFrame(resumeCenterFrameRef.current);
+      stopFollowCameraAnimation();
+      if (discoveryUiRefreshTimerRef.current !== null)
+        window.clearTimeout(discoveryUiRefreshTimerRef.current);
       journeyAnimationRef.current?.cancel();
     },
-    [],
+    [stopFollowCameraAnimation],
   );
   useEffect(() => {
     const card = journeyCardRef.current;
@@ -902,6 +1126,9 @@ export default function App() {
     setExplorationSummary(null);
     initialMapFocusUserRef.current = null;
     setDiscoveryLoading(Boolean(accountUserId));
+    if (discoveryUiRefreshTimerRef.current !== null)
+      window.clearTimeout(discoveryUiRefreshTimerRef.current);
+    discoveryUiRefreshTimerRef.current = null;
     lastPointRef.current = undefined;
     cellsRef.current = [];
     cellKeysRef.current = new Set();
@@ -1215,10 +1442,13 @@ export default function App() {
       if (document.visibilityState !== "visible") return;
       if (deferredLocationUiRef.current) {
         deferredLocationUiRef.current = false;
-        setPoints([...pointsRef.current]);
+        flushDiscoveryUiRefresh();
         setCells([...cellsRef.current]);
-        if (lastPointRef.current) setCurrentPoint(lastPointRef.current);
       }
+      const point = latestPassivePointRef.current ?? lastPointRef.current;
+      if (!point) return;
+      setCurrentPoint(point);
+      centerMapOnPoint(point);
     };
     document.addEventListener("visibilitychange", flushBackgroundLocations);
     return () =>
@@ -1226,7 +1456,41 @@ export default function App() {
         "visibilitychange",
         flushBackgroundLocations,
       );
-  }, []);
+  }, [centerMapOnPoint, flushDiscoveryUiRefresh]);
+
+  useEffect(() => {
+    if (!nativeApp) return;
+    let disposed = false;
+    let wasActive = true;
+    let listener: { remove: () => Promise<void> } | undefined;
+    void CapacitorApp.addListener("appStateChange", (state) => {
+      if (disposed) return;
+      const resumed = state.isActive && !wasActive;
+      wasActive = state.isActive;
+      if (!resumed) return;
+      centerOnNextPassivePointRef.current = true;
+      const point = latestPassivePointRef.current ?? lastPointRef.current;
+      if (point) {
+        setCurrentPoint(point);
+        centerMapOnPoint(point);
+      }
+      if (
+        trackingStateRef.current !== "tracking" &&
+        trackingStateRef.current !== "requesting"
+      ) {
+        setPassiveLocationRefreshGeneration((generation) => generation + 1);
+      }
+    })
+      .then((handle) => {
+        if (disposed) void handle.remove();
+        else listener = handle;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
+  }, [centerMapOnPoint, nativeApp]);
 
   useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
@@ -1240,6 +1504,8 @@ export default function App() {
     let trackerMode: "foreground" | "reminder" | null = null;
     let retryTimer: number | null = null;
     let acquisitionTimer: number | null = null;
+    let wasForeground =
+      nativeActive && document.visibilityState === "visible";
     const clearTimers = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (acquisitionTimer !== null) window.clearTimeout(acquisitionTimer);
@@ -1290,6 +1556,10 @@ export default function App() {
               nativeActive && document.visibilityState === "visible";
             if (visible) {
               setCurrentPoint(point);
+              if (centerOnNextPassivePointRef.current) {
+                centerOnNextPassivePointRef.current = false;
+                centerMapOnPoint(point);
+              }
               setPassiveLocationStatus("located");
               setTracking((current) =>
                 current === "denied" || current === "unavailable"
@@ -1393,13 +1663,21 @@ export default function App() {
     };
     const updateVisibility = () => {
       const mode = desiredMode();
+      const foreground = mode === "foreground";
+      const resumed = foreground && !wasForeground;
+      wasForeground = foreground;
       if (mode === "foreground") {
+        if (resumed) {
+          centerOnNextPassivePointRef.current = true;
+          stop();
+        }
         if (
           latestPassivePointRef.current &&
           Date.now() - latestPassivePointRef.current.recordedAt <
             PASSIVE_LOCATION_MAX_AGE_MS
         ) {
           setCurrentPoint(latestPassivePointRef.current);
+          if (resumed) centerMapOnPoint(latestPassivePointRef.current);
           setPassiveLocationStatus("located");
         }
         start("foreground");
@@ -1432,6 +1710,7 @@ export default function App() {
     };
   }, [
     accountUserId,
+    centerMapOnPoint,
     devToolsEnabled,
     nativeApp,
     notificationPermissionReady,
@@ -1467,6 +1746,10 @@ export default function App() {
   }, [activeCity, currentPoint]);
 
   useEffect(() => {
+    viewCityLookupGenerationRef.current += 1;
+    const generation = viewCityLookupGenerationRef.current;
+    viewCityLookupAbortRef.current?.abort();
+    viewCityLookupAbortRef.current = null;
     if (!isCityScale || !viewCenter) {
       setViewCityLoading(false);
       return;
@@ -1481,23 +1764,35 @@ export default function App() {
     setViewedCity(null);
     setViewCityLoading(true);
     const controller = new AbortController();
+    viewCityLookupAbortRef.current = controller;
     // A map pan should settle before asking for an uncached city boundary.
     const timer = window.setTimeout(() => {
+      if (viewCityLookupGenerationRef.current !== generation) return;
       void fetchCityBoundary(viewCenter, controller.signal)
         .then((city) => {
-          if (!controller.signal.aborted) setViewedCity(city);
+          if (
+            !controller.signal.aborted &&
+            viewCityLookupGenerationRef.current === generation
+          )
+            setViewedCity(city);
         })
         .catch((error) => {
           if (!controller.signal.aborted)
             console.warn("Map city lookup failed", error);
         })
         .finally(() => {
-          if (!controller.signal.aborted) setViewCityLoading(false);
+          if (
+            !controller.signal.aborted &&
+            viewCityLookupGenerationRef.current === generation
+          )
+            setViewCityLoading(false);
         });
     }, 500);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
+      if (viewCityLookupAbortRef.current === controller)
+        viewCityLookupAbortRef.current = null;
     };
   }, [cachedViewCity, isCityScale, viewCenter]);
 
@@ -1518,7 +1813,6 @@ export default function App() {
 
   useEffect(() => {
     if (
-      !journeyContentVisible ||
       !accountUserId ||
       citiesLoadedUserId !== accountUserId ||
       points.length === 0
@@ -1568,14 +1862,20 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [accountUserId, cells, citiesLoadedUserId, journeyContentVisible, points]);
+  }, [accountUserId, cells, citiesLoadedUserId, points]);
 
-  const onZoomChange = useCallback((nextZoom: number) => setZoom(nextZoom), []);
+  const onZoomChange = useCallback((nextZoom: number) => {
+    setZoom((currentZoom) =>
+      (currentZoom >= 6) === (nextZoom >= 6) ? currentZoom : nextZoom,
+    );
+  }, []);
   const onViewChange = useCallback((center: { lng: number; lat: number }) => {
     setViewCenter(center);
   }, []);
 
   const focusOnUserPoint = (point: Coordinate) => {
+    followCameraEnabledRef.current = true;
+    stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
     mapRef.current?.flyTo({
       center: [point.lng, point.lat],
@@ -1635,6 +1935,7 @@ export default function App() {
       }
       return;
     }
+    latestPassivePointRef.current = point;
     if (focusFirstTrackingPointRef.current) {
       focusFirstTrackingPointRef.current = false;
       focusOnUserPoint(point);
@@ -1654,15 +1955,23 @@ export default function App() {
       updateInactivitySchedule(dueAt);
     };
     const appVisible = document.visibilityState === "visible";
-    if (appVisible) setCurrentPoint(point);
+    if (appVisible) {
+      setCurrentPoint(point);
+      if (centerOnNextPassivePointRef.current) {
+        centerOnNextPassivePointRef.current = false;
+        centerMapOnPoint(point);
+      }
+    }
     if (!shouldRecordPoint(lastPointRef.current, point)) {
       considerStopReminder();
       return;
     }
     const recordedPoint = { ...point, walkId: activeWalkRef.current?.id };
+    const previousRecordedPoint = lastPointRef.current ?? null;
     lastPointRef.current = recordedPoint;
     activeWalkRef.current?.points.push(recordedPoint);
     pointsRef.current.push(recordedPoint);
+    fogLayerRef.current?.appendRoutePoint(previousRecordedPoint, recordedPoint);
     if (
       trackingUserRef.current &&
       activeWalkRef.current &&
@@ -1689,13 +1998,9 @@ export default function App() {
     considerStopReminder();
 
     if (appVisible) {
-      setPoints([...pointsRef.current]);
+      scheduleDiscoveryUiRefresh();
       if (discoveredNewCell) setCells([...cellsRef.current]);
-      mapRef.current?.easeTo({
-        center: [recordedPoint.lng, recordedPoint.lat],
-        duration: 850,
-        essential: true,
-      });
+      animateFollowCamera(recordedPoint);
     } else {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
@@ -1729,6 +2034,8 @@ export default function App() {
 
   const finishActiveWalk = async () => {
     resetInactivityReminder();
+    stopFollowCameraAnimation();
+    if (document.visibilityState === "visible") flushDiscoveryUiRefresh();
     if (
       document.visibilityState === "visible" &&
       deferredLocationUiRef.current
@@ -1861,6 +2168,7 @@ export default function App() {
     }
     if (tracking !== "idle" || testRouteRunning) return;
     setTestRouteRunning(true);
+    followCameraEnabledRef.current = true;
     resetInactivityReminder();
     setExplorationSummary(null);
     setPassiveLocationStatus("idle");
@@ -2090,6 +2398,7 @@ export default function App() {
     foregroundTrackerRef.current = null;
     void Promise.resolve(foregroundTracker?.stop()).catch(() => undefined);
     const walkId = createWalkId();
+    followCameraEnabledRef.current = true;
     lastPointRef.current = undefined;
     const startingPoints = pointsRef.current;
     pointsRef.current = [...startingPoints];
@@ -2148,6 +2457,8 @@ export default function App() {
   const locate = () => {
     void requestDeviceHeadingPermission();
     if (currentPoint) {
+      followCameraEnabledRef.current = true;
+      stopFollowCameraAnimation();
       setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
       setViewedCity(null);
       mapRef.current?.flyTo({
@@ -2188,7 +2499,7 @@ export default function App() {
     card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
   };
 
-  const settleJourneySheet = (
+  const settleJourneySheet = useCallback((
     expanded: boolean,
     fromHeight?: number,
     durationMs = JOURNEY_SETTLE_DURATION_MS,
@@ -2221,7 +2532,6 @@ export default function App() {
     if (reducedMotion) {
       setVisualExpanded(expanded);
       setCitiesExpanded(expanded);
-      setJourneyContentVisible(expanded);
       card.style.transform = targetTransform;
       return;
     }
@@ -2253,7 +2563,6 @@ export default function App() {
         card.style.transform = targetTransform;
         animation.cancel();
         setCitiesExpanded(expanded);
-        setJourneyContentVisible(expanded);
       };
       animation.oncancel = () => {
         if (journeyAnimationRef.current === animation) {
@@ -2261,7 +2570,7 @@ export default function App() {
         }
       };
     });
-  };
+  }, []);
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -2415,7 +2724,7 @@ export default function App() {
     event.stopPropagation();
   };
 
-  const focusDiscoveredCity = (city: CityBoundary) => {
+  const focusDiscoveredCity = useCallback((city: CityBoundary) => {
     // Close even if an older account has no matching cell geometry to focus.
     settleJourneySheet(false);
     setViewedCity(city);
@@ -2502,7 +2811,7 @@ export default function App() {
         essential: true,
       },
     );
-  };
+  }, [cells, settleJourneySheet]);
 
   const toggleMapPerspective = () => {
     const map = mapRef.current;
@@ -2709,22 +3018,15 @@ export default function App() {
     }
   };
 
-  const openFavoritePlace = (favorite: FavoritePlace) => {
+  const openFavoritePlace = useCallback((favorite: FavoritePlace) => {
     setSyncOpen(false);
     setFavoritePlacementActive(false);
     setFavoriteEditorMode("view");
     if (journeyExpandedRef.current) settleJourneySheet(false);
+    setSelectedFavoritePlaceId(favorite.id);
+    setFavoriteDraft({ ...favorite });
     const map = mapRef.current;
-    if (!map) {
-      setSelectedFavoritePlaceId(favorite.id);
-      setFavoriteDraft({ ...favorite });
-      return;
-    }
-    setSelectedFavoritePlaceId(null);
-    map.once("moveend", () => {
-      setSelectedFavoritePlaceId(favorite.id);
-      setFavoriteDraft({ ...favorite });
-    });
+    if (!map) return;
     map.flyTo({
       center: [favorite.lng, favorite.lat],
       zoom: Math.max(map.getZoom(), 15.5),
@@ -2733,7 +3035,30 @@ export default function App() {
       duration: 650,
       essential: true,
     });
-  };
+  }, [settleJourneySheet]);
+
+  const handleMapClick = useCallback(() => {
+    setSelectedFavoritePlaceId(null);
+    if (journeyExpandedRef.current)
+      settleJourneySheet(
+        false,
+        undefined,
+        JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
+      );
+  }, [settleJourneySheet]);
+
+  const handleFavoritePlaceRequest = useCallback(
+    ({ lat, lng, suggestedName }: {
+      lat: number;
+      lng: number;
+      suggestedName?: string;
+    }) => {
+      setFavoritePlacementActive(false);
+      setFavoriteEditorMode("edit");
+      setFavoriteDraft(createFavoritePlace(lat, lng, suggestedName));
+    },
+    [],
+  );
 
   return (
     <main className="app-shell" aria-busy={accountDataLoading}>
@@ -2750,27 +3075,17 @@ export default function App() {
               ? "located"
               : "idle"
         }
-        onMapClick={() => {
-          setSelectedFavoritePlaceId(null);
-          if (journeyExpandedRef.current)
-            settleJourneySheet(
-              false,
-              undefined,
-              JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
-            );
-        }}
+        onMapClick={handleMapClick}
         favoritePlaces={favoritePlaces}
         selectedFavoritePlaceId={selectedFavoritePlaceId}
         favoritePlacementActive={favoritePlacementActive}
-        onFavoritePlaceRequest={({ lat, lng, suggestedName }) => {
-          setFavoritePlacementActive(false);
-          setFavoriteEditorMode("edit");
-          setFavoriteDraft(createFavoritePlace(lat, lng, suggestedName));
-        }}
+        onFavoritePlaceRequest={handleFavoritePlaceRequest}
         onFavoriteSelect={openFavoritePlace}
         onZoomChange={onZoomChange}
         onViewChange={onViewChange}
+        onUserNavigation={suspendFollowCamera}
         mapRef={mapRef}
+        fogLayerRef={fogLayerRef}
       />
       {devToolsEnabled && devToolsVisible && (
         <aside
@@ -3078,29 +3393,32 @@ export default function App() {
           <LocateIcon size={21} />
         </button>
         <button
-          className={mode === "map" ? "active" : ""}
           onClick={() =>
             setMode((currentMode) =>
               currentMode === "discover" ? "map" : "discover",
             )
           }
           aria-label={
-            mode === "map" ? "Show my uncovered map" : "Reveal the full map"
+            mode === "discover" ? "Turn fog off" : "Turn fog on"
           }
-          aria-pressed={mode === "map"}
-          title={mode === "map" ? "Show uncovered map" : "Reveal full map"}
+          aria-pressed={mode === "discover"}
+          title={mode === "discover" ? "Turn fog off" : "Turn fog on"}
         >
-          <MapIcon size={21} />
+          <FogIcon size={21} struck={mode === "discover"} />
         </button>
         <button
           className={perspectiveView ? "active" : ""}
           onClick={toggleMapPerspective}
           aria-label={
-            perspectiveView ? "Reset map orientation" : "Tilt and rotate map"
+            perspectiveView ? "Switch to 2D view" : "Switch to 3D view"
           }
           aria-pressed={perspectiveView}
+          title={perspectiveView ? "Switch to 2D view" : "Switch to 3D view"}
         >
-          <PerspectiveIcon size={21} />
+          <ViewDimensionIcon
+            size={21}
+            dimension={perspectiveView ? "2d" : "3d"}
+          />
         </button>
       </nav>
 
@@ -3112,7 +3430,6 @@ export default function App() {
           existing={favoritePlaces.some((place) => place.id === favoriteDraft.id)}
           keyboardInset={keyboardInset}
           onClose={() => {
-            setSelectedFavoritePlaceId(null);
             setFavoriteDraft(null);
           }}
           onSave={saveFavoriteDraft}
@@ -3229,99 +3546,17 @@ export default function App() {
               sample discovery.
             </p>
           )}
-          <div
-            className="discovered-cities"
-            aria-label="Discovered cities"
-            aria-hidden={!citiesExpanded}
-          >
-              <div className="discovered-cities__heading">
-                <span>Your cities</span>
-                <small>
-                  {citiesLoadedUserId !== accountUserId || cityBackfillLoading
-                    ? "Finding past cities…"
-                    : `${cityProgresses.length} ${cityProgresses.length === 1 ? "city" : "cities"} · ${formatDistance(totalCityDistance)} new ground`}
-                </small>
-              </div>
-              {accountUserId ? (
-                cityProgresses.length ? (
-                  <ul>
-                    {cityProgresses.map(({ city, percentage, distance }) => {
-                      const earned = earnedCityMilestones(
-                        city.id,
-                        city.name,
-                        distance,
-                      );
-                      const next = cityMilestoneProgress(distance).next;
-                      return (
-                        <li key={city.id}>
-                          <button
-                            type="button"
-                            onClick={() => focusDiscoveredCity(city)}
-                          >
-                            <span className="discovered-cities__identity">
-                              <span>{city.name}</span>
-                              <small>
-                                {next
-                                  ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
-                                  : `${earned.at(-1)?.title} · all 3 stars earned`}
-                              </small>
-                            </span>
-                            <span className="discovered-cities__metrics">
-                              <CityLevelStars level={earned.length} />
-                              <strong>
-                                {formatDiscoveryPercentage(percentage, false)}
-                              </strong>
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p>Start a walk to add your first city.</p>
-                )
-              ) : (
-                <p>Sign in to see your cities and keep them in sync.</p>
-              )}
-              {accountUserId && (
-                <section
-                  className="personal-achievements"
-                  aria-labelledby="personal-achievements-title"
-                >
-                  <div className="personal-achievements__heading">
-                    <span id="personal-achievements-title">Achievements</span>
-                    <small>
-                      {
-                        achievementEvaluations.filter(({ earned }) => earned)
-                          .length
-                      }
-                      {" / "}
-                      {achievementEvaluations.length} earned
-                    </small>
-                  </div>
-                  <ul>
-                    {achievementEvaluations.map(
-                      ({ definition, earned, progress, progressLabel }) => (
-                        <li
-                          key={definition.id}
-                          className={
-                            earned ? "personal-achievements__earned" : ""
-                          }
-                        >
-                          <AchievementCard
-                            achievement={definition}
-                            earned={earned}
-                            progress={progress}
-                            progressLabel={progressLabel}
-                            compact
-                          />
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                </section>
-              )}
-          </div>
+          <JourneyDetails
+            accountUserId={accountUserId}
+            expanded={citiesExpanded}
+            loading={
+              citiesLoadedUserId !== accountUserId || cityBackfillLoading
+            }
+            cityProgresses={cityProgresses}
+            totalCityDistance={totalCityDistance}
+            achievementEvaluations={achievementEvaluations}
+            onCitySelect={focusDiscoveredCity}
+          />
         </section>
       )}
 
