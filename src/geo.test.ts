@@ -125,4 +125,12 @@ describe('discovery route geometry', () => {
     expect(atZoom15).toBeGreaterThan(60)
     expect(atZoom15).toBeLessThan(70)
   })
+
+  it('keeps the reveal radius finite at polar latitudes', () => {
+    const mercatorLimit = metersToPixels(120, 85.05112878, 15)
+
+    expect(metersToPixels(120, 90, 15)).toBeCloseTo(mercatorLimit)
+    expect(metersToPixels(120, -90, 15)).toBeCloseTo(mercatorLimit)
+    expect(mercatorLimit).toBeLessThan(Number.POSITIVE_INFINITY)
+  })
 })

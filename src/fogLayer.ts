@@ -5,7 +5,7 @@ import type {
   Map as MapLibreMap,
 } from "maplibre-gl";
 import { MercatorCoordinate } from "maplibre-gl";
-import { DISCOVERY_RADIUS_M, distanceKm } from "./geo";
+import { DISCOVERY_RADIUS_M, distanceKm, metersToPixels } from "./geo";
 import type { Coordinate, MapMode } from "./types";
 
 export type FogGeometry = {
@@ -571,7 +571,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
       this.maskWidth /
       Math.max(1, this.map?.getCanvas().clientWidth ?? 1);
     const radiusPixels =
-      this.metersToPixels(
+      metersToPixels(
         DISCOVERY_RADIUS_M * MAX_FOG_RADIUS_SCALE,
         this.map?.getCenter().lat ?? 0,
         this.map?.getZoom() ?? 0,
@@ -826,17 +826,5 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     );
     if (progress === 1) this.liquidStartedAt = null;
     return progress;
-  }
-
-  private metersToPixels(
-    meters: number,
-    latitude: number,
-    zoom: number,
-  ): number {
-    const earthCircumference = 2 * Math.PI * 6_378_137;
-    const metersPerPixel =
-      (Math.cos((latitude * Math.PI) / 180) * earthCircumference) /
-      (512 * 2 ** zoom);
-    return meters / metersPerPixel;
   }
 }
