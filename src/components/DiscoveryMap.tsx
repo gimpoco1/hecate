@@ -37,9 +37,15 @@ type Props = {
   selectedFavoritePlaceId?: string | null;
   onZoomChange: (zoom: number) => void;
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void;
+  onUserNavigation?: () => void;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
+  fogLayerRef?: React.MutableRefObject<DiscoveryFogLayer | null>;
   initialCenter?: [number, number];
   initialZoom?: number;
+};
+
+type FollowCameraEvent = maplibregl.MapLibreEvent & {
+  hecateFollowCamera?: boolean;
 };
 
 function userMarkerClassName(
@@ -145,7 +151,9 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   selectedFavoritePlaceId = null,
   onZoomChange,
   onViewChange,
+  onUserNavigation,
   mapRef,
+  fogLayerRef: externalFogLayerRef,
   initialCenter = [7, 24],
   initialZoom = 1.35,
 }: Props) {
@@ -160,6 +168,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
   const onViewChangeRef = useRef(onViewChange);
+  const onUserNavigationRef = useRef(onUserNavigation);
   const compassHeadingRef = useRef<number | undefined>(undefined);
   const [mapStyle, setMapStyle] = useState<
     Awaited<ReturnType<typeof loadMapStyle>> | string | null
@@ -196,6 +205,9 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
+  useEffect(() => {
+    onUserNavigationRef.current = onUserNavigation;
+  }, [onUserNavigation]);
   useEffect(() => {
     const controller = new AbortController();
     void loadMapStyle(controller.signal)
@@ -293,6 +305,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         stateRef.current.mode,
       );
       fogLayerRef.current = fogLayer;
+      if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
       const point = currentPointRef.current;
       if (point && !markerRef.current) {
@@ -308,7 +321,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       }
     });
 
-    const handleMove = () => {
+    const handleRotate = () => {
       const point = currentPointRef.current;
       const element = markerRef.current?.getElement();
       if (point && element)
@@ -318,7 +331,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
           map.getBearing(),
         );
     };
-    const handleMoveEnd = () => {
+    const handleMoveEnd = (event: FollowCameraEvent) => {
+      if (event.hecateFollowCamera) return;
       const center = map.getCenter();
       const settledZoom = map.getZoom();
       onZoomChange(settledZoom);
@@ -327,7 +341,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         settledZoom,
       );
     };
-    map.on("move", handleMove);
+    map.on("rotate", handleRotate);
+    map.on("dragstart", () => onUserNavigationRef.current?.());
     map.on("click", (event) => {
       if (favoritePlacementActiveRef.current) {
         onFavoritePlaceRequestRef.current?.({
@@ -342,13 +357,14 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     map.on("moveend", handleMoveEnd);
     return () => {
       fogLayerRef.current = null;
+      if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
       map.remove();
       mapRef.current = null;
     };
-  }, [mapRef, mapStyle, onZoomChange]);
+  }, [externalFogLayerRef, mapRef, mapStyle, onZoomChange]);
 
   useEffect(() => {
     const map = mapRef.current;

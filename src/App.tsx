@@ -6,6 +6,7 @@ import { Browser } from "@capacitor/browser";
 import { Keyboard } from "@capacitor/keyboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
+import type { DiscoveryFogLayer } from "./fogLayer";
 import {
   evaluatePersonalAchievements,
   isPersonalAchievementId,
@@ -45,8 +46,8 @@ import {
   HecateMark,
   InfoIcon,
   LocateIcon,
-  MapIcon,
-  PerspectiveIcon,
+  FogIcon,
+  ViewDimensionIcon,
   SaveIcon,
   UserIcon,
   XIcon,
@@ -459,6 +460,7 @@ export default function App() {
     useState<PersonalAchievementId | null>(null);
   const [testRouteRunning, setTestRouteRunning] = useState(false);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
   const latestPassivePointRef = useRef<Coordinate | null>(null);
@@ -501,6 +503,11 @@ export default function App() {
   const journeyDragFrameRef = useRef<number | null>(null);
   const journeySettleFrameRef = useRef<number | null>(null);
   const resumeCenterFrameRef = useRef<number | null>(null);
+  const followCameraFrameRef = useRef<number | null>(null);
+  const followCameraTargetRef = useRef<Coordinate | null>(null);
+  const followCameraTimestampRef = useRef<number | null>(null);
+  const followCameraEnabledRef = useRef(true);
+  const discoveryUiRefreshTimerRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
   const initialMapFocusUserRef = useRef<string | null>(null);
@@ -517,7 +524,80 @@ export default function App() {
     points: Coordinate[];
     discoveryDistance: number;
   } | null>(null);
+  const stopFollowCameraAnimation = useCallback(() => {
+    if (followCameraFrameRef.current !== null)
+      cancelAnimationFrame(followCameraFrameRef.current);
+    followCameraFrameRef.current = null;
+    followCameraTargetRef.current = null;
+    followCameraTimestampRef.current = null;
+  }, []);
+  const animateFollowCamera = useCallback((point: Coordinate) => {
+    followCameraTargetRef.current = point;
+    if (
+      !followCameraEnabledRef.current ||
+      followCameraFrameRef.current !== null
+    )
+      return;
+    const animate = (timestamp: number): void => {
+      const map = mapRef.current;
+      const target = followCameraTargetRef.current;
+      if (!map || !target || !followCameraEnabledRef.current) {
+        followCameraFrameRef.current = null;
+        followCameraTimestampRef.current = null;
+        return;
+      }
+      const previousTimestamp = followCameraTimestampRef.current ?? timestamp;
+      const elapsed = Math.min(50, Math.max(0, timestamp - previousTimestamp));
+      followCameraTimestampRef.current = timestamp;
+      const center = map.getCenter();
+      const longitudeDelta = ((target.lng - center.lng + 540) % 360) - 180;
+      const blend = 1 - Math.exp(-elapsed / 180);
+      const next = {
+        lng: center.lng + longitudeDelta * blend,
+        lat: center.lat + (target.lat - center.lat) * blend,
+      };
+      map.jumpTo(
+        { center: [next.lng, next.lat] },
+        { hecateFollowCamera: true },
+      );
+      if (
+        distanceKm(
+          { ...next, recordedAt: target.recordedAt },
+          target,
+        ) < 0.0005
+      ) {
+        map.jumpTo(
+          { center: [target.lng, target.lat] },
+          { hecateFollowCamera: true },
+        );
+        followCameraFrameRef.current = null;
+        followCameraTimestampRef.current = null;
+        return;
+      }
+      followCameraFrameRef.current = requestAnimationFrame(animate);
+    };
+    followCameraFrameRef.current = requestAnimationFrame(animate);
+  }, []);
+  const suspendFollowCamera = useCallback(() => {
+    followCameraEnabledRef.current = false;
+    stopFollowCameraAnimation();
+  }, [stopFollowCameraAnimation]);
+  const scheduleDiscoveryUiRefresh = useCallback(() => {
+    if (discoveryUiRefreshTimerRef.current !== null) return;
+    discoveryUiRefreshTimerRef.current = window.setTimeout(() => {
+      discoveryUiRefreshTimerRef.current = null;
+      setPoints([...pointsRef.current]);
+    }, 3_000);
+  }, []);
+  const flushDiscoveryUiRefresh = useCallback(() => {
+    if (discoveryUiRefreshTimerRef.current !== null)
+      window.clearTimeout(discoveryUiRefreshTimerRef.current);
+    discoveryUiRefreshTimerRef.current = null;
+    setPoints([...pointsRef.current]);
+  }, []);
   const centerMapOnPoint = useCallback((point: Coordinate) => {
+    followCameraEnabledRef.current = true;
+    stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
     setViewedCity(null);
     if (resumeCenterFrameRef.current !== null)
@@ -535,7 +615,7 @@ export default function App() {
         map.jumpTo({ center: [point.lng, point.lat] });
       });
     });
-  }, []);
+  }, [stopFollowCameraAnimation]);
   // A cell is a revealed area, not a piece of route. The saved walks preserve
   // the real route boundaries, then this function credits only portions that
   // unlock new cells.
@@ -723,9 +803,12 @@ export default function App() {
         cancelAnimationFrame(journeySettleFrameRef.current);
       if (resumeCenterFrameRef.current !== null)
         cancelAnimationFrame(resumeCenterFrameRef.current);
+      stopFollowCameraAnimation();
+      if (discoveryUiRefreshTimerRef.current !== null)
+        window.clearTimeout(discoveryUiRefreshTimerRef.current);
       journeyAnimationRef.current?.cancel();
     },
-    [],
+    [stopFollowCameraAnimation],
   );
   useEffect(() => {
     const card = journeyCardRef.current;
@@ -1040,6 +1123,9 @@ export default function App() {
     setExplorationSummary(null);
     initialMapFocusUserRef.current = null;
     setDiscoveryLoading(Boolean(accountUserId));
+    if (discoveryUiRefreshTimerRef.current !== null)
+      window.clearTimeout(discoveryUiRefreshTimerRef.current);
+    discoveryUiRefreshTimerRef.current = null;
     lastPointRef.current = undefined;
     cellsRef.current = [];
     cellKeysRef.current = new Set();
@@ -1353,7 +1439,7 @@ export default function App() {
       if (document.visibilityState !== "visible") return;
       if (deferredLocationUiRef.current) {
         deferredLocationUiRef.current = false;
-        setPoints([...pointsRef.current]);
+        flushDiscoveryUiRefresh();
         setCells([...cellsRef.current]);
       }
       const point = latestPassivePointRef.current ?? lastPointRef.current;
@@ -1367,7 +1453,7 @@ export default function App() {
         "visibilitychange",
         flushBackgroundLocations,
       );
-  }, [centerMapOnPoint]);
+  }, [centerMapOnPoint, flushDiscoveryUiRefresh]);
 
   useEffect(() => {
     if (!nativeApp) return;
@@ -1765,6 +1851,8 @@ export default function App() {
   }, []);
 
   const focusOnUserPoint = (point: Coordinate) => {
+    followCameraEnabledRef.current = true;
+    stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
     mapRef.current?.flyTo({
       center: [point.lng, point.lat],
@@ -1856,9 +1944,11 @@ export default function App() {
       return;
     }
     const recordedPoint = { ...point, walkId: activeWalkRef.current?.id };
+    const previousRecordedPoint = lastPointRef.current ?? null;
     lastPointRef.current = recordedPoint;
     activeWalkRef.current?.points.push(recordedPoint);
     pointsRef.current.push(recordedPoint);
+    fogLayerRef.current?.appendRoutePoint(previousRecordedPoint, recordedPoint);
     if (
       trackingUserRef.current &&
       activeWalkRef.current &&
@@ -1885,13 +1975,9 @@ export default function App() {
     considerStopReminder();
 
     if (appVisible) {
-      setPoints([...pointsRef.current]);
+      scheduleDiscoveryUiRefresh();
       if (discoveredNewCell) setCells([...cellsRef.current]);
-      mapRef.current?.easeTo({
-        center: [recordedPoint.lng, recordedPoint.lat],
-        duration: 850,
-        essential: true,
-      });
+      animateFollowCamera(recordedPoint);
     } else {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
@@ -1925,6 +2011,8 @@ export default function App() {
 
   const finishActiveWalk = async () => {
     resetInactivityReminder();
+    stopFollowCameraAnimation();
+    if (document.visibilityState === "visible") flushDiscoveryUiRefresh();
     if (
       document.visibilityState === "visible" &&
       deferredLocationUiRef.current
@@ -2057,6 +2145,7 @@ export default function App() {
     }
     if (tracking !== "idle" || testRouteRunning) return;
     setTestRouteRunning(true);
+    followCameraEnabledRef.current = true;
     resetInactivityReminder();
     setExplorationSummary(null);
     setPassiveLocationStatus("idle");
@@ -2286,6 +2375,7 @@ export default function App() {
     foregroundTrackerRef.current = null;
     void Promise.resolve(foregroundTracker?.stop()).catch(() => undefined);
     const walkId = createWalkId();
+    followCameraEnabledRef.current = true;
     lastPointRef.current = undefined;
     const startingPoints = pointsRef.current;
     pointsRef.current = [...startingPoints];
@@ -2344,6 +2434,8 @@ export default function App() {
   const locate = () => {
     void requestDeviceHeadingPermission();
     if (currentPoint) {
+      followCameraEnabledRef.current = true;
+      stopFollowCameraAnimation();
       setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
       setViewedCity(null);
       mapRef.current?.flyTo({
@@ -2968,7 +3060,9 @@ export default function App() {
         onFavoriteSelect={openFavoritePlace}
         onZoomChange={onZoomChange}
         onViewChange={onViewChange}
+        onUserNavigation={suspendFollowCamera}
         mapRef={mapRef}
+        fogLayerRef={fogLayerRef}
       />
       {devToolsEnabled && devToolsVisible && (
         <aside
@@ -3276,29 +3370,32 @@ export default function App() {
           <LocateIcon size={21} />
         </button>
         <button
-          className={mode === "map" ? "active" : ""}
           onClick={() =>
             setMode((currentMode) =>
               currentMode === "discover" ? "map" : "discover",
             )
           }
           aria-label={
-            mode === "map" ? "Show my uncovered map" : "Reveal the full map"
+            mode === "discover" ? "Turn fog off" : "Turn fog on"
           }
-          aria-pressed={mode === "map"}
-          title={mode === "map" ? "Show uncovered map" : "Reveal full map"}
+          aria-pressed={mode === "discover"}
+          title={mode === "discover" ? "Turn fog off" : "Turn fog on"}
         >
-          <MapIcon size={21} />
+          <FogIcon size={21} struck={mode === "discover"} />
         </button>
         <button
           className={perspectiveView ? "active" : ""}
           onClick={toggleMapPerspective}
           aria-label={
-            perspectiveView ? "Reset map orientation" : "Tilt and rotate map"
+            perspectiveView ? "Switch to 2D view" : "Switch to 3D view"
           }
           aria-pressed={perspectiveView}
+          title={perspectiveView ? "Switch to 2D view" : "Switch to 3D view"}
         >
-          <PerspectiveIcon size={21} />
+          <ViewDimensionIcon
+            size={21}
+            dimension={perspectiveView ? "2d" : "3d"}
+          />
         </button>
       </nav>
 

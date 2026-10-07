@@ -37,6 +37,23 @@ const FOG_LAYER_ID = "hecate-discovery-fog";
 const FOG_TRANSITION_MS = 450;
 const LIQUID_SETTLE_MS = 1_800;
 const MAX_FOG_RADIUS_SCALE = 3;
+const FOG_BUCKET_ZOOM = 12;
+const FOG_BUCKET_COUNT = 2 ** FOG_BUCKET_ZOOM;
+const FOG_BUCKET_MARGIN = 2;
+
+type FogBucket = {
+  x: number;
+  y: number;
+  centers: number[];
+};
+
+type VisibleBucketRange = {
+  west: number;
+  east: number;
+  north: number;
+  south: number;
+  wraps: boolean;
+};
 
 function normalizeLongitude(longitude: number): number {
   if (longitude > -180 && longitude <= 180) return longitude;
@@ -99,6 +116,78 @@ function coordinatesMatch(
 ): boolean {
   if (!first || !second) return first === second;
   return first.lng === second.lng && first.lat === second.lat;
+}
+
+function cellGeometryIsPrefix(
+  previous: [number, number][],
+  next: [number, number][],
+): boolean {
+  if (previous.length > next.length) return false;
+  return previous.every(
+    ([lng, lat], index) =>
+      next[index]?.[0] === lng && next[index]?.[1] === lat,
+  );
+}
+
+export function appendedFogRouteCoordinates(
+  previous: Coordinate[][],
+  next: Coordinate[][],
+): [number, number][] | null {
+  if (previous.length > next.length) return null;
+  const appended: [number, number][] = [];
+  for (let index = 0; index < previous.length; index += 1) {
+    const previousSegment = previous[index];
+    const nextSegment = next[index];
+    if (!nextSegment || previousSegment.length > nextSegment.length) return null;
+    const canExtend = index === previous.length - 1;
+    if (!canExtend && previousSegment.length !== nextSegment.length) return null;
+    if (
+      !coordinatesMatch(previousSegment[0] ?? null, nextSegment[0] ?? null) ||
+      !coordinatesMatch(
+        previousSegment.at(-1) ?? null,
+        nextSegment[previousSegment.length - 1] ?? null,
+      )
+    )
+      return null;
+    if (canExtend && nextSegment.length > previousSegment.length) {
+      appended.push(
+        ...revealCoordinatesBetween(
+          previousSegment.at(-1) ?? null,
+          nextSegment.slice(previousSegment.length),
+        ),
+      );
+    }
+  }
+  next.slice(previous.length).forEach((segment) => {
+    appended.push(...revealCoordinatesBetween(null, segment));
+  });
+  return appended;
+}
+
+function revealCoordinatesBetween(
+  previous: Coordinate | null,
+  points: Coordinate[],
+): [number, number][] {
+  const coordinates: [number, number][] = [];
+  let last = previous;
+  points.forEach((point) => {
+    if (last) {
+      const steps = Math.ceil(
+        (distanceKm(last, point) * 1_000) / DISCOVERY_RADIUS_M,
+      );
+      const deltaLng = longitudeDelta(last.lng, point.lng);
+      for (let step = 1; step < steps; step += 1) {
+        const progress = step / steps;
+        coordinates.push([
+          normalizeLongitude(last.lng + deltaLng * progress),
+          last.lat + (point.lat - last.lat) * progress,
+        ]);
+      }
+    }
+    coordinates.push([normalizeLongitude(point.lng), point.lat]);
+    last = point;
+  });
+  return coordinates;
 }
 
 function compileShader(
@@ -332,7 +421,10 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   private map: MapLibreMap | null = null;
   private gl: WebGL2RenderingContext | null = null;
   private geometry: FogGeometry;
-  private revealCenters = new Float32Array();
+  private revealBuckets = new Map<string, FogBucket>();
+  private revealCoordinateKeys = new Set<string>();
+  private visibleBucketSignature = "";
+  private visibleCentersDirty = true;
   private centerCount = 0;
   private cornerBuffer: WebGLBuffer | null = null;
   private centerBuffer: WebGLBuffer | null = null;
@@ -354,24 +446,49 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.modeOpacity = mode === "discover" ? 1 : 0;
     this.transitionFrom = this.modeOpacity;
     this.transitionTo = this.modeOpacity;
-    this.rebuildRevealCenters();
+    this.rebuildRevealCenters(geometry);
   }
 
   setGeometry(geometry: FogGeometry): void {
     if (this.geometry === geometry) return;
     const previousHead = latestRouteCoordinate(this.geometry);
     const nextHead = latestRouteCoordinate(geometry);
+    const appendedRoutes = appendedFogRouteCoordinates(
+      this.geometry.routeSegments,
+      geometry.routeSegments,
+    );
+    const appendedCells = cellGeometryIsPrefix(
+      this.geometry.cellCenters,
+      geometry.cellCenters,
+    );
+    let routeCoordinatesAdded = 0;
+    if (appendedRoutes && appendedCells) {
+      routeCoordinatesAdded = this.appendRevealCoordinates(appendedRoutes);
+      this.appendRevealCoordinates(
+        geometry.cellCenters.slice(this.geometry.cellCenters.length),
+      );
+    } else {
+      this.rebuildRevealCenters(geometry);
+    }
     this.geometry = geometry;
-    this.rebuildRevealCenters();
     if (
       this.map &&
+      routeCoordinatesAdded > 0 &&
       previousHead &&
       nextHead &&
       !coordinatesMatch(previousHead, nextHead)
     ) {
       this.liquidStartedAt = performance.now();
     }
-    this.uploadRevealCenters();
+    this.map?.triggerRepaint();
+  }
+
+  appendRoutePoint(previous: Coordinate | null, point: Coordinate): void {
+    this.appendRevealCoordinates(revealCoordinatesBetween(previous, [point]));
+    const liquidHead = MercatorCoordinate.fromLngLat(point, 0);
+    this.liquidHead = [liquidHead.x, liquidHead.y];
+    if (this.map && previous && !coordinatesMatch(previous, point))
+      this.liquidStartedAt = performance.now();
     this.map?.triggerRepaint();
   }
 
@@ -425,7 +542,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     );
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.compositeProgram = createCompositeProgram(gl);
-    this.uploadRevealCenters();
+    this.refreshVisibleRevealCenters();
   }
 
   prerender(gl: WebGL2RenderingContext, input: CustomRenderMethodInput): void {
@@ -441,6 +558,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.disable(gl.SCISSOR_TEST);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    this.refreshVisibleRevealCenters();
     if (this.centerCount === 0) return;
 
     const now = performance.now();
@@ -528,16 +646,12 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.gl = null;
   }
 
-  private rebuildRevealCenters(): void {
-    const coordinates = fogRevealCoordinates(this.geometry);
-    this.centerCount = coordinates.length;
-    this.revealCenters = new Float32Array(this.centerCount * 2);
-    coordinates.forEach(([lng, lat], index) => {
-      const coordinate = MercatorCoordinate.fromLngLat({ lng, lat }, 0);
-      this.revealCenters[index * 2] = coordinate.x;
-      this.revealCenters[index * 2 + 1] = coordinate.y;
-    });
-    const head = latestRouteCoordinate(this.geometry);
+  private rebuildRevealCenters(geometry: FogGeometry): void {
+    this.revealBuckets = new Map();
+    this.revealCoordinateKeys = new Set();
+    this.visibleBucketSignature = "";
+    this.appendRevealCoordinates(fogRevealCoordinates(geometry));
+    const head = latestRouteCoordinate(geometry);
     if (!head) {
       this.liquidHead = null;
       return;
@@ -546,14 +660,93 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.liquidHead = [liquidHead.x, liquidHead.y];
   }
 
-  private uploadRevealCenters(): void {
+  private appendRevealCoordinates(coordinates: [number, number][]): number {
+    let added = 0;
+    coordinates.forEach(([lng, lat]) => {
+      const normalizedLng = normalizeLongitude(lng);
+      const coordinateKey = `${normalizedLng.toFixed(6)}:${lat.toFixed(6)}`;
+      if (this.revealCoordinateKeys.has(coordinateKey)) return;
+      this.revealCoordinateKeys.add(coordinateKey);
+      const coordinate = MercatorCoordinate.fromLngLat(
+        { lng: normalizedLng, lat },
+        0,
+      );
+      const x = Math.min(
+        FOG_BUCKET_COUNT - 1,
+        Math.max(0, Math.floor(coordinate.x * FOG_BUCKET_COUNT)),
+      );
+      const y = Math.min(
+        FOG_BUCKET_COUNT - 1,
+        Math.max(0, Math.floor(coordinate.y * FOG_BUCKET_COUNT)),
+      );
+      const key = `${x}:${y}`;
+      const bucket = this.revealBuckets.get(key) ?? { x, y, centers: [] };
+      bucket.centers.push(coordinate.x, coordinate.y);
+      this.revealBuckets.set(key, bucket);
+      added += 1;
+    });
+    if (added > 0) this.visibleCentersDirty = true;
+    return added;
+  }
+
+  private visibleBucketRange(): VisibleBucketRange | null {
+    if (!this.map) return null;
+    const bounds = this.map.getBounds();
+    const northWest = MercatorCoordinate.fromLngLat(
+      { lng: bounds.getWest(), lat: bounds.getNorth() },
+      0,
+    );
+    const southEast = MercatorCoordinate.fromLngLat(
+      { lng: bounds.getEast(), lat: bounds.getSouth() },
+      0,
+    );
+    const west = Math.floor(northWest.x * FOG_BUCKET_COUNT);
+    const east = Math.floor(southEast.x * FOG_BUCKET_COUNT);
+    return {
+      west,
+      east,
+      north: Math.max(
+        0,
+        Math.floor(northWest.y * FOG_BUCKET_COUNT) - FOG_BUCKET_MARGIN,
+      ),
+      south: Math.min(
+        FOG_BUCKET_COUNT - 1,
+        Math.floor(southEast.y * FOG_BUCKET_COUNT) + FOG_BUCKET_MARGIN,
+      ),
+      wraps: bounds.getWest() > bounds.getEast(),
+    };
+  }
+
+  private refreshVisibleRevealCenters(): void {
     if (!this.gl || !this.centerBuffer) return;
+    const range = this.visibleBucketRange();
+    if (!range) return;
+    const signature = `${range.west}:${range.east}:${range.north}:${range.south}:${range.wraps}`;
+    if (!this.visibleCentersDirty && signature === this.visibleBucketSignature)
+      return;
+    const centers: number[] = [];
+    this.revealBuckets.forEach((bucket) => {
+      const insideLongitude = range.wraps
+        ? bucket.x >= range.west - FOG_BUCKET_MARGIN ||
+          bucket.x <= range.east + FOG_BUCKET_MARGIN
+        : bucket.x >= range.west - FOG_BUCKET_MARGIN &&
+          bucket.x <= range.east + FOG_BUCKET_MARGIN;
+      if (
+        insideLongitude &&
+        bucket.y >= range.north &&
+        bucket.y <= range.south
+      )
+        centers.push(...bucket.centers);
+    });
+    this.centerCount = centers.length / 2;
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.centerBuffer);
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
-      this.revealCenters,
-      this.gl.STATIC_DRAW,
+      new Float32Array(centers),
+      this.gl.DYNAMIC_DRAW,
     );
+    this.visibleBucketSignature = signature;
+    this.visibleCentersDirty = false;
   }
 
   private resizeMask(gl: WebGL2RenderingContext): void {
