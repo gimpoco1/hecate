@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { PersonalAchievementDefinition } from "../achievements";
 import { AchievementArtwork } from "./AchievementArtwork";
 
@@ -7,6 +7,27 @@ const categoryLabels: Record<PersonalAchievementDefinition["category"], string> 
   consistency: "Consistency challenge",
   places: "Places challenge",
 };
+
+const frontTransform =
+  "translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1)";
+const backTransform =
+  "translateY(-3px) rotateX(3deg) rotateY(180deg) rotateZ(-1deg) scale(1.025)";
+
+function animateAchievementFlip(
+  element: HTMLSpanElement,
+  flipped: boolean,
+): Animation | null {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
+  return element.animate(
+    flipped
+      ? [{ transform: frontTransform }, { transform: backTransform }]
+      : [{ transform: backTransform }, { transform: frontTransform }],
+    {
+      duration: 620,
+      easing: "cubic-bezier(0.16, 0.85, 0.22, 1.15)",
+    },
+  );
+}
 
 export function AchievementCard({
   achievement,
@@ -22,7 +43,20 @@ export function AchievementCard({
   compact?: boolean;
 }) {
   const [flipped, setFlipped] = useState(false);
+  const innerRef = useRef<HTMLSpanElement>(null);
+  const mountedRef = useRef(false);
   const status = earned ? "Earned" : progressLabel;
+
+  useLayoutEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    const element = innerRef.current;
+    if (!element) return;
+    const animation = animateAchievementFlip(element, flipped);
+    return () => animation?.cancel();
+  }, [flipped]);
 
   return (
     <button
@@ -34,7 +68,7 @@ export function AchievementCard({
       aria-label={`${achievement.title}. ${achievement.description} ${status}. Activate to ${flipped ? "show the badge artwork" : "read the achievement details"}.`}
       onClick={() => setFlipped((current) => !current)}
     >
-      <span className="achievement-card__inner" aria-hidden="true">
+      <span ref={innerRef} className="achievement-card__inner" aria-hidden="true">
         <span className="achievement-card__face achievement-card__front">
           <span className="achievement-card__artwork">
             <AchievementArtwork

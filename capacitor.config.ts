@@ -5,6 +5,9 @@ const config: CapacitorConfig = {
   appId: 'com.gimpoco.hecate',
   appName: 'Hecate',
   webDir: 'dist',
+  android: {
+    useLegacyBridge: true,
+  },
   plugins: {
     Keyboard: {
       resize: 'none' as KeyboardResize,
