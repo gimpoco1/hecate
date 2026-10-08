@@ -22,7 +22,7 @@ import {
   type FavoritePlace,
   type FavoritePlaceIcon,
 } from "../favoritePlaces";
-import { publicLeaderboardUrl } from "../routes";
+import { hostedLeaderboardUrl, publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
 import { ChevronIcon, InfoIcon, SaveIcon, XIcon } from "./Icons";
@@ -318,9 +318,12 @@ export function SyncSheet({
   };
 
   const openLeaderboard = async () => {
-    const leaderboardUrl = publicLeaderboardUrl(window.location.origin);
+    const nativePlatform = Capacitor.isNativePlatform();
+    const leaderboardUrl = nativePlatform
+      ? hostedLeaderboardUrl()
+      : publicLeaderboardUrl(window.location.origin);
 
-    if (Capacitor.isNativePlatform()) {
+    if (nativePlatform) {
       try {
         await Browser.open({ url: leaderboardUrl });
         return;

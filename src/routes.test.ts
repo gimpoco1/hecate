@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLeaderboardPath, leaderboardCityHash, leaderboardCitySlugFromHash, publicLeaderboardUrl, shouldRedirectBrowserToLeaderboard } from './routes'
+import { hostedLeaderboardUrl, isLeaderboardPath, leaderboardCityHash, leaderboardCitySlugFromHash, publicLeaderboardUrl, shouldRedirectBrowserToLeaderboard } from './routes'
 
 describe('browser routes', () => {
   it('uses card city names with spaces replaced by dashes in shareable links', () => {
@@ -32,10 +32,13 @@ describe('browser routes', () => {
     expect(shouldRedirectBrowserToLeaderboard('/leaderboard', false)).toBe(false)
   })
 
-  it('opens the hosted leaderboard instead of the Capacitor WebView origin', () => {
-    expect(publicLeaderboardUrl('capacitor://localhost')).toBe(
+  it('opens the hosted leaderboard from the native app', () => {
+    expect(hostedLeaderboardUrl()).toBe(
       'https://hecate-eta.vercel.app/leaderboard',
     )
+  })
+
+  it('keeps the current browser origin while developing locally', () => {
     expect(publicLeaderboardUrl('http://localhost:5173')).toBe(
       'http://localhost:5173/leaderboard',
     )

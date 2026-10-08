@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Hecate</string>
+    <string name="title_activity_main">Hecate</string>
+    <string name="package_name">com.gimpoco.hecate</string>
+    <string name="custom_url_scheme">com.gimpoco.hecate</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Journey tracking</string>
+    <string name="capacitor_background_geolocation_notification_color">#D9F26A</string>
+</resources>
