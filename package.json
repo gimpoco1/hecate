@@ -18,6 +18,7 @@
     "ios:run:xcode": "zsh scripts/run-ios-in-xcode.sh",
     "ios:version": "node scripts/bump-ios-version.mjs",
     "android:add": "npm run build && npx cap add android",
+    "android:release": "node scripts/build-signed-android-release.mjs",
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npm run android:sync && npx cap open android"
   },
