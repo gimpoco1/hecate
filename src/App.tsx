@@ -21,13 +21,13 @@ import {
 } from "./achievements";
 import {
   acknowledgeAchievementUnlock,
+  confirmedPendingAchievementIds,
   dismissAchievementUnlock,
   isAchievementUnlockPending,
   loadAchievementUnlocks,
   reconcileAchievementUnlocks,
   syncAchievementUnlocks,
 } from "./achievementUnlocks";
-import { reconcileDiscoveryAchievementUnlocks } from "./achievementDelivery";
 import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
 import {
   canonicalCityForStoredBoundary,
@@ -46,6 +46,7 @@ import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
+import { Counter, type CounterPlace } from "./components/Counter";
 import { SyncSheet, type GpxImportResult } from "./components/SyncSheet";
 import {
   HecateMark,
@@ -157,6 +158,12 @@ type ExplorationSummary = {
   travelledKm: number;
   cityName?: string;
   cityPercentageAdded?: number;
+};
+
+type JourneyMetricsPreview = {
+  distanceKm: number;
+  percentage: number;
+  elapsedMs: number;
 };
 
 type PassiveLocationStatus =
@@ -443,6 +450,106 @@ function formatDuration(startedAt: number, finishedAt: number) {
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
 }
 
+type JourneyCounterDisplay = {
+  value: number;
+  places: CounterPlace[];
+  prefix: string;
+  suffix: string;
+  label: string;
+};
+
+function integerCounterPlaces(value: number): CounterPlace[] {
+  const digitCount = Math.max(
+    1,
+    Math.floor(Math.max(0, value)).toString().length,
+  );
+  return Array.from(
+    { length: digitCount },
+    (_, index) => 10 ** (digitCount - index - 1),
+  );
+}
+
+function decimalCounterPlaces(
+  value: number,
+  decimalCount: number,
+): CounterPlace[] {
+  return [
+    ...integerCounterPlaces(value),
+    ".",
+    ...Array.from(
+      { length: decimalCount },
+      (_, index) => 10 ** -(index + 1),
+    ),
+  ];
+}
+
+export function journeyDistanceCounter(
+  distanceKm: number,
+): JourneyCounterDisplay {
+  if (distanceKm < 1) {
+    const value = Math.round(distanceKm * 1_000);
+    return {
+      value,
+      places: integerCounterPlaces(value),
+      prefix: "",
+      suffix: " m",
+      label: `${value} metres`,
+    };
+  }
+  const decimalCount = distanceKm < 10 ? 2 : 1;
+  const value = Number(distanceKm.toFixed(decimalCount));
+  return {
+    value,
+    places: decimalCounterPlaces(value, decimalCount),
+    prefix: "",
+    suffix: " km",
+    label: `${value.toFixed(decimalCount)} kilometres`,
+  };
+}
+
+export function journeyPercentageCounter(
+  percentage: number,
+): JourneyCounterDisplay {
+  const value = Number(percentage.toFixed(2));
+  return {
+    value,
+    places: decimalCounterPlaces(value, 2),
+    prefix: "+",
+    suffix: "%",
+    label: `Plus ${value.toFixed(2)} percent new area`,
+  };
+}
+
+export function journeyTimeCounter(elapsedMs: number): JourneyCounterDisplay {
+  const value = Math.max(1, Math.floor(elapsedMs / 60_000));
+  return {
+    value,
+    places: integerCounterPlaces(value),
+    prefix: "",
+    suffix: " min",
+    label: `${value} ${value === 1 ? "minute" : "minutes"}`,
+  };
+}
+
+type JourneyCounterValueProps = {
+  display: JourneyCounterDisplay;
+};
+
+function JourneyCounterValue({ display }: JourneyCounterValueProps) {
+  return (
+    <strong className="active-journey-value" aria-label={display.label}>
+      <span aria-hidden="true">{display.prefix}</span>
+      <Counter
+        value={display.value}
+        places={display.places}
+        fontSize={16}
+        gap={0}
+      />
+      <span aria-hidden="true">{display.suffix}</span>
+    </strong>
+  );
+}
+
 function uuidFromBytes(source: Uint8Array): string {
   const bytes = source.slice(0, 16);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -529,6 +636,14 @@ export default function App() {
   });
   const [reminderTestMessage, setReminderTestMessage] = useState("");
   const [achievementTestMessage, setAchievementTestMessage] = useState("");
+  const [journeyMetricsPreviewActive, setJourneyMetricsPreviewActive] =
+    useState(false);
+  const [journeyMetricsPreview, setJourneyMetricsPreview] =
+    useState<JourneyMetricsPreview>({
+      distanceKm: 0,
+      percentage: 0,
+      elapsedMs: 60_000,
+    });
   const [devToolsVisible, setDevToolsVisible] = useState(() => {
     if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
       return false;
@@ -541,6 +656,10 @@ export default function App() {
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   const [tracking, setTracking] = useState<TrackingState>("idle");
+  const [elapsedNow, setElapsedNow] = useState(0);
+  const [documentVisible, setDocumentVisible] = useState(
+    () => document.visibilityState === "visible",
+  );
   const trackingStateRef = useRef<TrackingState>(tracking);
   trackingStateRef.current = tracking;
   const [zoom, setZoom] = useState(1.35);
@@ -591,6 +710,7 @@ export default function App() {
   const [achievementCelebrations, setAchievementCelebrations] = useState<
     PersonalAchievementId[]
   >([]);
+  const [walkFinalizing, setWalkFinalizing] = useState(false);
   const [achievementTestPreview, setAchievementTestPreview] =
     useState<PersonalAchievementId | null>(null);
   const [testRouteRunning, setTestRouteRunning] = useState(false);
@@ -609,10 +729,7 @@ export default function App() {
     Promise.resolve(),
   );
   const achievementTestIndexRef = useRef(0);
-  const achievementCitiesRef = useRef<CityBoundary[]>([]);
-  const citiesLoadedUserIdRef = useRef<string | null>(null);
-  const testRouteRunningRef = useRef(false);
-  const lastBackgroundAchievementCheckRef = useRef(0);
+  const earnedAchievementIdsRef = useRef<Set<PersonalAchievementId>>(new Set());
   const lastCityLookupRef = useRef<{ point: Coordinate; at: number } | null>(
     null,
   );
@@ -817,6 +934,43 @@ export default function App() {
         viewCityLoading && !summaryCity,
       )
     : "—";
+  const activeWalkDistance = routeDistanceKm(
+    activeWalkRef.current?.points ?? [],
+  );
+  const activeWalkElapsedMs = activeWalkRef.current
+    ? Math.max(0, elapsedNow - activeWalkRef.current.startedAt)
+    : 0;
+  const activeWalkPercentageAdded = useMemo(() => {
+    const started = explorationStartRef.current;
+    if (tracking !== "tracking" || !started || !activeCity) return null;
+    const previousCells = cells.filter((cell) =>
+      started.cells.has(discoveryCellKey(cell)),
+    );
+    return Math.max(
+      0,
+      discoveredCityPercentage(cells, activeCity) -
+        discoveredCityPercentage(previousCells, activeCity),
+    );
+  }, [activeCity, cells, tracking]);
+  const showActiveJourneyMetrics =
+    tracking === "tracking" || journeyMetricsPreviewActive;
+  const displayedWalkDistance = journeyMetricsPreviewActive
+    ? journeyMetricsPreview.distanceKm
+    : activeWalkDistance;
+  const displayedWalkPercentageAdded = journeyMetricsPreviewActive
+    ? journeyMetricsPreview.percentage
+    : activeWalkPercentageAdded;
+  const displayedWalkElapsedMs = journeyMetricsPreviewActive
+    ? journeyMetricsPreview.elapsedMs
+    : activeWalkElapsedMs;
+  const displayedDistanceCounter = journeyDistanceCounter(
+    displayedWalkDistance,
+  );
+  const displayedPercentageCounter =
+    displayedWalkPercentageAdded === null
+      ? null
+      : journeyPercentageCounter(displayedWalkPercentageAdded);
+  const displayedTimeCounter = journeyTimeCounter(displayedWalkElapsedMs);
   const nativeApp = isNativeApp();
   const devToolsEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
@@ -926,6 +1080,48 @@ export default function App() {
   useEffect(() => {
     pointsRef.current = points;
   }, [points]);
+  useEffect(() => {
+    const updateDocumentVisibility = (): void =>
+      setDocumentVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", updateDocumentVisibility);
+    return () =>
+      document.removeEventListener(
+        "visibilitychange",
+        updateDocumentVisibility,
+      );
+  }, []);
+  useEffect(() => {
+    if (tracking !== "tracking") {
+      setElapsedNow(0);
+      return;
+    }
+    const updateElapsedNow = (): void => {
+      if (document.visibilityState === "visible") setElapsedNow(Date.now());
+    };
+    updateElapsedNow();
+    const timer = window.setInterval(updateElapsedNow, 1_000);
+    document.addEventListener("visibilitychange", updateElapsedNow);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", updateElapsedNow);
+    };
+  }, [tracking]);
+  useEffect(() => {
+    if (!journeyMetricsPreviewActive) return;
+    setJourneyMetricsPreview({
+      distanceKm: 0,
+      percentage: 0,
+      elapsedMs: 60_000,
+    });
+    const timer = window.setInterval(() => {
+      setJourneyMetricsPreview((current) => ({
+        distanceKm: current.distanceKm + 0.18,
+        percentage: current.percentage + 0.04,
+        elapsedMs: current.elapsedMs + 60_000,
+      }));
+    }, 1_400);
+    return () => window.clearInterval(timer);
+  }, [journeyMetricsPreviewActive]);
   useEffect(
     () => () => {
       if (journeyDragFrameRef.current !== null)
@@ -946,7 +1142,7 @@ export default function App() {
     if (!card || journeyAnimationRef.current) return;
     journeyExpandedRef.current = citiesExpanded;
     card.dataset.expanded = String(citiesExpanded);
-  }, [citiesExpanded, isCityScale]);
+  }, [citiesExpanded, isCityScale, journeyMetricsPreviewActive]);
   const progressCities = useMemo(() => {
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
@@ -1026,9 +1222,6 @@ export default function App() {
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
   }, [discoveryProgress.cityMetrics, progressCities]);
-  achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
-  citiesLoadedUserIdRef.current = citiesLoadedUserId;
-  testRouteRunningRef.current = testRouteRunning;
   const totalCityDistance = useMemo(
     () =>
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
@@ -1044,6 +1237,14 @@ export default function App() {
         discoveredKm: activeCityProgress.distance,
       }
     : null;
+  const earnedAchievementIds = useMemo(
+    () =>
+      achievementEvaluations
+        .filter(({ earned }) => earned)
+        .map(({ definition }) => definition.id),
+    [achievementEvaluations],
+  );
+  earnedAchievementIdsRef.current = new Set(earnedAchievementIds);
   const activeAchievementCelebration = achievementTestPreview
     ? personalAchievementDefinition(achievementTestPreview)
     : achievementCelebrations[0]
@@ -1058,27 +1259,47 @@ export default function App() {
     if (
       testRouteRunning ||
       activeWalkRef.current?.isTest ||
+      tracking === "requesting" ||
+      tracking === "tracking" ||
+      walkFinalizing ||
+      !documentVisible ||
       !discoveryHistoryReadyRef.current ||
       citiesLoadedUserId !== accountUserId
     )
       return;
-    const earned = achievementEvaluations
-      .filter(({ earned: isEarned }) => isEarned)
-      .map(({ definition }) => definition.id);
     const localBeforeReconcile = loadAchievementUnlocks(accountUserId);
-    const unlocks = reconcileAchievementUnlocks(accountUserId, earned);
-    setAchievementCelebrations(unlocks.pending);
+    const unlocks = reconcileAchievementUnlocks(
+      accountUserId,
+      earnedAchievementIds,
+    );
+    setAchievementCelebrations(
+      confirmedPendingAchievementIds(
+        unlocks.pending,
+        earnedAchievementIds,
+      ),
+    );
     void syncAchievementUnlocks(
       accountUserId,
-      earned,
+      earnedAchievementIds,
       localBeforeReconcile,
       unlocks.newlyEarned,
     )
       .then((synced) => {
-        if (accountUserIdRef.current === accountUserId && synced) {
-          setAchievementCelebrations(synced.pending);
+        if (
+          accountUserIdRef.current === accountUserId &&
+          document.visibilityState === "visible" &&
+          synced
+        ) {
+          const confirmedPending = confirmedPendingAchievementIds(
+            synced.pending,
+            earnedAchievementIds,
+          );
+          setAchievementCelebrations(confirmedPending);
           if (nativeApp) {
-            synced.newlyEarned.forEach((achievementId) => {
+            confirmedPendingAchievementIds(
+              synced.newlyEarned,
+              earnedAchievementIds,
+            ).forEach((achievementId) => {
               void sendAchievementNotification(
                 achievementId,
                 accountUserId,
@@ -1091,8 +1312,11 @@ export default function App() {
       })
       .catch((error) => {
         console.warn("Could not sync achievement unlocks", error);
-        if (nativeApp) {
-          unlocks.newlyEarned.forEach((achievementId) => {
+        if (nativeApp && document.visibilityState === "visible") {
+          confirmedPendingAchievementIds(
+            unlocks.newlyEarned,
+            earnedAchievementIds,
+          ).forEach((achievementId) => {
             void sendAchievementNotification(
               achievementId,
               accountUserId,
@@ -1107,29 +1331,43 @@ export default function App() {
       });
   }, [
     accountUserId,
-    achievementEvaluations,
     citiesLoadedUserId,
+    documentVisible,
+    earnedAchievementIds,
     nativeApp,
     testRouteRunning,
+    tracking,
+    walkFinalizing,
   ]);
 
   useEffect(() => {
     if (
       !accountUserId ||
+      tracking === "requesting" ||
+      tracking === "tracking" ||
+      walkFinalizing ||
       !discoveryHistoryReadyRef.current ||
       citiesLoadedUserId !== accountUserId
     )
       return;
     const retry = () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
-      const earned = achievementEvaluations
-        .filter(({ earned: isEarned }) => isEarned)
-        .map(({ definition }) => definition.id);
       const local = loadAchievementUnlocks(accountUserId);
-      void syncAchievementUnlocks(accountUserId, earned, local)
+      void syncAchievementUnlocks(
+        accountUserId,
+        earnedAchievementIds,
+        local,
+        [],
+      )
         .then((synced) => {
-          if (accountUserIdRef.current === accountUserId && synced)
-            setAchievementCelebrations(synced.pending);
+          if (accountUserIdRef.current === accountUserId && synced) {
+            setAchievementCelebrations(
+              confirmedPendingAchievementIds(
+                synced.pending,
+                earnedAchievementIds,
+              ),
+            );
+          }
         })
         .catch(() => undefined);
     };
@@ -1139,7 +1377,13 @@ export default function App() {
       window.removeEventListener("online", retry);
       document.removeEventListener("visibilitychange", retry);
     };
-  }, [accountUserId, achievementEvaluations, citiesLoadedUserId]);
+  }, [
+    accountUserId,
+    citiesLoadedUserId,
+    earnedAchievementIds,
+    tracking,
+    walkFinalizing,
+  ]);
 
   useEffect(() => {
     purgeLegacyDiscoveryCache();
@@ -1242,7 +1486,11 @@ export default function App() {
             typeof notifiedUserId === "string"
               ? notifiedUserId
               : accountUserIdRef.current;
-          if (!userId || !isAchievementUnlockPending(userId, achievementId))
+          if (
+            !userId ||
+            !earnedAchievementIdsRef.current.has(achievementId) ||
+            !isAchievementUnlockPending(userId, achievementId)
+          )
             return;
           setAchievementCelebrations((current) =>
             current.includes(achievementId)
@@ -1624,6 +1872,7 @@ export default function App() {
   useEffect(() => {
     const flushBackgroundLocations = () => {
       if (document.visibilityState !== "visible") return;
+      if (trackingStateRef.current === "tracking") setElapsedNow(Date.now());
       if (deferredLocationUiRef.current) {
         deferredLocationUiRef.current = false;
         flushDiscoveryUiRefresh();
@@ -1652,6 +1901,7 @@ export default function App() {
       const resumed = state.isActive && !wasActive;
       wasActive = state.isActive;
       if (!resumed) return;
+      if (trackingStateRef.current === "tracking") setElapsedNow(Date.now());
       centerOnNextPassivePointRef.current = true;
       const point = latestPassivePointRef.current ?? lastPointRef.current;
       if (point) {
@@ -2195,30 +2445,6 @@ export default function App() {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
       deferredLocationUiRef.current = true;
-      const walkOwner = trackingUserRef.current;
-      if (
-        walkOwner &&
-        nativeApp &&
-        !activeWalkRef.current?.isTest &&
-        !testRouteRunningRef.current &&
-        discoveryHistoryReadyRef.current &&
-        citiesLoadedUserIdRef.current === walkOwner &&
-        recordedPoint.recordedAt - lastBackgroundAchievementCheckRef.current >=
-          10_000
-      ) {
-        lastBackgroundAchievementCheckRef.current = recordedPoint.recordedAt;
-        const unlocks = reconcileDiscoveryAchievementUnlocks(
-          walkOwner,
-          pointsRef.current,
-          achievementCitiesRef.current,
-        );
-        unlocks.newlyEarned.forEach((achievementId) => {
-          void sendAchievementNotification(achievementId, walkOwner).catch(
-            (error) =>
-              console.warn("Could not show achievement notification", error),
-          );
-        });
-      }
     }
   };
 
@@ -2349,6 +2575,15 @@ export default function App() {
       saveWalkJournal(walkOwner, pendingWalksRef.current);
     }
     explorationStartRef.current = null;
+  };
+
+  const finalizeRecordedWalk = (): void => {
+    setWalkFinalizing(true);
+    void finishActiveWalk()
+      .catch((error) => {
+        console.error("Could not finalize recorded walk", { error });
+      })
+      .finally(() => setWalkFinalizing(false));
   };
 
   const runTestRoute = async (routeFile: string) => {
@@ -2638,14 +2873,16 @@ export default function App() {
       setTracking("idle");
       setPassiveLocationStatus("idle");
       void Promise.resolve(tracker?.stop()).catch(() => undefined);
-      void finishActiveWalk();
+      finalizeRecordedWalk();
       return;
     }
+    if (walkFinalizing) return;
     if (!accountUserId) {
       setSyncOpen(true);
       return;
     }
     if (discoveryLoading) return;
+    setJourneyMetricsPreviewActive(false);
     reminderRef.current.reset();
     resetInactivityReminder();
     setReminderPrompt(null);
@@ -2658,7 +2895,6 @@ export default function App() {
       focusFirstTrackingPointRef.current = true;
     }
     setPassiveLocationStatus("idle");
-    lastBackgroundAchievementCheckRef.current = 0;
     const foregroundTracker = foregroundTrackerRef.current;
     foregroundTrackerRef.current = null;
     void Promise.resolve(foregroundTracker?.stop()).catch(() => undefined);
@@ -2673,7 +2909,9 @@ export default function App() {
       points: startingPoints,
       discoveryDistance,
     };
-    activeWalkRef.current = { id: walkId, startedAt: Date.now(), points: [] };
+    const startedAt = Date.now();
+    activeWalkRef.current = { id: walkId, startedAt, points: [] };
+    setElapsedNow(startedAt);
     trackingUserRef.current = accountUserId;
     saveWalkJournal(accountUserId, pendingWalksRef.current, {
       ...activeWalkRef.current,
@@ -2693,7 +2931,7 @@ export default function App() {
         resetInactivityReminder();
         void Promise.resolve(tracker.stop()).catch(() => undefined);
         trackerRef.current = null;
-        void finishActiveWalk();
+        finalizeRecordedWalk();
         setPassiveLocationStatus(
           error.code === "permission-denied" ? "denied" : "idle",
         );
@@ -3425,6 +3663,20 @@ export default function App() {
           >
             San Francisco
           </button>
+          <strong>Journey counters</strong>
+          <small>
+            Animates distance, new area, and time without saving journey data.
+          </small>
+          <button
+            type="button"
+            onClick={() =>
+              setJourneyMetricsPreviewActive((current) => !current)
+            }
+          >
+            {journeyMetricsPreviewActive
+              ? "Stop counter preview"
+              : "Test counter animation"}
+          </button>
           <strong>Discovery reminder</strong>
           <small>
             {reminderEnabled
@@ -3733,7 +3985,7 @@ export default function App() {
       )}
 
 
-      {isCityScale && (
+      {(isCityScale || journeyMetricsPreviewActive) && (
         <section
           ref={journeyCardRef}
           className="journey-card"
@@ -3754,10 +4006,38 @@ export default function App() {
             <div className="journey-card__handle" aria-hidden="true">
               <span />
             </div>
-            <div className="journey-card__summary">
-              <div className="eyebrow">Your discovery</div>
+            <div
+              className={`journey-card__summary${showActiveJourneyMetrics ? " journey-card__summary--tracking" : ""}`}
+            >
+              <div className="eyebrow">
+                {showActiveJourneyMetrics ? "Exploring…" : "Your discovery"}
+              </div>
               <div className="discovery-metrics">
-                {showFirstDiscoveryHint ? (
+                {showActiveJourneyMetrics ? (
+                  <div
+                    className="active-journey-metrics"
+                    aria-label="Current walk progress"
+                  >
+                    <div>
+                      <JourneyCounterValue display={displayedDistanceCounter} />
+                      <span>this walk</span>
+                    </div>
+                    <div>
+                      {displayedPercentageCounter === null ? (
+                        <strong>—</strong>
+                      ) : (
+                        <JourneyCounterValue
+                          display={displayedPercentageCounter}
+                        />
+                      )}
+                      <span>new area</span>
+                    </div>
+                    <div>
+                      <JourneyCounterValue display={displayedTimeCounter} />
+                      <span>time</span>
+                    </div>
+                  </div>
+                ) : showFirstDiscoveryHint ? (
                   <div className="first-discovery-hint" role="status">
                     <strong>Ready to explore?</strong>
                     <span>Tap play and start walking.</span>
@@ -3791,13 +4071,18 @@ export default function App() {
               onClick={toggleTracking}
               onPointerDown={(event) => event.stopPropagation()}
               disabled={
-                !authReady || discoveryLoading || tracking === "requesting"
+                !authReady ||
+                discoveryLoading ||
+                tracking === "requesting" ||
+                walkFinalizing
               }
               aria-label={
                 !accountUserId
                   ? "Sign in to start discovering"
                   : tracking === "tracking"
                     ? "Stop discovering"
+                    : walkFinalizing
+                      ? "Finishing your discovery"
                     : tracking === "requesting"
                       ? "Finding your location"
                       : "Start discovering"
@@ -3807,12 +4092,14 @@ export default function App() {
                   ? "Sign in to discover"
                   : tracking === "tracking"
                     ? "Stop discovering"
-                    : "Start discovering"
+                    : walkFinalizing
+                      ? "Finishing your discovery"
+                      : "Start discovering"
               }
             >
               {tracking === "tracking" ? (
                 <span className="stop-square" />
-              ) : tracking === "requesting" ? (
+              ) : tracking === "requesting" || walkFinalizing ? (
                 <span className="control-spinner" />
               ) : (
                 <span className="play-triangle" />

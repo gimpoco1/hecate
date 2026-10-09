@@ -1,8 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   discoveryProgressCacheKey,
+  journeyPercentageCounter,
+  journeyTimeCounter,
   loadCachedDiscoveryProgress,
 } from "./App";
+
+describe("journey counters", () => {
+  it("shows completed elapsed minutes from the original walk start", () => {
+    expect(journeyTimeCounter(4 * 60_000 + 32_000)).toMatchObject({
+      value: 4,
+      suffix: " min",
+      label: "4 minutes",
+    });
+  });
+
+  it("keeps new-area progress at two decimal places", () => {
+    expect(journeyPercentageCounter(0.08)).toEqual({
+      value: 0.08,
+      places: [1, ".", 0.1, 0.01],
+      prefix: "+",
+      suffix: "%",
+      label: "Plus 0.08 percent new area",
+    });
+  });
+});
 
 describe("discovery progress cache", () => {
   beforeEach(() => {

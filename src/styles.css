@@ -664,6 +664,52 @@ button {
   gap: 15px;
   margin-top: 3px;
 }
+.journey-card__summary--tracking > .eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+.active-journey-metrics {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.active-journey-metrics > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 0 12px;
+  border-left: 1px solid rgba(34, 65, 53, 0.12);
+}
+.active-journey-metrics > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.active-journey-metrics strong {
+  overflow: hidden;
+  color: var(--forest);
+  font: 700 16px/1 "Manrope", sans-serif;
+  letter-spacing: -0.45px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.active-journey-value {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+.active-journey-value > span {
+  line-height: 1;
+  white-space: pre;
+}
+.active-journey-metrics > div > span {
+  overflow: hidden;
+  color: #75817b;
+  font-size: 9px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .distance {
   margin-top: 3px;
   font:
@@ -3297,6 +3343,13 @@ button {
   }
   .discovery-metrics {
     gap: 9px;
+  }
+  .active-journey-metrics > div {
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+  .active-journey-metrics strong {
+    font-size: 14px;
   }
   .city-progress > span:not(.city-progress__info) {
     max-width: 78px;

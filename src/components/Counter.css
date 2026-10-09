@@ -1,0 +1,35 @@
+.counter-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.counter-counter {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.counter-digit {
+  position: relative;
+  width: 1ch;
+  flex: 0 0 1ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter-digit--decimal {
+  width: auto;
+  flex-basis: auto;
+}
+
+.counter-number {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}

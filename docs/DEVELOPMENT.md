@@ -38,7 +38,7 @@ Personal achievements are recomputed from synchronized route history with the sa
 
 The achievement catalog deliberately mixes approachable and long-term goals. Current thresholds are: 8 km of new ground in one walk; a 5 km walk that is at least 80% new; a 5 km loop with 2 km new ground; 500 m on three consecutive days; 500 m on seven days within two weeks; 500 m in one city on ten days; 2 km in five cities; and an 8 km walk with 3 km new ground that remains at least 50% familiar.
 
-The first complete history load establishes an achievement baseline. Later unlocks and acknowledgement timestamps are synchronized through the private `user_achievement_unlocks` table installed by `scripts/install-private-achievement-unlocks.sql`. Local storage remains an offline cache so background unlocks and dismissals respond immediately, while Supabase is authoritative across devices and reinstalls. Native local notifications are emitted only for genuinely new unlocks.
+The first complete history load establishes an achievement baseline. Later unlocks and acknowledgement timestamps are synchronized through the private `user_achievement_unlocks` table installed by `scripts/install-private-achievement-unlocks.sql`. The complete local achievement evaluation remains authoritative for which achievements are earned; local storage and Supabase only coordinate pending celebrations and acknowledgement across devices. Native local notifications are emitted only for genuinely new unlocks.
 
 Completed walks retain every accepted route sample in PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 

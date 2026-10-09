@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  confirmedPendingAchievementIds,
   dismissAchievementUnlock,
   isAchievementUnlockPending,
+  loadAchievementUnlocks,
   reconcileAchievementUnlocks,
+  syncAchievementUnlocks,
 } from "./achievementUnlocks";
 
 const values = new Map<string, string>();
@@ -19,6 +22,48 @@ beforeEach(() => {
 });
 
 describe("achievement unlock delivery", () => {
+  it("excludes pending celebrations that are not currently earned", () => {
+    expect(
+      confirmedPendingAchievementIds(
+        ["the-long-way", "momentum", "city-hopper"],
+        ["momentum"],
+      ),
+    ).toEqual(["momentum"]);
+  });
+
+  it("removes unconfirmed pending celebrations from local state", async () => {
+    reconcileAchievementUnlocks("user-1", []);
+    reconcileAchievementUnlocks("user-1", [
+      "the-long-way",
+      "momentum",
+      "city-hopper",
+    ]);
+    const local = await syncAchievementUnlocks(
+      "user-1",
+      ["momentum"],
+      null,
+      [],
+    );
+
+    expect(local?.pending).toEqual(["momentum"]);
+    expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(false);
+    expect(isAchievementUnlockPending("user-1", "city-hopper")).toBe(false);
+    expect(loadAchievementUnlocks("user-1")?.earned).toEqual(["momentum"]);
+  });
+
+  it("replaces stale earned IDs even when the count is unchanged", async () => {
+    reconcileAchievementUnlocks("user-1", ["the-long-way"]);
+
+    await syncAchievementUnlocks(
+      "user-1",
+      ["momentum"],
+      loadAchievementUnlocks("user-1"),
+      [],
+    );
+
+    expect(loadAchievementUnlocks("user-1")?.earned).toEqual(["momentum"]);
+  });
+
   it("uses existing achievements as the initial baseline", () => {
     expect(reconcileAchievementUnlocks("user-1", ["the-long-way"])).toEqual({
       newlyEarned: [],
@@ -71,7 +116,7 @@ describe("achievement unlock delivery", () => {
     ).toEqual({ newlyEarned: [], pending: [] });
   });
 
-  it("never requeues an acknowledged unlock after an incomplete refresh", () => {
+  it("removes an unlock that is absent from the complete evaluation", () => {
     reconcileAchievementUnlocks("user-1", []);
     reconcileAchievementUnlocks("user-1", ["the-long-way"]);
     dismissAchievementUnlock("user-1", "the-long-way");
@@ -80,21 +125,22 @@ describe("achievement unlock delivery", () => {
       newlyEarned: [],
       pending: [],
     });
-    expect(reconcileAchievementUnlocks("user-1", ["the-long-way"])).toEqual({
-      newlyEarned: [],
-      pending: [],
-    });
     expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(false);
+    expect(reconcileAchievementUnlocks("user-1", ["the-long-way"])).toEqual({
+      newlyEarned: ["the-long-way"],
+      pending: ["the-long-way"],
+    });
+    expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(true);
   });
 
-  it("keeps an unacknowledged unlock pending through incomplete refreshes", () => {
+  it("removes an unconfirmed unlock from the complete evaluation", () => {
     reconcileAchievementUnlocks("user-1", []);
     reconcileAchievementUnlocks("user-1", ["momentum"]);
 
     expect(reconcileAchievementUnlocks("user-1", [])).toEqual({
       newlyEarned: [],
-      pending: ["momentum"],
+      pending: [],
     });
-    expect(isAchievementUnlockPending("user-1", "momentum")).toBe(true);
+    expect(isAchievementUnlockPending("user-1", "momentum")).toBe(false);
   });
 });
