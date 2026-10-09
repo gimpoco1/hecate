@@ -921,8 +921,13 @@ button {
 .discovered-cities > ul > li {
   border-bottom: 1px solid rgba(34, 65, 53, 0.09);
 }
-.discovered-cities > ul > li > button {
-  width: 100%;
+.discovered-cities__row {
+  display: flex;
+  align-items: stretch;
+}
+.discovered-cities__row > button:first-child {
+  min-width: 0;
+  flex: 1;
   min-height: 50px;
   display: flex;
   align-items: center;
@@ -934,6 +939,21 @@ button {
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+}
+.discovered-cities__subdivision-toggle {
+  width: 38px;
+  flex: 0 0 38px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #748078;
+  cursor: pointer;
+}
+.discovered-cities__subdivision-toggle svg {
+  transition: transform 180ms ease;
+}
+.discovered-cities__subdivision-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
 }
 .discovered-cities__identity {
   min-width: 0;
@@ -952,10 +972,10 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.discovered-cities > ul > li > button:active {
+.discovered-cities__row > button:active {
   opacity: 0.65;
 }
-.discovered-cities > ul > li strong {
+.discovered-cities__row strong {
   color: #78903b;
   font:
     700 16px/1 "Manrope",
@@ -978,6 +998,67 @@ button {
   color: #748078;
   font-size: 13px;
   text-align: center;
+}
+.city-subdivisions {
+  margin: 0 0 12px;
+  padding: 4px 10px 10px;
+  border-radius: 14px;
+  background: rgba(239, 241, 228, 0.68);
+}
+.city-subdivisions section + section {
+  margin-top: 14px;
+}
+.city-subdivisions__heading {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 2px 7px;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 700;
+}
+.city-subdivisions__heading small {
+  color: #78903b;
+  font-size: 12px;
+}
+.city-subdivisions > section > ul > li {
+  border-top: 1px solid rgba(34, 65, 53, 0.08);
+}
+.city-subdivisions__district {
+  width: 100%;
+  min-height: 47px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 7px 0;
+  background: transparent;
+  color: #40544a;
+  text-align: left;
+}
+.city-subdivisions__district > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.city-subdivisions__district strong {
+  color: #78903b;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.city-subdivisions__empty,
+.city-subdivisions__error {
+  margin: 0 0 12px !important;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(239, 241, 228, 0.68);
+  font-size: 11px !important;
+  text-align: left !important;
+}
+.city-subdivisions__error {
+  color: #8f4d3d !important;
 }
 .personal-achievements {
   margin-top: 24px;
