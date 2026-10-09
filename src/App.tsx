@@ -272,40 +272,43 @@ type CachedDiscoveryProgress = Omit<
 
 const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v1";
 
-function discoveryProgressCacheKey(userId: string): string {
+export function discoveryProgressCacheKey(userId: string): string {
   return `${DISCOVERY_PROGRESS_CACHE_PREFIX}:${userId}`;
 }
 
-function loadCachedDiscoveryProgress(
+export function loadCachedDiscoveryProgress(
   userId: string,
 ): Omit<DiscoveryProgressResponse, "kind" | "generation"> | null {
-  const raw = localStorage.getItem(discoveryProgressCacheKey(userId));
-  if (!raw) return null;
-  const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== "object")
-    throw new TypeError("Cached discovery progress must be an object.");
-  const cached = value as Partial<CachedDiscoveryProgress>;
-  if (
-    cached.version !== 1 ||
-    cached.userId !== userId ||
-    typeof cached.discoveryDistance !== "number" ||
-    !Number.isFinite(cached.discoveryDistance) ||
-    !Array.isArray(cached.cityMetrics) ||
-    !cached.cityMetrics.every(
-      (metric) =>
-        metric &&
-        typeof metric.cityId === "string" &&
-        typeof metric.percentage === "number" &&
-        Number.isFinite(metric.percentage) &&
-        typeof metric.distance === "number" &&
-        Number.isFinite(metric.distance),
+  try {
+    const raw = localStorage.getItem(discoveryProgressCacheKey(userId));
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object") return null;
+    const cached = value as Partial<CachedDiscoveryProgress>;
+    if (
+      cached.version !== 1 ||
+      cached.userId !== userId ||
+      typeof cached.discoveryDistance !== "number" ||
+      !Number.isFinite(cached.discoveryDistance) ||
+      !Array.isArray(cached.cityMetrics) ||
+      !cached.cityMetrics.every(
+        (metric) =>
+          metric &&
+          typeof metric.cityId === "string" &&
+          typeof metric.percentage === "number" &&
+          Number.isFinite(metric.percentage) &&
+          typeof metric.distance === "number" &&
+          Number.isFinite(metric.distance),
+      )
     )
-  )
-    throw new TypeError("Cached discovery progress has an invalid shape.");
-  return {
-    discoveryDistance: cached.discoveryDistance,
-    cityMetrics: cached.cityMetrics,
-  };
+      return null;
+    return {
+      discoveryDistance: cached.discoveryDistance,
+      cityMetrics: cached.cityMetrics,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function saveCachedDiscoveryProgress(
