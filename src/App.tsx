@@ -43,6 +43,8 @@ import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
 import { SyncSheet } from "./components/SyncSheet";
 import {
+  BoundaryIcon,
+  ChevronIcon,
   HecateMark,
   InfoIcon,
   LocateIcon,
@@ -52,6 +54,14 @@ import {
   UserIcon,
   XIcon,
 } from "./components/Icons";
+import {
+  hasSubdivisionPackage,
+  loadSubdivisionPackage,
+  type SubdivisionArea,
+  type SubdivisionPackage,
+  type SubdivisionProgress,
+} from "./subdivisions";
+import type { SubdivisionProgressResponse } from "./subdivisionProgress.worker";
 import {
   discoveredDistanceKm,
   discoveryCellCenter,
@@ -259,8 +269,87 @@ type JourneyDetailsProps = {
   cityProgresses: CityProgress[];
   totalCityDistance: number;
   achievementEvaluations: AchievementEvaluation[];
+  subdivisionProgressByRegion: ReadonlyMap<string, SubdivisionProgress[]>;
+  subdivisionErrors: ReadonlyMap<string, string>;
+  onSubdivisionBoundaryChange: (
+    areas: SubdivisionArea[],
+    selectedAreaId: string | null,
+  ) => void;
   onCitySelect: (city: CityBoundary) => void;
 };
+
+type CitySubdivisionDetailsProps = {
+  progresses: SubdivisionProgress[] | null;
+  error: string | null;
+};
+
+const CitySubdivisionDetails = memo(function CitySubdivisionDetails({
+  progresses,
+  error,
+}: CitySubdivisionDetailsProps) {
+  if (error)
+    return <p className="city-subdivisions__error">{error}</p>;
+  if (!progresses)
+    return (
+      <p className="city-subdivisions__empty">
+        Calculating district progress…
+      </p>
+    );
+
+  const municipalities = progresses.filter(
+    ({ area, percentage, distance }) =>
+      area.kind === "municipality" && (percentage > 0 || distance > 0),
+  );
+  if (!municipalities.length)
+    return (
+      <p className="city-subdivisions__empty">
+        No discovered districts in this region yet.
+      </p>
+    );
+
+  return (
+    <div className="city-subdivisions">
+      {municipalities.map((municipality) => {
+        const districts = progresses
+          .filter(
+            ({ area }) =>
+              area.kind === "district" &&
+              area.parentId === municipality.area.id,
+          )
+          .sort(
+            (a, b) =>
+              b.percentage - a.percentage ||
+              a.area.name.localeCompare(b.area.name),
+          );
+        if (!districts.length) return null;
+        return (
+          <section key={municipality.area.id}>
+            <div className="city-subdivisions__heading">
+              <span>{municipality.area.name}</span>
+              <small>
+                {formatDiscoveryPercentage(municipality.percentage, false)}
+              </small>
+            </div>
+            <ul>
+              {districts.map((district) => {
+                return (
+                  <li key={district.area.id}>
+                    <div className="city-subdivisions__district">
+                      <span>{district.area.name}</span>
+                      <strong>
+                        {formatDiscoveryPercentage(district.percentage, false)}
+                      </strong>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+});
 
 const JourneyDetails = memo(function JourneyDetails({
   accountUserId,
@@ -269,11 +358,16 @@ const JourneyDetails = memo(function JourneyDetails({
   cityProgresses,
   totalCityDistance,
   achievementEvaluations,
+  subdivisionProgressByRegion,
+  subdivisionErrors,
+  onSubdivisionBoundaryChange,
   onCitySelect,
 }: JourneyDetailsProps) {
   const earnedAchievementCount = achievementEvaluations.filter(
     ({ earned }) => earned,
   ).length;
+  const [expandedSubdivisionRegionId, setExpandedSubdivisionRegionId] =
+    useState<string | null>(null);
 
   return (
     <div
@@ -295,24 +389,54 @@ const JourneyDetails = memo(function JourneyDetails({
             {cityProgresses.map(({ city, percentage, distance }) => {
               const earned = earnedCityMilestones(city.id, city.name, distance);
               const next = cityMilestoneProgress(distance).next;
+              const subdivisionProgresses =
+                subdivisionProgressByRegion.get(city.id);
+              const subdivisionError = subdivisionErrors.get(city.id) ?? null;
+              const subdivisionsAvailable = hasSubdivisionPackage(city.id);
+              const subdivisionsExpanded =
+                expandedSubdivisionRegionId === city.id;
               return (
                 <li key={city.id}>
-                  <button type="button" onClick={() => onCitySelect(city)}>
-                    <span className="discovered-cities__identity">
-                      <span>{city.name}</span>
-                      <small>
-                        {next
-                          ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
-                          : `${earned.at(-1)?.title} · all 3 stars earned`}
-                      </small>
-                    </span>
-                    <span className="discovered-cities__metrics">
-                      <CityLevelStars level={earned.length} />
-                      <strong>
-                        {formatDiscoveryPercentage(percentage, false)}
-                      </strong>
-                    </span>
-                  </button>
+                  <div className="discovered-cities__row">
+                    <button type="button" onClick={() => onCitySelect(city)}>
+                      <span className="discovered-cities__identity">
+                        <span>{city.name}</span>
+                        <small>
+                          {next
+                            ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
+                            : `${earned.at(-1)?.title} · all 3 stars earned`}
+                        </small>
+                      </span>
+                      <span className="discovered-cities__metrics">
+                        <CityLevelStars level={earned.length} />
+                        <strong>
+                          {formatDiscoveryPercentage(percentage, false)}
+                        </strong>
+                      </span>
+                    </button>
+                    {(subdivisionsAvailable || subdivisionError) && (
+                      <button
+                        type="button"
+                        className="discovered-cities__subdivision-toggle"
+                        aria-label={`${subdivisionsExpanded ? "Hide" : "Show"} districts in ${city.name}`}
+                        aria-expanded={subdivisionsExpanded}
+                        onClick={() => {
+                          onSubdivisionBoundaryChange([], null);
+                          setExpandedSubdivisionRegionId(
+                            subdivisionsExpanded ? null : city.id,
+                          );
+                        }}
+                      >
+                        <ChevronIcon size={17} strokeWidth={2} />
+                      </button>
+                    )}
+                  </div>
+                  {subdivisionsExpanded && (
+                    <CitySubdivisionDetails
+                      progresses={subdivisionProgresses ?? null}
+                      error={subdivisionError}
+                    />
+                  )}
                 </li>
               );
             })}
@@ -446,6 +570,29 @@ export default function App() {
   const [viewedCity, setViewedCity] = useState<CityBoundary | null>(null);
   const [viewCityLoading, setViewCityLoading] = useState(false);
   const [discoveredCities, setDiscoveredCities] = useState<CityBoundary[]>([]);
+  const [subdivisionPackages, setSubdivisionPackages] = useState<
+    Map<string, SubdivisionPackage>
+  >(new Map());
+  const [subdivisionErrors, setSubdivisionErrors] = useState<
+    Map<string, string>
+  >(new Map());
+  const [subdivisionProgressByRegion, setSubdivisionProgressByRegion] =
+    useState<Map<string, SubdivisionProgress[]>>(new Map());
+  const [subdivisionOverlay, setSubdivisionOverlay] = useState<{
+    regionId: string | null;
+    areas: SubdivisionArea[];
+    progresses: SubdivisionProgress[];
+    selectedAreaId: string | null;
+    visible: boolean;
+  }>({
+    regionId: null,
+    areas: [],
+    progresses: [],
+    selectedAreaId: null,
+    visible: false,
+  });
+  const requestedSubdivisionRegionIdsRef = useRef(new Set<string>());
+  const subdivisionProgressRequestIdRef = useRef(0);
   const [citiesLoadedUserId, setCitiesLoadedUserId] = useState<string | null>(
     null,
   );
@@ -833,6 +980,95 @@ export default function App() {
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
   }, [cityBoundary, discoveredCities, cells, points]);
+  const cityProgressRegionIds = cityProgresses
+    .map(({ city }) => city.id)
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    for (const regionId of cityProgressRegionIds.split("\n").filter(Boolean)) {
+      if (requestedSubdivisionRegionIdsRef.current.has(regionId)) continue;
+      requestedSubdivisionRegionIdsRef.current.add(regionId);
+      void loadSubdivisionPackage(regionId)
+        .then((data) => {
+          if (!data) return;
+          setSubdivisionPackages((current) => {
+            const next = new Map(current);
+            next.set(regionId, data);
+            return next;
+          });
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          setSubdivisionErrors((current) => {
+            const next = new Map(current);
+            next.set(
+              regionId,
+              `District data could not be loaded: ${message}`,
+            );
+            return next;
+          });
+        });
+    }
+  }, [cityProgressRegionIds]);
+  useEffect(() => {
+    if (subdivisionPackages.size === 0) return;
+    const requestId = subdivisionProgressRequestIdRef.current + 1;
+    subdivisionProgressRequestIdRef.current = requestId;
+    const worker = new Worker(
+      new URL("./subdivisionProgress.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.addEventListener(
+      "message",
+      (event: MessageEvent<SubdivisionProgressResponse>) => {
+        const response = event.data;
+        if (response.requestId !== subdivisionProgressRequestIdRef.current)
+          return;
+        if (response.error !== null) {
+          setSubdivisionErrors((current) => {
+            const next = new Map(current);
+            next.set(
+              response.regionId,
+              `District progress could not be calculated: ${response.error}`,
+            );
+            return next;
+          });
+          return;
+        }
+        setSubdivisionProgressByRegion((current) => {
+          const next = new Map(current);
+          next.set(response.regionId, response.progresses);
+          return next;
+        });
+      },
+    );
+    worker.addEventListener("error", (event) => {
+      setSubdivisionErrors((current) => {
+        const next = new Map(current);
+        for (const regionId of subdivisionPackages.keys()) {
+          next.set(
+            regionId,
+            `District progress worker failed: ${event.message}`,
+          );
+        }
+        return next;
+      });
+    });
+    for (const [regionId, data] of subdivisionPackages) {
+      worker.postMessage({ requestId, regionId, data, cells });
+    }
+    return () => worker.terminate();
+  }, [cells, subdivisionPackages]);
+  const activeDistrictProgresses = useMemo(
+    () =>
+      summaryCity
+        ? (subdivisionProgressByRegion.get(summaryCity.id) ?? []).filter(
+            ({ area }) => area.kind === "district",
+          )
+        : [],
+    [subdivisionProgressByRegion, summaryCity],
+  );
   achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
   citiesLoadedUserIdRef.current = citiesLoadedUserId;
   testRouteRunningRef.current = testRouteRunning;
@@ -2727,6 +2963,13 @@ export default function App() {
   const focusDiscoveredCity = useCallback((city: CityBoundary) => {
     // Close even if an older account has no matching cell geometry to focus.
     settleJourneySheet(false);
+    setSubdivisionOverlay({
+      regionId: null,
+      areas: [],
+      progresses: [],
+      selectedAreaId: null,
+      visible: false,
+    });
     setViewedCity(city);
 
     const cityCells = cells.filter((cell) => {
@@ -2813,6 +3056,37 @@ export default function App() {
     );
   }, [cells, settleJourneySheet]);
 
+  const clearSubdivisionBoundaries = useCallback(
+    () =>
+      setSubdivisionOverlay({
+        regionId: null,
+        areas: [],
+        progresses: [],
+        selectedAreaId: null,
+        visible: false,
+      }),
+    [],
+  );
+
+  const toggleSubdivisionBoundary = useCallback(() => {
+    if (activeDistrictProgresses.length === 0)
+      throw new Error(
+        "Cannot show district boundaries before district progress is loaded",
+      );
+    const areas = activeDistrictProgresses.map(({ area }) => area);
+    setSubdivisionOverlay((current) => {
+      if (current.visible && current.regionId === summaryCity?.id)
+        return { ...current, visible: false };
+      return {
+        regionId: summaryCity?.id ?? null,
+        areas,
+        progresses: activeDistrictProgresses,
+        selectedAreaId: null,
+        visible: true,
+      };
+    });
+  }, [activeDistrictProgresses, summaryCity]);
+
   const toggleMapPerspective = () => {
     const map = mapRef.current;
     if (!map) return;
@@ -2849,6 +3123,9 @@ export default function App() {
       : "Location temporarily unavailable";
   const accountDataLoading =
     !authReady || Boolean(accountUserId && discoveryLoading);
+  const districtHeatMapVisible =
+    subdivisionOverlay.visible &&
+    subdivisionOverlay.regionId === summaryCity?.id;
   const showFirstDiscoveryHint = Boolean(
     accountUserId &&
       !discoveryLoading &&
@@ -3039,6 +3316,13 @@ export default function App() {
 
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
+    setSubdivisionOverlay({
+      regionId: null,
+      areas: [],
+      progresses: [],
+      selectedAreaId: null,
+      visible: false,
+    });
     if (journeyExpandedRef.current)
       settleJourneySheet(
         false,
@@ -3078,6 +3362,10 @@ export default function App() {
         onMapClick={handleMapClick}
         favoritePlaces={favoritePlaces}
         selectedFavoritePlaceId={selectedFavoritePlaceId}
+        subdivisionAreas={subdivisionOverlay.areas}
+        selectedSubdivisionAreaId={subdivisionOverlay.selectedAreaId}
+        subdivisionVisible={subdivisionOverlay.visible}
+        subdivisionProgresses={subdivisionOverlay.progresses}
         favoritePlacementActive={favoritePlacementActive}
         onFavoritePlaceRequest={handleFavoritePlaceRequest}
         onFavoriteSelect={openFavoritePlace}
@@ -3378,6 +3666,26 @@ export default function App() {
             <SaveIcon size={21} />
           </button>
         )}
+        {activeDistrictProgresses.length > 0 && (
+          <button
+            className={districtHeatMapVisible ? "active" : ""}
+            type="button"
+            onClick={toggleSubdivisionBoundary}
+            aria-label={
+              districtHeatMapVisible
+                ? "Hide district heat map"
+                : "Show district heat map"
+            }
+            aria-pressed={districtHeatMapVisible}
+            title={
+              districtHeatMapVisible
+                ? "Hide district heat map"
+                : "Show district heat map"
+            }
+          >
+            <BoundaryIcon size={22} />
+          </button>
+        )}
         <button
           className={`location-control${
             passiveLocationStatus === "requesting"
@@ -3555,6 +3863,9 @@ export default function App() {
             cityProgresses={cityProgresses}
             totalCityDistance={totalCityDistance}
             achievementEvaluations={achievementEvaluations}
+            subdivisionProgressByRegion={subdivisionProgressByRegion}
+            subdivisionErrors={subdivisionErrors}
+            onSubdivisionBoundaryChange={clearSubdivisionBoundaries}
             onCitySelect={focusDiscoveredCity}
           />
         </section>

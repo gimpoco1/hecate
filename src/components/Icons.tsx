@@ -15,6 +15,7 @@ export const UserIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size
 export const InfoIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
 export const StarIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg>
 export const SaveIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg>
+export const BoundaryIcon = ({ size }: Pick<IconProps, "size">) => <svg width={size} height={size} viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><rect x="12" y="10" width="2" height="4"/><rect x="18" y="18" width="4" height="2"/><polygon points="14 18 14 16 12 16 12 20 16 20 16 18 14 18"/><rect x="16" y="4" width="12" height="12"/><polygon points="17.885 29.997 11.819 26.142 4 27.989 4 4 14 4 14 8 12 8 12 6 6 6 6 25.461 12.181 24.001 18.115 27.773 22.818 26 26 26 26 20 24 20 24 18 28 18 28 28 23.182 28 17.885 29.997"/></svg>
 export const XIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m6 6 12 12M18 6 6 18"/></svg>
 export const ChevronIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m9 18 6-6-6-6"/></svg>
 

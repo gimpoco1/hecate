@@ -15,9 +15,18 @@ import {
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
+import {
+  subdivisionFeatureCollection,
+  type SubdivisionArea,
+  type SubdivisionProgress,
+} from "../subdivisions";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
+
+const SUBDIVISION_SOURCE_ID = "hecate-subdivisions";
+const SUBDIVISION_FILL_LAYER_ID = "hecate-subdivision-fill";
+const SUBDIVISION_LINE_LAYER_ID = "hecate-subdivision-line";
 
 type Props = {
   mode: MapMode;
@@ -35,6 +44,10 @@ type Props = {
   favoritePlacementActive?: boolean;
   favoritePlaces?: FavoritePlace[];
   selectedFavoritePlaceId?: string | null;
+  subdivisionAreas?: SubdivisionArea[];
+  selectedSubdivisionAreaId?: string | null;
+  subdivisionVisible?: boolean;
+  subdivisionProgresses?: SubdivisionProgress[];
   onZoomChange: (zoom: number) => void;
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void;
   onUserNavigation?: () => void;
@@ -149,6 +162,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   favoritePlacementActive = false,
   favoritePlaces = [],
   selectedFavoritePlaceId = null,
+  subdivisionAreas = [],
+  selectedSubdivisionAreaId = null,
+  subdivisionVisible = false,
+  subdivisionProgresses = [],
   onZoomChange,
   onViewChange,
   onUserNavigation,
@@ -180,13 +197,49 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     }),
     [points, cells],
   );
-  const stateRef = useRef({ mode, geometry });
+  const stateRef = useRef({
+    mode,
+    geometry,
+    subdivisionAreas,
+    selectedSubdivisionAreaId,
+    subdivisionVisible,
+    subdivisionProgresses,
+  });
 
   useEffect(() => {
-    stateRef.current = { mode, geometry };
+    stateRef.current = {
+      ...stateRef.current,
+      mode,
+      geometry,
+    };
     fogLayerRef.current?.setMode(mode);
     fogLayerRef.current?.setGeometry(geometry);
   }, [mode, geometry]);
+  useEffect(() => {
+    stateRef.current = {
+      ...stateRef.current,
+      subdivisionAreas,
+      selectedSubdivisionAreaId,
+      subdivisionVisible,
+      subdivisionProgresses,
+    };
+    const source = mapRef.current?.getSource(
+      SUBDIVISION_SOURCE_ID,
+    ) as maplibregl.GeoJSONSource | undefined;
+    source?.setData(
+      subdivisionFeatureCollection(
+        subdivisionVisible ? subdivisionAreas : [],
+        selectedSubdivisionAreaId,
+        subdivisionProgresses,
+      ),
+    );
+  }, [
+    mapRef,
+    selectedSubdivisionAreaId,
+    subdivisionAreas,
+    subdivisionProgresses,
+    subdivisionVisible,
+  ]);
   useEffect(() => {
     currentPointRef.current = currentPoint;
   }, [currentPoint]);
@@ -307,6 +360,46 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      map.addSource(SUBDIVISION_SOURCE_ID, {
+        type: "geojson",
+        data: subdivisionFeatureCollection(
+          stateRef.current.subdivisionVisible
+            ? stateRef.current.subdivisionAreas
+            : [],
+          stateRef.current.selectedSubdivisionAreaId,
+          stateRef.current.subdivisionProgresses,
+        ),
+        tolerance: 1.5,
+      });
+      map.addLayer({
+        id: SUBDIVISION_FILL_LAYER_ID,
+        type: "fill",
+        source: SUBDIVISION_SOURCE_ID,
+        paint: {
+          "fill-color": [
+            "interpolate",
+            ["linear"],
+            ["get", "intensity"],
+            0,
+            "#ebe7da",
+            0.5,
+            "#d9f26a",
+            1,
+            "#3e8b68",
+          ],
+          "fill-opacity": 0.42,
+        },
+      });
+      map.addLayer({
+        id: SUBDIVISION_LINE_LAYER_ID,
+        type: "line",
+        source: SUBDIVISION_SOURCE_ID,
+        paint: {
+          "line-color": "#40544a",
+          "line-opacity": 0.8,
+          "line-width": 1.5,
+        },
+      });
       const point = currentPointRef.current;
       if (point && !markerRef.current) {
         const element = createUserMarkerElement(locationStateRef.current);
