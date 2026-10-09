@@ -23,6 +23,7 @@ type Props = {
   mode: MapMode;
   points: Coordinate[];
   cells: DiscoveryCell[];
+  highlightedPoints: Coordinate[];
   currentPoint?: Coordinate;
   locationState?: "idle" | "located" | "tracking";
   onMapClick?: () => void;
@@ -141,6 +142,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   mode,
   points,
   cells,
+  highlightedPoints,
   currentPoint,
   locationState = "idle",
   onMapClick,
@@ -167,6 +169,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onFavoritePlaceRequestRef = useRef(onFavoritePlaceRequest);
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
+  const highlightedPointsRef = useRef(highlightedPoints);
   const onViewChangeRef = useRef(onViewChange);
   const onUserNavigationRef = useRef(onUserNavigation);
   const compassHeadingRef = useRef<number | undefined>(undefined);
@@ -202,6 +205,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   useEffect(() => {
     favoritePlacementActiveRef.current = favoritePlacementActive;
   }, [favoritePlacementActive]);
+  useEffect(() => {
+    highlightedPointsRef.current = highlightedPoints;
+    const map = mapRef.current;
+    const fogLayer = fogLayerRef.current;
+    if (map && fogLayer)
+      syncHighlightedRoute(map, highlightedPoints, fogLayer.id);
+  }, [highlightedPoints, mapRef]);
   useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
@@ -297,7 +307,6 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     map.on("error", (event) =>
       console.error("Map rendering error", event.error),
     );
-
     map.on("style.load", () => {
       map.setProjection({ type: "globe" });
       const fogLayer = new DiscoveryFogLayer(
@@ -307,6 +316,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      if (highlightedPointsRef.current.length > 0) {
+        syncHighlightedRoute(
+          map,
+          highlightedPointsRef.current,
+          fogLayer.id,
+        );
+      }
       const point = currentPointRef.current;
       if (point && !markerRef.current) {
         const element = createUserMarkerElement(locationStateRef.current);
@@ -443,3 +459,84 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     </div>
   );
 });
+
+function highlightedRouteData(points: Coordinate[]) {
+  return {
+    type: "Feature" as const,
+    properties: {},
+    geometry: {
+      type: "MultiLineString" as const,
+      coordinates: splitRoute(points)
+        .filter((segment) => segment.length >= 2)
+        .map((segment) => {
+          const interval = Math.max(1, Math.ceil(segment.length / 2_000));
+          const sampled = segment.filter(
+            (_point, index) =>
+              index === 0 ||
+              index === segment.length - 1 ||
+              index % interval === 0,
+          );
+          return sampled.map((point) => [point.lng, point.lat]);
+        }),
+    },
+  };
+}
+
+function syncHighlightedRoute(
+  map: MapLibreMap,
+  points: Coordinate[],
+  beforeLayerId: string,
+): void {
+  const sourceId = "hecate-highlighted-route";
+  const haloLayerId = "hecate-highlighted-route-halo";
+  const lineLayerId = "hecate-highlighted-route-line";
+  const source = map.getSource(sourceId) as
+    | maplibregl.GeoJSONSource
+    | undefined;
+
+  if (points.length === 0) {
+    if (map.getLayer(lineLayerId)) map.removeLayer(lineLayerId);
+    if (map.getLayer(haloLayerId)) map.removeLayer(haloLayerId);
+    if (source) map.removeSource(sourceId);
+    return;
+  }
+  if (source) {
+    source.setData(highlightedRouteData(points));
+    return;
+  }
+  if (!map.getLayer(beforeLayerId)) return;
+
+  map.addSource(sourceId, {
+    type: "geojson",
+    data: highlightedRouteData(points),
+  });
+  map.addLayer(
+    {
+      id: haloLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "rgba(255, 255, 255, 0.94)",
+        "line-width": 9,
+        "line-opacity": 0.9,
+        "line-blur": 1.5,
+      },
+      layout: { "line-cap": "round", "line-join": "round" },
+    },
+    beforeLayerId,
+  );
+  map.addLayer(
+    {
+      id: lineLayerId,
+      type: "line",
+      source: sourceId,
+      paint: {
+        "line-color": "#91b23c",
+        "line-width": 5,
+        "line-opacity": 1,
+      },
+      layout: { "line-cap": "round", "line-join": "round" },
+    },
+    beforeLayerId,
+  );
+}

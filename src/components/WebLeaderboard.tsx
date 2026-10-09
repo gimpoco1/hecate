@@ -204,6 +204,7 @@ type AccountPanelProps = {
   publishedCityIds: string[];
   onClose: () => void;
   onPublished: () => Promise<void>;
+  onPublishSuccess: (message: string) => void;
 };
 
 function LeaderboardAccountPanel({
@@ -216,6 +217,7 @@ function LeaderboardAccountPanel({
   publishedCityIds,
   onClose,
   onPublished,
+  onPublishSuccess,
 }: AccountPanelProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -237,7 +239,7 @@ function LeaderboardAccountPanel({
   useEffect(() => {
     if (!open) {
       snapshotRequestGuard.current.invalidate();
-      setSnapshot(null);
+      setLoadingSnapshot(false);
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
       return;
@@ -255,13 +257,9 @@ function LeaderboardAccountPanel({
   useEffect(() => {
     if (!open || !user) return;
     const refreshSnapshot = () => {
-      if (
-        snapshot?.calculationVersion === LEADERBOARD_CALCULATION_VERSION &&
-        !autoUpdatesEnabled
-      ) {
-        return;
-      }
-      setLoadingSnapshot(true);
+      setLoadingSnapshot(
+        snapshot?.calculationVersion !== LEADERBOARD_CALCULATION_VERSION,
+      );
       setMessage("");
       const isCurrentRequest = snapshotRequestGuard.current.begin();
       void buildLeaderboardSnapshot(user.id)
@@ -280,15 +278,12 @@ function LeaderboardAccountPanel({
         });
     };
 
-    if (
-      snapshot?.calculationVersion !== LEADERBOARD_CALCULATION_VERSION ||
-      autoUpdatesEnabled
-    ) {
+    if (snapshot?.calculationVersion !== LEADERBOARD_CALCULATION_VERSION) {
       refreshSnapshot();
     }
 
     return () => snapshotRequestGuard.current.invalidate();
-  }, [autoUpdatesEnabled, open, snapshot?.calculationVersion, user]);
+  }, [open, snapshot?.calculationVersion, user]);
 
   useEffect(() => {
     if (!open || !snapshot || citySelectionDirty.current) return;
@@ -371,7 +366,7 @@ function LeaderboardAccountPanel({
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
       setError(false);
-      setMessage(
+      onPublishSuccess(
         entryId
           ? "Your public ranking is up to date."
           : "You are now on the leaderboard.",
@@ -731,6 +726,7 @@ export function WebLeaderboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [panelOpen, setPanelOpen] = useState(false);
+  const [rankingToast, setRankingToast] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [myProfile, setMyProfile] = useState<LeaderboardProfile | null>(null);
   const [profileLoadedUserId, setProfileLoadedUserId] = useState<string | null>(
@@ -844,6 +840,12 @@ export function WebLeaderboard() {
   }, []);
 
   useEffect(() => {
+    if (!rankingToast) return;
+    const timer = window.setTimeout(() => setRankingToast(""), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [rankingToast]);
+
+  useEffect(() => {
     if (!supabase) return;
     let active = true;
     void supabase.auth.getSession().then(({ data }) => {
@@ -906,6 +908,18 @@ export function WebLeaderboard() {
 
   return (
     <main className="leaderboard-page">
+      {rankingToast && (
+        <div
+          className="account-toast account-toast--success"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="account-toast__mark" aria-hidden="true">
+            ✓
+          </span>
+          <span className="account-toast__message">{rankingToast}</span>
+        </div>
+      )}
       <TopographyBackground />
       <header className="leaderboard-header">
         <a
@@ -1259,6 +1273,10 @@ export function WebLeaderboard() {
         publishedCityIds={myEntry?.cities.map((city) => city.cityId) ?? []}
         onClose={() => setPanelOpen(false)}
         onPublished={refreshMine}
+        onPublishSuccess={(message) => {
+          setPanelOpen(false);
+          setRankingToast(message);
+        }}
       />
       <ExplorerProfilePanel
         entry={focusedEntry}

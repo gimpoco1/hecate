@@ -5,6 +5,7 @@ export type Coordinate = {
   accuracy?: number
   heading?: number
   walkId?: string
+  achievementEligible?: boolean
 }
 
 export type DiscoveryCell = {
@@ -19,6 +20,7 @@ export type PendingWalk = {
   startedAt: number
   finishedAt: number
   points: Coordinate[]
+  achievementEligible?: boolean
 }
 
 export type MapMode = 'discover' | 'map'

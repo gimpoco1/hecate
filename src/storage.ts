@@ -132,6 +132,7 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
     p_finished_at: new Date(walk.finishedAt).toISOString(),
     p_coordinates: walk.points.map(point => [point.lng, point.lat]),
     p_point_count: walk.points.length,
+    p_achievement_eligible: walk.achievementEligible !== false,
   })
   if (error) throw error
 }
@@ -174,6 +175,7 @@ async function loadRemoteWalkPoints(): Promise<Coordinate[]> {
         lat: Number(coordinate[1]),
         recordedAt: startedAt + (finishedAt - startedAt) * progress,
         walkId: row.walk_id,
+        achievementEligible: row.achievement_eligible !== false,
       }]
     })
   })

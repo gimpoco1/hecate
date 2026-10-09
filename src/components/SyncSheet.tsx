@@ -26,6 +26,7 @@ import { hostedLeaderboardUrl, publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
 import { ChevronIcon, InfoIcon, SaveIcon, XIcon } from "./Icons";
+import type { Coordinate } from "../types";
 
 type Props = {
   open: boolean;
@@ -42,10 +43,18 @@ type Props = {
   favoritePlaces: FavoritePlace[];
   onFavoriteSelect: (favorite: FavoritePlace) => void;
   onReminderChange: (enabled: boolean) => Promise<string | null>;
+  onGpxImport: (file: File) => Promise<GpxImportResult>;
+  onShowGpxImport: (points: Coordinate[]) => void;
 };
 type SignInMethod = "password" | "link";
 type PasswordIntent = "signin" | "signup";
 type MessageTone = "success" | "error";
+type ToastTone = MessageTone | "info";
+export type GpxImportResult = {
+  message: string;
+  tone: Exclude<ToastTone, "error">;
+  points?: Coordinate[];
+};
 
 function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
   const vector = favoritePlaceIconVector(icon);
@@ -71,6 +80,8 @@ export function SyncSheet({
   favoritePlaces,
   onFavoriteSelect,
   onReminderChange,
+  onGpxImport,
+  onShowGpxImport,
 }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -86,6 +97,12 @@ export function SyncSheet({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [reminderPending, setReminderPending] = useState(false);
   const [reminderError, setReminderError] = useState("");
+  const [gpxImportPending, setGpxImportPending] = useState(false);
+  const [gpxToast, setGpxToast] = useState<{
+    message: string;
+    tone: ToastTone;
+    points?: Coordinate[];
+  } | null>(null);
   const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(
     isAutomaticUpdatesEnabled,
   );
@@ -114,6 +131,12 @@ export function SyncSheet({
     setConfirmPassword("");
     setMessage("");
   }, [initialAuthIntent, open]);
+
+  useEffect(() => {
+    if (!gpxToast) return;
+    const timer = window.setTimeout(() => setGpxToast(null), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [gpxToast]);
 
   useEffect(() => {
     if (!open) {
@@ -348,6 +371,35 @@ export function SyncSheet({
       style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
       onClick={onClose}
     >
+      {gpxToast && (
+        <div
+          className={`account-toast account-toast--${gpxToast.tone}`}
+          role={gpxToast.tone === "error" ? "alert" : "status"}
+          aria-live={gpxToast.tone === "error" ? "assertive" : "polite"}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span className="account-toast__mark" aria-hidden="true">
+            {gpxToast.tone === "success"
+              ? "✓"
+              : gpxToast.tone === "error"
+                ? "!"
+                : "i"}
+          </span>
+          <span className="account-toast__message">{gpxToast.message}</span>
+          {gpxToast.points && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onShowGpxImport(gpxToast.points!);
+                setGpxToast(null);
+              }}
+            >
+              Show me in the map
+            </button>
+          )}
+        </div>
+      )}
       <section
         className="sheet"
         onClick={(event) => event.stopPropagation()}
@@ -410,18 +462,14 @@ export function SyncSheet({
               </span>
               <span aria-hidden="true">Open</span>
             </button>
-            <details
-              className="account-favorites"
-            >
+            <details className="account-favorites">
               <summary className="account-favorites__heading">
                 <span className="account-favorites__identity">
                   <span className="account-favorites__mark" aria-hidden="true">
                     <SaveIcon size={17} strokeWidth={2} />
                   </span>
                   <span>
-                    <strong id="account-favorites-title">
-                      Saved places
-                    </strong>
+                    <strong id="account-favorites-title">Saved places</strong>
                     <small>
                       {favoriteGroups.length
                         ? `${favoriteGroups.length} ${favoriteGroups.length === 1 ? "collection" : "collections"}`
@@ -445,7 +493,9 @@ export function SyncSheet({
                     <button
                       key={group.id}
                       type="button"
-                      className={favoriteCategoryId === group.id ? "active" : ""}
+                      className={
+                        favoriteCategoryId === group.id ? "active" : ""
+                      }
                       aria-expanded={favoriteCategoryId === group.id}
                       onClick={() =>
                         setFavoriteCategoryId((current) =>
@@ -625,20 +675,86 @@ export function SyncSheet({
                   {reminderEnabled ? "On" : "Off"}
                 </button>
               </div>
+              <section
+                className="account-import-panel"
+                aria-labelledby="account-import-title"
+              >
+                <div className="account-import-panel__row">
+                  <div>
+                  <strong id="account-import-title">Import GPX</strong>
+                  <p>Add a past activity from Strava or another service.</p>
+                  </div>
+                  <label
+                    className={
+                      gpxImportPending
+                        ? "account-import account-import--pending"
+                        : "account-import"
+                    }
+                    htmlFor="gpx-file-input"
+                  >
+                    {gpxImportPending ? "Importing…" : "Choose file"}
+                    <input
+                      id="gpx-file-input"
+                      className="account-import-input"
+                      type="file"
+                      accept=".gpx,application/gpx+xml,application/xml,text/xml"
+                      disabled={gpxImportPending}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        event.currentTarget.value = "";
+                        if (!file) return;
+                        setGpxImportPending(true);
+                        setGpxToast(null);
+                        void onGpxImport(file)
+                          .then((result) => {
+                            setGpxToast(result);
+                          })
+                          .catch((error) => {
+                            setGpxToast({
+                              tone: "error",
+                              message:
+                                error instanceof Error
+                                  ? error.message
+                                  : "The GPX import failed for an unknown reason.",
+                            });
+                          })
+                          .finally(() => setGpxImportPending(false));
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="account-import-panel__note">
+                  Imported routes don’t unlock achievements. Progress from
+                  imports in other cities is not added to the leaderboard
+                  automatically; add those cities manually from your public
+                  snapshot.
+                </p>
+                <a
+                  className="account-import-help"
+                  href="https://www.youtube.com/watch?v=zpBD1PVCqhY"
+                target="_blank"
+                rel="noreferrer"
+              >
+                  <InfoIcon size={13} strokeWidth={2} />
+                  Exporting from Strava
+                </a>
+              </section>
               {Capacitor.getPlatform() === "ios" && (
                 <details className="tracking-help">
                   <summary>
                     <span>
                       <strong>Location & tracking</strong>
-                      <small>Permissions, background use, and the blue clock</small>
+                      <small>
+                        Permissions, background use, and the blue clock
+                      </small>
                     </span>
                     <ChevronIcon size={18} strokeWidth={2.4} />
                   </summary>
                   <div className="tracking-help__content">
                     <p>
-                      <strong>While Using:</strong> Hecate can check for new areas
-                      in the background, but iPhone may show a blue clock for
-                      Hecate.
+                      <strong>While Using:</strong> Hecate can check for new
+                      areas in the background, but iPhone may show a blue clock
+                      for Hecate.
                     </p>
                     <p>
                       <strong>Always:</strong> Hecate can send background
