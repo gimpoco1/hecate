@@ -1,4 +1,4 @@
-import { isPointInCity, type CityBoundary } from "./city";
+import { cityPointPredicate, type CityBoundary } from "./city";
 import {
   discoveryJourneyMetricsByRegion,
   distanceKm,
@@ -297,14 +297,31 @@ export function evaluateAchievementsFromJourneys(
 export function evaluatePersonalAchievements(
   points: Coordinate[],
   cities: CityBoundary[],
-  cityDistances: AchievementCityDistance[],
 ) {
+  const cityPredicates = cities.map((city) => ({
+    id: city.id,
+    containsPoint: cityPointPredicate(city),
+  }));
   const journeys = discoveryJourneyMetricsByRegion(
     points,
-    (point) => cities.find((city) => isPointInCity(point, city))?.id ?? null,
-  ).map((journey): JourneyWithCityDistances => ({
-    ...journey,
-    newGroundKmByRegion: journey.newGroundKmByRegion ?? {},
+    (point) =>
+      cityPredicates.find(({ containsPoint }) => containsPoint(point))?.id ??
+      null,
+  )
+    .map((journey): JourneyWithCityDistances => ({
+      ...journey,
+      newGroundKmByRegion: journey.newGroundKmByRegion ?? {},
+    }))
+    .filter((journey) =>
+      journey.points.some((point) => point.achievementEligible !== false),
+    );
+  const cityDistances = cities.map((city) => ({
+    cityId: city.id,
+    discoveredKm: journeys.reduce(
+      (total, journey) =>
+        total + (journey.newGroundKmByRegion[city.id] ?? 0),
+      0,
+    ),
   }));
   return evaluateAchievementsFromJourneys(journeys, cityDistances);
 }
@@ -312,9 +329,8 @@ export function evaluatePersonalAchievements(
 export function earnedPersonalAchievementIds(
   points: Coordinate[],
   cities: CityBoundary[],
-  cityDistances: AchievementCityDistance[],
 ) {
-  return evaluatePersonalAchievements(points, cities, cityDistances)
+  return evaluatePersonalAchievements(points, cities)
     .filter(({ earned }) => earned)
     .map(({ definition }) => definition.id);
 }

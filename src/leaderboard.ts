@@ -251,7 +251,7 @@ export function leaderboardSnapshotFromDiscovery(
     // complete discovery total remains 18.3 km.
     totalDiscoveredKm: discoveredDistanceKm(points),
     cities: citySnapshots,
-    achievements: earnedPersonalAchievementIds(points, cities, citySnapshots),
+    achievements: earnedPersonalAchievementIds(points, cities),
   }
 }
 

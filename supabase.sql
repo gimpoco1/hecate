@@ -12,9 +12,13 @@ create table if not exists public.walks (
   point_count integer not null check (point_count >= 2),
   distance_m double precision not null check (distance_m >= 0),
   route extensions.geometry(LineString, 4326) not null,
+  achievement_eligible boolean not null default true,
   created_at timestamptz not null default now(),
   check (finished_at >= started_at)
 );
+
+alter table public.walks
+  add column if not exists achievement_eligible boolean not null default true;
 
 create index if not exists walks_user_started_idx on public.walks (user_id, started_at desc);
 create index if not exists walks_route_gix on public.walks using gist (route);
@@ -171,7 +175,8 @@ create or replace function public.save_walk(
   p_started_at timestamptz,
   p_finished_at timestamptz,
   p_coordinates jsonb,
-  p_point_count integer
+  p_point_count integer,
+  p_achievement_eligible boolean
 ) returns void
 language plpgsql
 security invoker
@@ -208,7 +213,8 @@ begin
   -- make the total change after an app restart.
 
   insert into public.walks (
-    id, user_id, started_at, finished_at, point_count, distance_m, route
+    id, user_id, started_at, finished_at, point_count, distance_m, route,
+    achievement_eligible
   ) values (
     p_walk_id,
     v_user_id,
@@ -216,24 +222,49 @@ begin
     p_finished_at,
     p_point_count,
     extensions.st_length(v_route::extensions.geography),
-    v_route
+    v_route,
+    p_achievement_eligible
   )
   on conflict (id) do update set
     started_at = excluded.started_at,
     finished_at = excluded.finished_at,
     point_count = excluded.point_count,
     distance_m = excluded.distance_m,
-    route = excluded.route
+    route = excluded.route,
+    achievement_eligible = excluded.achievement_eligible
   where public.walks.user_id = excluded.user_id;
 end;
 $$;
 
+create or replace function public.save_walk(
+  p_walk_id uuid,
+  p_started_at timestamptz,
+  p_finished_at timestamptz,
+  p_coordinates jsonb,
+  p_point_count integer
+) returns void
+language sql
+security invoker
+set search_path = public
+as $$
+  select public.save_walk(
+    p_walk_id,
+    p_started_at,
+    p_finished_at,
+    p_coordinates,
+    p_point_count,
+    true
+  );
+$$;
+
+drop function if exists public.get_walk_routes();
 create or replace function public.get_walk_routes()
 returns table (
   walk_id uuid,
   started_at timestamptz,
   finished_at timestamptz,
-  coordinates jsonb
+  coordinates jsonb,
+  achievement_eligible boolean
 )
 language sql
 stable
@@ -244,15 +275,26 @@ as $$
     id,
     walks.started_at,
     walks.finished_at,
-    (extensions.st_asgeojson(route)::jsonb -> 'coordinates')
+    (
+      extensions.st_asgeojson(
+        case
+          when not walks.achievement_eligible and walks.point_count > 2000
+            then extensions.st_simplifypreservetopology(walks.route, 0.00002)
+          else walks.route
+        end
+      )::jsonb -> 'coordinates'
+    ),
+    walks.achievement_eligible
   from public.walks
   where user_id = auth.uid()
   order by walks.started_at;
 $$;
 
 revoke all on function public.save_walk(uuid, timestamptz, timestamptz, jsonb, integer) from public, anon;
+revoke all on function public.save_walk(uuid, timestamptz, timestamptz, jsonb, integer, boolean) from public, anon;
 revoke all on function public.get_walk_routes() from public, anon;
 grant execute on function public.save_walk(uuid, timestamptz, timestamptz, jsonb, integer) to authenticated;
+grant execute on function public.save_walk(uuid, timestamptz, timestamptz, jsonb, integer, boolean) to authenticated;
 grant execute on function public.get_walk_routes() to authenticated;
 
 -- Account deletion is intentionally exposed only through this authenticated

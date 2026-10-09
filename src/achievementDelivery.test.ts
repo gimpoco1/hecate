@@ -32,4 +32,35 @@ describe("background achievement delivery", () => {
     expect(unlocks.newlyEarned).toContain("the-long-way");
     expect(unlocks.pending).toContain("the-long-way");
   });
+
+  it("does not award achievements for imported GPX points", () => {
+    reconcileDiscoveryAchievementUnlocks("walker", [], []);
+    const points: Coordinate[] = Array.from({ length: 241 }, (_, index) => ({
+      lng: index * 0.0004,
+      lat: 0,
+      recordedAt: Date.UTC(2026, 8, 1, 10) + index * 10_000,
+      walkId: "imported-walk",
+      achievementEligible: false,
+    }));
+
+    const unlocks = reconcileDiscoveryAchievementUnlocks("walker", points, []);
+
+    expect(unlocks.newlyEarned).toEqual([]);
+    expect(unlocks.pending).toEqual([]);
+
+    const recordedPoints = points.map((point) => ({
+      ...point,
+      recordedAt: point.recordedAt + 24 * 60 * 60 * 1_000,
+      walkId: "recorded-walk",
+      achievementEligible: true,
+    }));
+    const laterUnlocks = reconcileDiscoveryAchievementUnlocks(
+      "walker",
+      [...points, ...recordedPoints],
+      [],
+    );
+
+    expect(laterUnlocks.newlyEarned).toEqual([]);
+    expect(laterUnlocks.pending).toEqual([]);
+  });
 });

@@ -7,8 +7,13 @@ import { Keyboard } from "@capacitor/keyboard";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
+import type {
+  DiscoveryAchievementsResponse,
+  DiscoveryMetricsRequest,
+  DiscoveryMetricsResponse,
+  DiscoveryProgressResponse,
+} from "./discoveryMetrics.worker";
 import {
-  evaluatePersonalAchievements,
   isPersonalAchievementId,
   PERSONAL_ACHIEVEMENTS,
   personalAchievementDefinition,
@@ -41,7 +46,7 @@ import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
-import { SyncSheet } from "./components/SyncSheet";
+import { SyncSheet, type GpxImportResult } from "./components/SyncSheet";
 import {
   HecateMark,
   InfoIcon,
@@ -134,6 +139,12 @@ import type {
   TrackingState,
 } from "./types";
 import { loadWalkJournal, saveWalkJournal } from "./walkJournal";
+import {
+  compactImportedRoute,
+  parseGpx,
+  storedWalkRoutes,
+  walkIsAlreadyStored,
+} from "./gpx";
 
 type ActiveWalk = Omit<PendingWalk, "finishedAt"> & { isTest?: boolean };
 type ExplorationSummary = {
@@ -248,9 +259,66 @@ type CityProgress = {
   distance: number;
 };
 
-type AchievementEvaluation = ReturnType<
-  typeof evaluatePersonalAchievements
->[number];
+type AchievementEvaluation =
+  DiscoveryAchievementsResponse["achievementEvaluations"][number];
+
+type CachedDiscoveryProgress = Omit<
+  DiscoveryProgressResponse,
+  "kind" | "generation"
+> & {
+  version: 1;
+  userId: string;
+};
+
+const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v1";
+
+function discoveryProgressCacheKey(userId: string): string {
+  return `${DISCOVERY_PROGRESS_CACHE_PREFIX}:${userId}`;
+}
+
+function loadCachedDiscoveryProgress(
+  userId: string,
+): Omit<DiscoveryProgressResponse, "kind" | "generation"> | null {
+  const raw = localStorage.getItem(discoveryProgressCacheKey(userId));
+  if (!raw) return null;
+  const value: unknown = JSON.parse(raw);
+  if (!value || typeof value !== "object")
+    throw new TypeError("Cached discovery progress must be an object.");
+  const cached = value as Partial<CachedDiscoveryProgress>;
+  if (
+    cached.version !== 1 ||
+    cached.userId !== userId ||
+    typeof cached.discoveryDistance !== "number" ||
+    !Number.isFinite(cached.discoveryDistance) ||
+    !Array.isArray(cached.cityMetrics) ||
+    !cached.cityMetrics.every(
+      (metric) =>
+        metric &&
+        typeof metric.cityId === "string" &&
+        typeof metric.percentage === "number" &&
+        Number.isFinite(metric.percentage) &&
+        typeof metric.distance === "number" &&
+        Number.isFinite(metric.distance),
+    )
+  )
+    throw new TypeError("Cached discovery progress has an invalid shape.");
+  return {
+    discoveryDistance: cached.discoveryDistance,
+    cityMetrics: cached.cityMetrics,
+  };
+}
+
+function saveCachedDiscoveryProgress(
+  userId: string,
+  progress: Omit<DiscoveryProgressResponse, "kind" | "generation">,
+): void {
+  const cached: CachedDiscoveryProgress = {
+    version: 1,
+    userId,
+    ...progress,
+  };
+  localStorage.setItem(discoveryProgressCacheKey(userId), JSON.stringify(cached));
+}
 
 type JourneyDetailsProps = {
   accountUserId: string | null;
@@ -372,15 +440,65 @@ function formatDuration(startedAt: number, finishedAt: number) {
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
 }
 
-function createWalkId() {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
+function uuidFromBytes(source: Uint8Array): string {
+  const bytes = source.slice(0, 16);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = [...bytes]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function createWalkId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return uuidFromBytes(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+async function importedWalkIdSeed(
+  userId: string,
+  xml: string,
+): Promise<Uint8Array> {
+  const content = new TextEncoder().encode(`${userId}\u0000${xml}`);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", content));
+}
+
+function importedWalkId(seed: Uint8Array, segmentIndex: number): string {
+  const bytes = seed.slice(0, 16);
+  const suffix = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  suffix.setUint32(12, suffix.getUint32(12) ^ segmentIndex);
+  return uuidFromBytes(bytes);
+}
+
+async function retryGpxImportOperation(
+  operation: () => Promise<void>,
+  operationName: string,
+  fileName: string,
+): Promise<void> {
+  let lastError = new Error(`${operationName} did not run.`);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await operation();
+      return;
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error(`${operationName} failed for an unknown reason.`);
+      console.warn("GPX import operation failed", {
+        operation: operationName,
+        fileName,
+        attempt,
+        error: lastError.message,
+      });
+      if (attempt < 3) {
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, attempt * 300),
+        );
+      }
+    }
+  }
+  throw lastError;
 }
 
 export default function App() {
@@ -435,6 +553,9 @@ export default function App() {
     string | null
   >(null);
   const [favoritePlacementActive, setFavoritePlacementActive] = useState(false);
+  const [highlightedImportPoints, setHighlightedImportPoints] = useState<
+    Coordinate[]
+  >([]);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
   const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
   const [keyboardInset, setKeyboardInset] = useState(0);
@@ -451,6 +572,17 @@ export default function App() {
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
   const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
+  const [discoveryProgress, setDiscoveryProgress] = useState<
+    Omit<DiscoveryProgressResponse, "kind" | "generation">
+  >({
+    discoveryDistance: 0,
+    cityMetrics: [],
+  });
+  const [discoveryProgressReady, setDiscoveryProgressReady] = useState(false);
+  const [achievementEvaluations, setAchievementEvaluations] = useState<
+    AchievementEvaluation[]
+  >([]);
+  const discoveryMetricsGenerationRef = useRef(0);
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
   const [achievementCelebrations, setAchievementCelebrations] = useState<
@@ -622,10 +754,7 @@ export default function App() {
   // A cell is a revealed area, not a piece of route. The saved walks preserve
   // the real route boundaries, then this function credits only portions that
   // unlock new cells.
-  const discoveryDistance = useMemo(
-    () => discoveredDistanceKm(points),
-    [points],
-  );
+  const discoveryDistance = discoveryProgress.discoveryDistance;
   const activeCity =
     currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary)
       ? cityBoundary
@@ -665,13 +794,12 @@ export default function App() {
     viewedCity,
   ]);
 
-  const currentCityDistance = useMemo(
-    () =>
-      summaryCity
-        ? discoveredCityDistanceKm(points, summaryCity)
-        : discoveryDistance,
-    [discoveryDistance, points, summaryCity],
-  );
+  const summaryCityProgress = summaryCity
+    ? discoveryProgress.cityMetrics.find(
+        ({ cityId }) => cityId === summaryCity.id,
+      ) ?? null
+    : null;
+  const currentCityDistance = summaryCityProgress?.distance ?? discoveryDistance;
   const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
   const currentCityMilestoneRemaining = currentCityMilestone.next
     ? Math.max(0, currentCityMilestone.next.thresholdKm - currentCityDistance)
@@ -679,10 +807,7 @@ export default function App() {
   const currentCityMilestoneLevel = currentCityMilestone.next
     ? currentCityMilestone.next.level - 1
     : 3;
-  const summaryCityPercentage = useMemo(
-    () => (summaryCity ? discoveredCityPercentage(cells, summaryCity) : null),
-    [cells, summaryCity],
-  );
+  const summaryCityPercentage = summaryCityProgress?.percentage ?? null;
   const discoveryLabel = accountUserId
     ? formatDiscoveryPercentage(
         summaryCityPercentage,
@@ -819,20 +944,85 @@ export default function App() {
     journeyExpandedRef.current = citiesExpanded;
     card.dataset.expanded = String(citiesExpanded);
   }, [citiesExpanded, isCityScale]);
-  const cityProgresses = useMemo(() => {
+  const progressCities = useMemo(() => {
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
-    return [...unique.values()]
-      .map((city) => ({
-        city,
-        percentage: discoveredCityPercentage(cells, city),
-        distance: discoveredCityDistanceKm(points, city),
-      }))
+    return [...unique.values()];
+  }, [cityBoundary, discoveredCities]);
+  useEffect(() => {
+    setDiscoveryProgressReady(false);
+    if (!accountUserId) {
+      setDiscoveryProgress({ discoveryDistance: 0, cityMetrics: [] });
+      return;
+    }
+    const cached = loadCachedDiscoveryProgress(accountUserId);
+    if (cached) setDiscoveryProgress(cached);
+  }, [accountUserId]);
+  useEffect(() => {
+    if (accountUserId && !discoveryHistoryReadyRef.current) return;
+    const generation = discoveryMetricsGenerationRef.current + 1;
+    discoveryMetricsGenerationRef.current = generation;
+    setDiscoveryProgressReady(false);
+    const cities = [...progressCities];
+    if (summaryCity && !cities.some(({ id }) => id === summaryCity.id))
+      cities.push(summaryCity);
+    const worker = new Worker(
+      new URL("./discoveryMetrics.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.addEventListener(
+      "message",
+      (event: MessageEvent<DiscoveryMetricsResponse>): void => {
+        if (event.data.generation !== discoveryMetricsGenerationRef.current)
+          return;
+        if (event.data.kind === "progress") {
+          const progress = {
+            discoveryDistance: event.data.discoveryDistance,
+            cityMetrics: event.data.cityMetrics,
+          };
+          setDiscoveryProgress(progress);
+          if (accountUserId) saveCachedDiscoveryProgress(accountUserId, progress);
+          setDiscoveryProgressReady(true);
+          return;
+        }
+        setAchievementEvaluations(event.data.achievementEvaluations);
+      },
+    );
+    worker.addEventListener("error", (event) => {
+      console.error("Discovery metrics worker failed", {
+        message: event.message,
+        filename: event.filename,
+        line: event.lineno,
+        column: event.colno,
+      });
+    });
+    const request: DiscoveryMetricsRequest = {
+      generation,
+      points,
+      cells,
+      cities,
+      achievementCityIds: progressCities.map(({ id }) => id),
+    };
+    worker.postMessage(request);
+    return () => worker.terminate();
+  }, [accountUserId, cells, points, progressCities, summaryCity]);
+  const cityProgresses = useMemo(() => {
+    const metrics = new Map(
+      discoveryProgress.cityMetrics.map((progress) => [
+        progress.cityId,
+        progress,
+      ]),
+    );
+    return progressCities
+      .flatMap((city) => {
+        const progress = metrics.get(city.id);
+        return progress ? [{ city, ...progress }] : [];
+      })
       .sort(
         (a, b) =>
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
-  }, [cityBoundary, discoveredCities, cells, points]);
+  }, [discoveryProgress.cityMetrics, progressCities]);
   achievementCitiesRef.current = cityProgresses.map(({ city }) => city);
   citiesLoadedUserIdRef.current = citiesLoadedUserId;
   testRouteRunningRef.current = testRouteRunning;
@@ -841,25 +1031,16 @@ export default function App() {
       cityProgresses.reduce((total, progress) => total + progress.distance, 0),
     [cityProgresses],
   );
-  const accountCityProgress = activeCity
+  const activeCityProgress = activeCity
+    ? cityProgresses.find(({ city }) => city.id === activeCity.id)
+    : null;
+  const accountCityProgress = activeCity && activeCityProgress
     ? {
         cityId: activeCity.id,
         cityName: activeCity.name,
-        discoveredKm: discoveredCityDistanceKm(points, activeCity),
+        discoveredKm: activeCityProgress.distance,
       }
     : null;
-  const achievementEvaluations = useMemo(
-    () =>
-      evaluatePersonalAchievements(
-        points,
-        cityProgresses.map(({ city }) => city),
-        cityProgresses.map(({ city, distance }) => ({
-          cityId: city.id,
-          discoveredKm: distance,
-        })),
-      ),
-    [cityProgresses, points],
-  );
   const activeAchievementCelebration = achievementTestPreview
     ? personalAchievementDefinition(achievementTestPreview)
     : achievementCelebrations[0]
@@ -1815,6 +1996,7 @@ export default function App() {
     if (
       !accountUserId ||
       citiesLoadedUserId !== accountUserId ||
+      !discoveryProgressReady ||
       points.length === 0
     )
       return;
@@ -1862,7 +2044,13 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [accountUserId, cells, citiesLoadedUserId, points]);
+  }, [
+    accountUserId,
+    cells,
+    citiesLoadedUserId,
+    discoveryProgressReady,
+    points,
+  ]);
 
   const onZoomChange = useCallback((nextZoom: number) => {
     setZoom((currentZoom) =>
@@ -1908,7 +2096,6 @@ export default function App() {
         : undefined);
     const focus = latestDiscovery ?? currentPoint;
     if (!focus) return;
-
     initialMapFocusUserRef.current = accountUserId;
     const targetZoom = latestDiscovery ? 14.3 : 15;
     setViewCenter({ lng: focus.lng, lat: focus.lat });
@@ -2232,6 +2419,81 @@ export default function App() {
     } finally {
       setTestRouteRunning(false);
     }
+  };
+
+  const importGpxFile = async (file: File): Promise<GpxImportResult> => {
+    const userId = accountUserIdRef.current;
+    if (!userId) throw new Error("Sign in before importing a GPX file.");
+    if (!discoveryHistoryReadyRef.current) {
+      throw new Error("Wait for your discovery history to finish loading.");
+    }
+    if (trackingStateRef.current !== "idle") {
+      throw new Error("Stop the current discovery before importing a GPX file.");
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      throw new Error("The GPX file is larger than the 25 MB import limit.");
+    }
+
+    const xml = await file.text();
+    const seed = await importedWalkIdSeed(userId, xml);
+    const walks = parseGpx(xml, file.lastModified, (segmentIndex) =>
+      importedWalkId(seed, segmentIndex),
+    );
+    const routes = storedWalkRoutes(pointsRef.current);
+    const newWalks = walks.filter((walk) => !walkIsAlreadyStored(walk, routes));
+    if (newWalks.length === 0) {
+      return {
+        tone: "info",
+        message: "This route was already imported.",
+      };
+    }
+    const compactWalks = newWalks.map((walk) => ({
+      ...walk,
+      points: compactImportedRoute(walk.points, 5),
+    }));
+    for (const walk of compactWalks) {
+      await retryGpxImportOperation(
+        () => saveCompletedWalk(walk, userId),
+        "Saving imported route",
+        file.name,
+      );
+    }
+    if (accountUserIdRef.current !== userId) {
+      throw new Error("The signed-in account changed during the GPX import.");
+    }
+
+    const importedPoints = compactWalks.flatMap((walk) =>
+      walk.points.map((point) => ({ ...point, walkId: walk.id })),
+    );
+    const importedDiscoveryPoints = newWalks.flatMap((walk) => walk.points);
+    const previousDistance = discoveredDistanceKm(pointsRef.current);
+    const mergedPoints = mergeRoutePoints(pointsRef.current, importedPoints);
+    const mergedCells = mergeDiscoveryCells(
+      cellsRef.current,
+      discoveryCellsFromPoints(importedDiscoveryPoints),
+    );
+    pointsRef.current = mergedPoints;
+    cellsRef.current = mergedCells;
+    cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
+    lastPointRef.current = mergedPoints.at(-1);
+    setPoints(mergedPoints);
+    setCells(mergedCells);
+
+    await retryGpxImportOperation(
+      () => syncDiscoveryCells(mergedCells, userId),
+      "Syncing imported discovery cells",
+      file.name,
+    );
+    await refreshLiveLeaderboard(userId);
+    const addedKm = Math.max(
+      0,
+      discoveredDistanceKm(mergedPoints) - previousDistance,
+    );
+    return {
+      tone: "success",
+      message: `Route imported · ${formatDistance(addedKm)} added to your map.`,
+      points: importedPoints,
+    };
   };
 
   const updateReminderEnabled = async (
@@ -3037,8 +3299,36 @@ export default function App() {
     });
   }, [settleJourneySheet]);
 
+  const showImportedRoute = useCallback(
+    (routePoints: Coordinate[]) => {
+      setSyncOpen(false);
+      setHighlightedImportPoints(routePoints);
+      setSelectedFavoritePlaceId(null);
+      if (journeyExpandedRef.current) settleJourneySheet(false);
+      const map = mapRef.current;
+      if (!map || routePoints.length === 0) return;
+      map.stop();
+      const longitudes = routePoints.map((point) => point.lng);
+      const latitudes = routePoints.map((point) => point.lat);
+      map.fitBounds(
+        [
+          [Math.min(...longitudes), Math.min(...latitudes)],
+          [Math.max(...longitudes), Math.max(...latitudes)],
+        ],
+        {
+          padding: { top: 90, right: 38, bottom: 170, left: 38 },
+          maxZoom: 15,
+          duration: 0,
+          essential: true,
+        },
+      );
+    },
+    [settleJourneySheet],
+  );
+
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
+    setHighlightedImportPoints([]);
     if (journeyExpandedRef.current)
       settleJourneySheet(
         false,
@@ -3067,6 +3357,7 @@ export default function App() {
         mode={mode}
         points={points}
         cells={cells}
+        highlightedPoints={highlightedImportPoints}
         currentPoint={currentPoint}
         locationState={
           tracking === "tracking"
@@ -3606,6 +3897,8 @@ export default function App() {
         favoritePlaces={favoritePlaces}
         onFavoriteSelect={openFavoritePlace}
         onReminderChange={updateReminderEnabled}
+        onGpxImport={importGpxFile}
+        onShowGpxImport={showImportedRoute}
       />
       {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">
@@ -3622,6 +3915,7 @@ export default function App() {
                 mode="discover"
                 points={explorationSummary.points}
                 cells={explorationSummary.cells}
+                highlightedPoints={[]}
                 onZoomChange={() => undefined}
                 mapRef={previewMapRef}
                 initialCenter={[

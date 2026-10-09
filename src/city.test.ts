@@ -6,6 +6,7 @@ import {
   discoveredCityAreaKm2,
   discoveredCityCellDistanceKm,
   discoveredCityDistanceKm,
+  discoveredCityProgress,
   discoveredCityPercentage,
   fetchCityBoundary,
   isPointInCity,
@@ -130,6 +131,18 @@ describe("city discovery", () => {
     expect(
       discoveredCityCellDistanceKm([cell, { ...cell, discoveredAt: 2 }], city),
     ).toBe(discoveredCityCellDistanceKm([cell], city));
+  });
+
+  it("calculates combined city progress with the existing metric semantics", () => {
+    const points = [
+      { lng: 0, lat: 0, recordedAt: 1 },
+      { lng: 0.001, lat: 0, recordedAt: 2 },
+    ];
+    const cells = points.map(pointToDiscoveryCell);
+    expect(discoveredCityProgress(points, cells, city)).toEqual({
+      percentage: discoveredCityPercentage(cells, city),
+      distance: discoveredCityDistanceKm(points, city),
+    });
   });
 
   it("groups Westminster into Greater London with the matching boundary", async () => {

@@ -99,13 +99,31 @@ export function isPointInCity(
   point: Pick<Coordinate, "lng" | "lat">,
   city: CityBoundary,
 ) {
+  return cityPointPredicate(city)(point);
+}
+
+export function cityPointPredicate(
+  city: CityBoundary,
+): (point: Pick<Coordinate, "lng" | "lat">) => boolean {
+  return cityPointPredicateForGeometry(city, cityBounds(city));
+}
+
+function cityPointPredicateForGeometry(
+  city: CityBoundary,
+  bounds: ReturnType<typeof cityBounds>,
+): (point: Pick<Coordinate, "lng" | "lat">) => boolean {
   const polygons =
     city.geometry.type === "Polygon"
       ? [city.geometry.coordinates]
       : city.geometry.coordinates;
-  return polygons.some((polygon) =>
-    pointInPolygon(point.lng, point.lat, polygon),
-  );
+  return (point) =>
+    point.lng >= bounds.west &&
+    point.lng <= bounds.east &&
+    point.lat >= bounds.south &&
+    point.lat <= bounds.north &&
+    polygons.some((polygon) =>
+      pointInPolygon(point.lng, point.lat, polygon),
+    );
 }
 
 /** Choose a cached region for the map center, preferring a larger named region. */
@@ -216,6 +234,15 @@ export function discoveredCityAreaKm2(
 ) {
   if (cells.length === 0) return 0;
   const bounds = cityBounds(city);
+  const containsPoint = cityPointPredicateForGeometry(city, bounds);
+  return discoveredCityAreaForGeometry(cells, bounds, containsPoint);
+}
+
+function discoveredCityAreaForGeometry(
+  cells: DiscoveryCell[],
+  bounds: ReturnType<typeof cityBounds>,
+  containsPoint: (point: Pick<Coordinate, "lng" | "lat">) => boolean,
+): number {
   const revealed = new Map<string, number>();
   for (const cell of cells) {
     const [longitude, latitude] = discoveryCellCenter(cell);
@@ -224,14 +251,14 @@ export function discoveredCityAreaKm2(
       longitude > bounds.east + 0.002 ||
       latitude < bounds.south - 0.002 ||
       latitude > bounds.north + 0.002 ||
-      !isPointInCity({ lng: longitude, lat: latitude }, city)
+      !containsPoint({ lng: longitude, lat: latitude })
     )
       continue;
     for (const candidate of discoveryFootprintCells(cell)) {
       const [lng, lat] = discoveryCellCenter(candidate);
       // Coverage is the overlap with this municipality, not the whole
       // circular reveal around a route point near its boundary.
-      if (!isPointInCity({ lng, lat }, city)) continue;
+      if (!containsPoint({ lng, lat })) continue;
       const key = discoveryCellKey(candidate);
       revealed.set(key, discoveryCellAreaKm2(candidate));
     }
@@ -251,17 +278,49 @@ export function discoveredCityPercentage(
   return Math.min(100, (revealedArea / cityArea) * 100);
 }
 
+export function discoveredCityProgress(
+  points: Coordinate[],
+  cells: DiscoveryCell[],
+  city: CityBoundary,
+): { percentage: number; distance: number } {
+  const bounds = cityBounds(city);
+  const containsPoint = cityPointPredicateForGeometry(city, bounds);
+  const cityArea = cityAreaKm2(city);
+  const revealedArea = discoveredCityAreaForGeometry(
+    cells,
+    bounds,
+    containsPoint,
+  );
+  return {
+    percentage: cityArea
+      ? Math.min(100, (revealedArea / cityArea) * 100)
+      : 0,
+    distance: discoveredCityDistanceForGeometry(
+      points,
+      containsPoint,
+    ),
+  };
+}
+
 /** Distance that unlocked new reveal cells within one city region. */
 export function discoveredCityDistanceKm(
   points: Coordinate[],
   city: CityBoundary,
 ) {
+  const containsPoint = cityPointPredicate(city);
+  return discoveredCityDistanceForGeometry(points, containsPoint);
+}
+
+function discoveredCityDistanceForGeometry(
+  points: Coordinate[],
+  containsPoint: (point: Pick<Coordinate, "lng" | "lat">) => boolean,
+): number {
   return discoveredDistanceForFootprints(points, (point) => {
-    if (!isPointInCity(point, city)) return [];
+    if (!containsPoint(point)) return [];
     return discoveryFootprintCells(pointToDiscoveryCell(point)).filter(
       (cell) => {
         const [lng, lat] = discoveryCellCenter(cell);
-        return isPointInCity({ lng, lat }, city);
+        return containsPoint({ lng, lat });
       },
     );
   });

@@ -1,6 +1,6 @@
 import { earnedPersonalAchievementIds } from "./achievements";
 import { reconcileAchievementUnlocks } from "./achievementUnlocks";
-import { discoveredCityDistanceKm, type CityBoundary } from "./city";
+import type { CityBoundary } from "./city";
 import type { Coordinate } from "./types";
 
 /**
@@ -12,13 +12,6 @@ export function reconcileDiscoveryAchievementUnlocks(
   points: Coordinate[],
   cities: CityBoundary[],
 ) {
-  const earned = earnedPersonalAchievementIds(
-    points,
-    cities,
-    cities.map((city) => ({
-      cityId: city.id,
-      discoveredKm: discoveredCityDistanceKm(points, city),
-    })),
-  );
+  const earned = earnedPersonalAchievementIds(points, cities);
   return reconcileAchievementUnlocks(userId, earned);
 }
