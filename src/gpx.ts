@@ -1,4 +1,4 @@
-import type { Coordinate, PendingWalk } from "./types";
+import type { Coordinate, DiscoveryCell, PendingWalk } from "./types";
 import { distanceKm } from "./geo";
 
 const MAX_GPX_POINTS_PER_SEGMENT = 20_000;
@@ -17,11 +17,14 @@ function sameRoute(first: Coordinate[], second: Coordinate[]): boolean {
 export function storedWalkRoutes(
   points: Coordinate[],
 ): Map<string, Coordinate[]> {
-  return points.reduce((routes, point) => {
-    if (!point.walkId) return routes;
-    routes.set(point.walkId, [...(routes.get(point.walkId) ?? []), point]);
-    return routes;
-  }, new Map<string, Coordinate[]>());
+  const routes = new Map<string, Coordinate[]>();
+  for (const point of points) {
+    if (!point.walkId) continue;
+    const route = routes.get(point.walkId);
+    if (route) route.push(point);
+    else routes.set(point.walkId, [point]);
+  }
+  return routes;
 }
 
 export function walkIsAlreadyStored(
@@ -30,6 +33,16 @@ export function walkIsAlreadyStored(
 ): boolean {
   if (routes.has(walk.id)) return true;
   return [...routes.values()].some((route) => sameRoute(route, walk.points));
+}
+
+export async function persistImportedDiscovery(
+  cells: DiscoveryCell[],
+  walks: PendingWalk[],
+  syncCells: (cellsToSync: DiscoveryCell[]) => Promise<void>,
+  saveWalk: (walkToSave: PendingWalk) => Promise<void>,
+): Promise<void> {
+  await syncCells(cells);
+  for (const walk of walks) await saveWalk(walk);
 }
 
 export function compactImportedRoute(

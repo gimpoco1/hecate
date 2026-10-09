@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compactImportedRoute,
+  persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
 } from "./gpx";
@@ -70,5 +71,46 @@ describe("GPX duplicate detection", () => {
     expect(compacted.length).toBeLessThan(10);
     expect(compacted[0]).toBe(points[0]);
     expect(compacted.at(-1)).toBe(points.at(-1));
+  });
+});
+
+describe("GPX import persistence", () => {
+  it("persists discovery cells before marking any route as stored", async () => {
+    const operations: string[] = [];
+    const walks = [
+      candidateWalk("first-walk", importedPoints),
+      candidateWalk("second-walk", importedPoints),
+    ];
+
+    await persistImportedDiscovery(
+      [],
+      walks,
+      async () => {
+        operations.push("cells");
+      },
+      async (walk) => {
+        operations.push(walk.id);
+      },
+    );
+
+    expect(operations).toEqual(["cells", "first-walk", "second-walk"]);
+  });
+
+  it("does not save a route when discovery-cell persistence fails", async () => {
+    const savedWalkIds: string[] = [];
+
+    await expect(
+      persistImportedDiscovery(
+        [],
+        [candidateWalk("unsaved-walk", importedPoints)],
+        async () => {
+          throw new Error("cell sync failed");
+        },
+        async (walk) => {
+          savedWalkIds.push(walk.id);
+        },
+      ),
+    ).rejects.toThrow("cell sync failed");
+    expect(savedWalkIds).toEqual([]);
   });
 });
