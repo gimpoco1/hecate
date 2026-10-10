@@ -143,6 +143,7 @@ import { loadWalkJournal, saveWalkJournal } from "./walkJournal";
 import {
   compactImportedRoute,
   parseGpx,
+  persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
 } from "./gpx";
@@ -318,7 +319,7 @@ export function loadCachedDiscoveryProgress(
   }
 }
 
-function saveCachedDiscoveryProgress(
+export function saveCachedDiscoveryProgress(
   userId: string,
   progress: Omit<DiscoveryProgressResponse, "kind" | "generation">,
 ): void {
@@ -327,7 +328,20 @@ function saveCachedDiscoveryProgress(
     userId,
     ...progress,
   };
-  localStorage.setItem(discoveryProgressCacheKey(userId), JSON.stringify(cached));
+  try {
+    localStorage.setItem(
+      discoveryProgressCacheKey(userId),
+      JSON.stringify(cached),
+    );
+  } catch (error) {
+    console.warn("Could not cache discovery progress", {
+      userId,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Web Storage failed with an unknown error.",
+    });
+  }
 }
 
 type JourneyDetailsProps = {
@@ -2689,17 +2703,6 @@ export default function App() {
       ...walk,
       points: compactImportedRoute(walk.points, 5),
     }));
-    for (const walk of compactWalks) {
-      await retryGpxImportOperation(
-        () => saveCompletedWalk(walk, userId),
-        "Saving imported route",
-        file.name,
-      );
-    }
-    if (accountUserIdRef.current !== userId) {
-      throw new Error("The signed-in account changed during the GPX import.");
-    }
-
     const importedPoints = compactWalks.flatMap((walk) =>
       walk.points.map((point) => ({ ...point, walkId: walk.id })),
     );
@@ -2710,18 +2713,33 @@ export default function App() {
       cellsRef.current,
       discoveryCellsFromPoints(importedDiscoveryPoints),
     );
+
+    await persistImportedDiscovery(
+      mergedCells,
+      compactWalks,
+      (cellsToSync) =>
+        retryGpxImportOperation(
+          () => syncDiscoveryCells(cellsToSync, userId),
+          "Syncing imported discovery cells",
+          file.name,
+        ),
+      (walkToSave) =>
+        retryGpxImportOperation(
+          () => saveCompletedWalk(walkToSave, userId),
+          "Saving imported route",
+          file.name,
+        ),
+    );
+    if (accountUserIdRef.current !== userId) {
+      throw new Error("The signed-in account changed during the GPX import.");
+    }
+
     pointsRef.current = mergedPoints;
     cellsRef.current = mergedCells;
     cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
     lastPointRef.current = mergedPoints.at(-1);
     setPoints(mergedPoints);
     setCells(mergedCells);
-
-    await retryGpxImportOperation(
-      () => syncDiscoveryCells(mergedCells, userId),
-      "Syncing imported discovery cells",
-      file.name,
-    );
     await refreshLiveLeaderboard(userId);
     const addedKm = Math.max(
       0,
