@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadWalkJournal, saveWalkJournal } from './walkJournal'
+import { loadWalkJournal, loadWalkJournalState, saveWalkJournal } from './walkJournal'
 import type { PendingWalk } from './types'
 
 const walk: PendingWalk = {
@@ -25,18 +25,23 @@ describe('walk recovery journal', () => {
   it('restores an interrupted active walk and keeps accounts separate', () => {
     saveWalkJournal('user-a', [], walk)
     expect(loadWalkJournal('user-a')).toEqual([walk])
+    expect(loadWalkJournalState('user-a')).toEqual({ active: walk, pending: [] })
     expect(loadWalkJournal('user-b')).toEqual([])
   })
 
   it('keeps failed uploads until they are confirmed, then clears the journal', () => {
-    saveWalkJournal('user-a', [walk])
+    saveWalkJournal('user-a', [walk], null)
     expect(loadWalkJournal('user-a')).toEqual([walk])
-    saveWalkJournal('user-a', [])
+    saveWalkJournal('user-a', [], null)
     expect(loadWalkJournal('user-a')).toEqual([])
   })
 
   it('ignores an unfinished walk with too few accepted points', () => {
     saveWalkJournal('user-a', [], { ...walk, points: walk.points.slice(0, 1) })
     expect(loadWalkJournal('user-a')).toEqual([])
+    expect(loadWalkJournalState('user-a').active).toEqual({
+      ...walk,
+      points: walk.points.slice(0, 1),
+    })
   })
 })

@@ -91,20 +91,55 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation",
 );
 
-async function removeNativeWatcher(id: string) {
+interface HecateBackgroundGeolocationPlugin extends BackgroundGeolocationPlugin {
+  removeAllWatchers(): Promise<void>;
+}
+
+const HecateBackgroundGeolocation =
+  BackgroundGeolocation as HecateBackgroundGeolocationPlugin;
+let nativeRuntimePreparation: Promise<void> | null = null;
+
+async function retryNativeOperation(
+  operation: () => Promise<void>,
+  operationName: string,
+) {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      await BackgroundGeolocation.removeWatcher({ id });
+      await operation();
       return;
     } catch (error) {
       lastError = error;
-      // Native teardown can briefly race an addWatcher completion. Yield once
-      // before retrying so an iOS location session is never abandoned.
+      console.warn("Native location operation failed; retrying", {
+        operation: operationName,
+        attempt,
+        error,
+      });
       await Promise.resolve();
     }
   }
   throw lastError;
+}
+
+async function prepareNativeRuntime() {
+  if (Capacitor.getPlatform() !== "ios") return;
+  if (!nativeRuntimePreparation) {
+    nativeRuntimePreparation = retryNativeOperation(
+      () => HecateBackgroundGeolocation.removeAllWatchers(),
+      "removeAllWatchers",
+    ).catch((error) => {
+      nativeRuntimePreparation = null;
+      throw error;
+    });
+  }
+  await nativeRuntimePreparation;
+}
+
+async function removeNativeWatcher(id: string) {
+  await retryNativeOperation(
+    () => BackgroundGeolocation.removeWatcher({ id }),
+    "removeWatcher",
+  );
 }
 
 function nativeError(error: CallbackError | unknown): LocationTrackerError {
@@ -135,6 +170,8 @@ class NativeLocationTracker implements LocationTracker {
   ) {
     this.stopRequested = false;
     this.active = true;
+    await prepareNativeRuntime();
+    if (this.stopRequested) return;
     const options: Parameters<BackgroundGeolocationPlugin["addWatcher"]>[0] & {
       showsBackgroundLocationIndicator?: boolean;
     } = {

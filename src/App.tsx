@@ -139,7 +139,7 @@ import type {
   PendingWalk,
   TrackingState,
 } from "./types";
-import { loadWalkJournal, saveWalkJournal } from "./walkJournal";
+import { loadWalkJournalState, saveWalkJournal } from "./walkJournal";
 import {
   compactImportedRoute,
   parseGpx,
@@ -1580,18 +1580,41 @@ export default function App() {
     cellKeysRef.current = new Set();
     discoveryHistoryReadyRef.current = false;
     pointsRef.current = [];
-    pendingWalksRef.current = accountUserId
-      ? loadWalkJournal(accountUserId)
-      : [];
+    const journal = accountUserId
+      ? loadWalkJournalState(accountUserId)
+      : { active: null, pending: [] };
+    pendingWalksRef.current = journal.pending;
     deferredLocationUiRef.current = false;
     if (!accountUserId) return;
 
-    // An interrupted active recording is a completed route up to its last
-    // accepted sample. Keep it locally until the database accepts it.
-    saveWalkJournal(accountUserId, pendingWalksRef.current);
-    const recoveredPoints = pendingWalksRef.current.flatMap(
+    if (journal.active) {
+      activeWalkRef.current = {
+        id: journal.active.id,
+        startedAt: journal.active.startedAt,
+        points: [...journal.active.points],
+        achievementEligible: journal.active.achievementEligible,
+      };
+      trackingUserRef.current = accountUserId;
+      lastPointRef.current = journal.active.points.at(-1);
+      focusFirstTrackingPointRef.current = journal.active.points.length === 0;
+      setElapsedNow(Date.now());
+      setTracking("requesting");
+    }
+    const recoveredWalks = journal.active
+      ? [...journal.pending, journal.active]
+      : journal.pending;
+    const recoveredPoints = recoveredWalks.flatMap(
       (walk) => walk.points,
     );
+    const baselinePoints = journal.pending.flatMap((walk) => walk.points);
+    const baselineCells = discoveryCellsFromPoints(baselinePoints);
+    explorationStartRef.current = journal.active
+      ? {
+          cells: new Set(baselineCells.map(discoveryCellKey)),
+          points: baselinePoints,
+          discoveryDistance: discoveredDistanceKm(baselinePoints),
+        }
+      : null;
     pointsRef.current = mergeRoutePoints(recoveredPoints);
     cellsRef.current = discoveryCellsFromPoints(recoveredPoints);
     cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey));
@@ -1639,6 +1662,20 @@ export default function App() {
           setPoints(mergedPoints);
           setCells(mergedCells);
           cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
+          if (
+            activeWalkRef.current &&
+            trackingUserRef.current === accountUserId
+          ) {
+            const baseline = mergedPoints.filter(
+              (point) => point.walkId !== activeWalkRef.current?.id,
+            );
+            const baselineDiscoveryCells = discoveryCellsFromPoints(baseline);
+            explorationStartRef.current = {
+              cells: new Set(baselineDiscoveryCells.map(discoveryCellKey)),
+              points: baseline,
+              discoveryDistance: discoveredDistanceKm(baseline),
+            };
+          }
           discoveryHistoryReadyRef.current = true;
           if (!activeWalkRef.current)
             lastPointRef.current = mergedPoints.at(-1);
@@ -2493,7 +2530,7 @@ export default function App() {
           setAutomaticUpdatePending(walkOwner, true);
         }
         pendingWalksRef.current.push(completed);
-        saveWalkJournal(walkOwner, pendingWalksRef.current);
+        saveWalkJournal(walkOwner, pendingWalksRef.current, null);
         await flushPendingWalks(walkOwner);
         // The recap and the next app launch must be based on the same completed
         // discovery. Do not rely only on the debounced background cell sync.
@@ -2586,7 +2623,7 @@ export default function App() {
         }
       }
     } else if (active && walkOwner && !active.isTest) {
-      saveWalkJournal(walkOwner, pendingWalksRef.current);
+      saveWalkJournal(walkOwner, pendingWalksRef.current, null);
     }
     explorationStartRef.current = null;
   };
@@ -2969,11 +3006,64 @@ export default function App() {
       void Promise.resolve(tracker.stop()).catch(() => undefined);
       activeWalkRef.current = null;
       trackingUserRef.current = null;
-      saveWalkJournal(accountUserId, pendingWalksRef.current);
+      saveWalkJournal(accountUserId, pendingWalksRef.current, null);
       setPassiveLocationStatus("idle");
       setTracking("unavailable");
     }
   };
+
+  useEffect(() => {
+    if (
+      tracking !== "requesting" ||
+      !accountUserId ||
+      trackingUserRef.current !== accountUserId ||
+      !activeWalkRef.current ||
+      trackerRef.current
+    )
+      return;
+    const tracker = createLocationTracker();
+    trackerRef.current = tracker;
+    let trackerFailed = false;
+    void tracker
+      .start(addPoint, (error) => {
+        if (trackerRef.current !== tracker) return;
+        trackerFailed = true;
+        focusFirstTrackingPointRef.current = false;
+        resetInactivityReminder();
+        trackerRef.current = null;
+        void Promise.resolve(tracker.stop()).catch((stopError) => {
+          console.error("Could not stop restored location tracking", {
+            error: stopError,
+          });
+        });
+        finalizeRecordedWalk();
+        setPassiveLocationStatus(
+          error.code === "permission-denied" ? "denied" : "idle",
+        );
+        setTracking(
+          error.code === "permission-denied" ? "denied" : "unavailable",
+        );
+      })
+      .then(() => {
+        if (trackerFailed || trackerRef.current !== tracker) return;
+        setTracking("tracking");
+      })
+      .catch((error) => {
+        if (trackerRef.current !== tracker) return;
+        focusFirstTrackingPointRef.current = false;
+        resetInactivityReminder();
+        trackerRef.current = null;
+        void Promise.resolve(tracker.stop()).catch((stopError) => {
+          console.error("Could not stop failed restored location tracking", {
+            error: stopError,
+          });
+        });
+        finalizeRecordedWalk();
+        setPassiveLocationStatus("idle");
+        setTracking("unavailable");
+        console.error("Could not restore active location tracking", { error });
+      });
+  }, [accountUserId, resetInactivityReminder, tracking]);
 
   const locate = () => {
     void requestDeviceHeadingPermission();
