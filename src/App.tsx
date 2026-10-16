@@ -8,7 +8,6 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
 import type {
-  DiscoveryAchievementsResponse,
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
   DiscoveryProgressResponse,
@@ -17,6 +16,7 @@ import {
   isPersonalAchievementId,
   PERSONAL_ACHIEVEMENTS,
   personalAchievementDefinition,
+  type AchievementEvaluation,
   type PersonalAchievementId,
 } from "./achievements";
 import {
@@ -28,7 +28,7 @@ import {
   reconcileAchievementUnlocks,
   syncAchievementUnlocks,
 } from "./achievementUnlocks";
-import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
+import { cityMilestoneProgress } from "./badges";
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
@@ -41,16 +41,25 @@ import {
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
 import { requestDeviceHeadingPermission } from "./deviceHeading";
-import { AchievementCard } from "./components/AchievementCard";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
+import {
+  CityMilestones,
+  JOURNEY_CITY_MILESTONES_TITLE_ID,
+  type CityMilestoneProgress,
+} from "./components/CityMilestones";
 import { GlobalMilestonesSheet } from "./components/WorldMilestones";
 import { SavedPlacesSheet } from "./components/SavedPlaces";
+import {
+  AchievementsSheet,
+  CitiesSheet,
+} from "./components/ProfileCollections";
 import { Counter, type CounterPlace } from "./components/Counter";
 import { SyncSheet, type GpxImportResult } from "./components/SyncSheet";
 import {
+  ChevronIcon,
   HecateMark,
   InfoIcon,
   LocateIcon,
@@ -270,9 +279,6 @@ type CityProgress = {
   distance: number;
 };
 
-type AchievementEvaluation =
-  DiscoveryAchievementsResponse["achievementEvaluations"][number];
-
 type CachedDiscoveryProgress = Omit<
   DiscoveryProgressResponse,
   "kind" | "generation"
@@ -381,104 +387,70 @@ export function saveCachedDiscoveryProgress(
 type JourneyDetailsProps = {
   accountUserId: string | null;
   expanded: boolean;
-  loading: boolean;
-  cityProgresses: CityProgress[];
-  totalCityDistance: number;
-  achievementEvaluations: AchievementEvaluation[];
-  onCitySelect: (city: CityBoundary) => void;
+  discoveryDistance: number;
+  travelledDistance: number;
+  walkingStats: WalkingStats;
+  discoveredCityCount: number;
+  cityProgress: CityMilestoneProgress | null;
+  onWalkingStatsOpen: () => void;
 };
 
 const JourneyDetails = memo(function JourneyDetails({
   accountUserId,
   expanded,
-  loading,
-  cityProgresses,
-  totalCityDistance,
-  achievementEvaluations,
-  onCitySelect,
+  discoveryDistance,
+  travelledDistance,
+  walkingStats,
+  discoveredCityCount,
+  cityProgress,
+  onWalkingStatsOpen,
 }: JourneyDetailsProps) {
-  const earnedAchievementCount = achievementEvaluations.filter(
-    ({ earned }) => earned,
-  ).length;
-
   return (
     <div
-      className="discovered-cities"
-      aria-label="Discovered cities"
+      className="journey-overview"
+      aria-label="Walking overview"
       aria-hidden={!expanded}
     >
-      <div className="discovered-cities__heading">
-        <span>Your cities</span>
-        <small>
-          {loading
-            ? "Finding past cities…"
-            : `${cityProgresses.length} ${cityProgresses.length === 1 ? "city" : "cities"} · ${formatDistance(totalCityDistance)} new ground`}
-        </small>
-      </div>
       {accountUserId ? (
-        cityProgresses.length ? (
-          <ul>
-            {cityProgresses.map(({ city, percentage, distance }) => {
-              const earned = earnedCityMilestones(city.id, city.name, distance);
-              const next = cityMilestoneProgress(distance).next;
-              return (
-                <li key={city.id}>
-                  <button type="button" onClick={() => onCitySelect(city)}>
-                    <span className="discovered-cities__identity">
-                      <span>{city.name}</span>
-                      <small>
-                        {next
-                          ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
-                          : `${earned.at(-1)?.title} · all 3 stars earned`}
-                      </small>
-                    </span>
-                    <span className="discovered-cities__metrics">
-                      <CityLevelStars level={earned.length} />
-                      <strong>
-                        {formatDiscoveryPercentage(percentage, false)}
-                      </strong>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p>Start a walk to add your first city.</p>
-        )
+        <>
+          <section
+            className="journey-global-stats"
+            aria-labelledby="journey-global-stats-title"
+          >
+            <div className="journey-global-stats__heading">
+              <h3 id="journey-global-stats-title">Journey stats</h3>
+              <button
+                type="button"
+                aria-label="Open full walking stats"
+                onClick={onWalkingStatsOpen}
+              >
+                View all
+                <ChevronIcon size={14} strokeWidth={2.3} />
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>New ground</dt>
+                <dd>{formatDistance(discoveryDistance)}</dd>
+              </div>
+              <div>
+                <dt>Total travelled</dt>
+                <dd>{formatDistance(travelledDistance)}</dd>
+              </div>
+              <div>
+                <dt>Walks</dt>
+                <dd>{walkingStats.walkCount}</dd>
+              </div>
+              <div>
+                <dt>Cities explored</dt>
+                <dd>{discoveredCityCount}</dd>
+              </div>
+            </dl>
+          </section>
+          {cityProgress && <CityMilestones progress={cityProgress} />}
+        </>
       ) : (
-        <p>Sign in to see your cities and keep them in sync.</p>
-      )}
-      {accountUserId && (
-        <section
-          className="personal-achievements"
-          aria-labelledby="personal-achievements-title"
-        >
-          <div className="personal-achievements__heading">
-            <span id="personal-achievements-title">Achievements</span>
-            <small>
-              {earnedAchievementCount} / {achievementEvaluations.length} earned
-            </small>
-          </div>
-          <ul>
-            {achievementEvaluations.map(
-              ({ definition, earned, progress, progressLabel }) => (
-                <li
-                  key={definition.id}
-                  className={earned ? "personal-achievements__earned" : ""}
-                >
-                  <AchievementCard
-                    achievement={definition}
-                    earned={earned}
-                    progress={progress}
-                    progressLabel={progressLabel}
-                    compact
-                  />
-                </li>
-              ),
-            )}
-          </ul>
-        </section>
+        <p>Sign in to see your walking stats and keep them in sync.</p>
       )}
     </div>
   );
@@ -714,6 +686,8 @@ export default function App() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
+  const [citiesOpen, setCitiesOpen] = useState(false);
+  const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
   >("signin");
@@ -743,7 +717,6 @@ export default function App() {
     null,
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
-  const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState<
     Omit<DiscoveryProgressResponse, "kind" | "generation">
   >({
@@ -816,6 +789,8 @@ export default function App() {
   const discoveryUiRefreshTimerRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
+  const journeyMilestonesScrollFrameRef = useRef<number | null>(null);
+  const pendingMilestonesScrollRef = useRef(false);
   const initialMapFocusUserRef = useRef<string | null>(null);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
@@ -1180,6 +1155,8 @@ export default function App() {
         cancelAnimationFrame(journeyDragFrameRef.current);
       if (journeySettleFrameRef.current !== null)
         cancelAnimationFrame(journeySettleFrameRef.current);
+      if (journeyMilestonesScrollFrameRef.current !== null)
+        cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
       if (resumeCenterFrameRef.current !== null)
         cancelAnimationFrame(resumeCenterFrameRef.current);
       stopFollowCameraAnimation();
@@ -1281,11 +1258,6 @@ export default function App() {
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
   }, [discoveryProgress.cityMetrics, progressCities]);
-  const totalCityDistance = useMemo(
-    () =>
-      cityProgresses.reduce((total, progress) => total + progress.distance, 0),
-    [cityProgresses],
-  );
   const activeCityProgress = activeCity
     ? cityProgresses.find(({ city }) => city.id === activeCity.id)
     : null;
@@ -1612,7 +1584,6 @@ export default function App() {
     setDiscoveredCities([]);
     setCitiesLoadedUserId(null);
     setCitiesExpanded(false);
-    setCityBackfillLoading(false);
     setCoverageInfoOpen(false);
     setExplorationSummary(null);
     initialMapFocusUserRef.current = null;
@@ -2362,7 +2333,6 @@ export default function App() {
     if (!candidates.length) return;
 
     void (async () => {
-      setCityBackfillLoading(true);
       for (const point of candidates) {
         if (cancelled) break;
         try {
@@ -2388,7 +2358,6 @@ export default function App() {
         // Respect Nominatim's public-service rate limit while backfilling.
         await new Promise((resolve) => window.setTimeout(resolve, 1_100));
       }
-      if (!cancelled) setCityBackfillLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -3133,8 +3102,7 @@ export default function App() {
   const journeyBounds = (card: HTMLElement) => {
     const collapsed =
       Number.parseFloat(window.getComputedStyle(card).minHeight) || 88;
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    return { collapsed, expanded: viewportHeight * 0.7 };
+    return { collapsed, expanded: card.getBoundingClientRect().height };
   };
 
   const journeyVisibleHeight = (card: HTMLElement) => {
@@ -3227,6 +3195,53 @@ export default function App() {
       };
     });
   }, []);
+
+  const scrollToCityMilestones = useCallback((behavior: ScrollBehavior) => {
+    const title = document.getElementById(JOURNEY_CITY_MILESTONES_TITLE_ID);
+    const section = title?.closest("section");
+    if (!section) return false;
+    section.scrollIntoView({
+      behavior,
+      block: "start",
+      inline: "nearest",
+    });
+    return true;
+  }, []);
+
+  const openJourneyAtCityMilestones = useCallback(() => {
+    const scrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches
+      ? "auto"
+      : "smooth";
+    pendingMilestonesScrollRef.current = true;
+    settleJourneySheet(true);
+    if (!journeyExpandedRef.current) return;
+    if (journeyMilestonesScrollFrameRef.current !== null)
+      cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
+    journeyMilestonesScrollFrameRef.current = requestAnimationFrame(() => {
+      journeyMilestonesScrollFrameRef.current = null;
+      if (scrollToCityMilestones(scrollBehavior)) {
+        pendingMilestonesScrollRef.current = false;
+      }
+    });
+  }, [scrollToCityMilestones, settleJourneySheet]);
+
+  useEffect(() => {
+    if (!citiesExpanded || !pendingMilestonesScrollRef.current) return;
+    const scrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches
+      ? "auto"
+      : "smooth";
+    if (journeyMilestonesScrollFrameRef.current !== null)
+      cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
+    journeyMilestonesScrollFrameRef.current = requestAnimationFrame(() => {
+      journeyMilestonesScrollFrameRef.current = null;
+      scrollToCityMilestones(scrollBehavior);
+      pendingMilestonesScrollRef.current = false;
+    });
+  }, [citiesExpanded, scrollToCityMilestones]);
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -3674,6 +3689,14 @@ export default function App() {
     }
   };
 
+  const closeProfileDialog = () => {
+    setGlobalMilestonesOpen(false);
+    setSavedPlacesOpen(false);
+    setCitiesOpen(false);
+    setAchievementsOpen(false);
+    setSyncOpen(false);
+  };
+
   const openFavoritePlace = useCallback((favorite: FavoritePlace) => {
     setSyncOpen(false);
     setFavoritePlacementActive(false);
@@ -4038,7 +4061,7 @@ export default function App() {
           <button
             className="map-milestone"
             type="button"
-            onClick={() => settleJourneySheet(true)}
+            onClick={openJourneyAtCityMilestones}
             aria-label={
               currentCityMilestone.next
                 ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
@@ -4285,13 +4308,12 @@ export default function App() {
           <JourneyDetails
             accountUserId={accountUserId}
             expanded={citiesExpanded}
-            loading={
-              citiesLoadedUserId !== accountUserId || cityBackfillLoading
-            }
-            cityProgresses={cityProgresses}
-            totalCityDistance={totalCityDistance}
-            achievementEvaluations={achievementEvaluations}
-            onCitySelect={focusDiscoveredCity}
+            discoveryDistance={discoveryProgress.discoveryDistance}
+            travelledDistance={discoveryProgress.travelledDistance}
+            walkingStats={discoveryProgress.walkingStats}
+            discoveredCityCount={cityProgresses.length}
+            cityProgress={accountCityProgress}
+            onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
           />
         </section>
       )}
@@ -4332,27 +4354,44 @@ export default function App() {
         </div>
       )}
       <div
-        aria-hidden={globalMilestonesOpen || savedPlacesOpen || undefined}
-        inert={globalMilestonesOpen || savedPlacesOpen || undefined}
+        aria-hidden={
+          globalMilestonesOpen ||
+          savedPlacesOpen ||
+          citiesOpen ||
+          achievementsOpen ||
+          undefined
+        }
+        inert={
+          globalMilestonesOpen ||
+          savedPlacesOpen ||
+          citiesOpen ||
+          achievementsOpen ||
+          undefined
+        }
       >
         <SyncSheet
           open={syncOpen}
           initialAuthIntent={syncInitialIntent}
-          onClose={() => setSyncOpen(false)}
+          onClose={closeProfileDialog}
           reminderEnabled={reminderEnabled}
           nativeApp={nativeApp}
           keyboardInset={keyboardInset}
-          cityProgress={accountCityProgress}
-          discoveryDistance={discoveryProgress.discoveryDistance}
           travelledDistance={discoveryProgress.travelledDistance}
-          walkingStats={discoveryProgress.walkingStats}
           discoveredCityCount={cityProgresses.length}
+          earnedAchievementCount={earnedAchievementIds.length}
+          achievementCount={achievementEvaluations.length}
           favoritePlaces={favoritePlaces}
           onReminderChange={updateReminderEnabled}
           onGpxImport={importGpxFile}
           onShowGpxImport={showImportedRoute}
           onWalkingStatsOpen={() => {
             setGlobalMilestonesOpen(true);
+          }}
+          onCitiesOpen={() => {
+            setCitiesOpen(true);
+          }}
+          onAchievementsOpen={() => {
+            setAchievementsOpen(true);
           }}
           onSavedPlacesOpen={() => {
             setSavedPlacesOpen(true);
@@ -4365,10 +4404,11 @@ export default function App() {
         travelledKm={discoveryProgress.travelledDistance}
         walkingStats={discoveryProgress.walkingStats}
         discoveredCityCount={cityProgresses.length}
+        backLabel={syncOpen ? "Back to profile" : "Back to journey"}
         onBack={() => {
           setGlobalMilestonesOpen(false);
         }}
-        onClose={() => setGlobalMilestonesOpen(false)}
+        onClose={closeProfileDialog}
       />
       <SavedPlacesSheet
         open={Boolean(accountUserId && savedPlacesOpen)}
@@ -4379,7 +4419,25 @@ export default function App() {
         }}
         onFavoriteDelete={deleteFavoriteDraft}
         onBack={() => setSavedPlacesOpen(false)}
-        onClose={() => setSavedPlacesOpen(false)}
+        onClose={closeProfileDialog}
+      />
+      <CitiesSheet
+        open={Boolean(accountUserId && citiesOpen)}
+        loading={citiesLoadedUserId !== accountUserId}
+        cityProgresses={cityProgresses}
+        onCitySelect={(city) => {
+          setCitiesOpen(false);
+          setSyncOpen(false);
+          focusDiscoveredCity(city);
+        }}
+        onBack={() => setCitiesOpen(false)}
+        onClose={closeProfileDialog}
+      />
+      <AchievementsSheet
+        open={Boolean(accountUserId && achievementsOpen)}
+        achievementEvaluations={achievementEvaluations}
+        onBack={() => setAchievementsOpen(false)}
+        onClose={closeProfileDialog}
       />
       {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">

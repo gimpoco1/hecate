@@ -1,5 +1,7 @@
 import {
   mdiArrowLeft,
+  mdiCityVariantOutline,
+  mdiMedalOutline,
   mdiPodium,
   mdiVideo2d,
   mdiVideo3d,
@@ -21,6 +23,8 @@ export const InfoIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size
 export const StarIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg>
 export const ArrowLeftIcon = ({ size }: IconProps) => <svg {...filledBase(size)}><path d={mdiArrowLeft}/></svg>
 export const LeaderboardIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiPodium}/></svg>
+export const CitiesIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiCityVariantOutline}/></svg>
+export const AchievementsIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiMedalOutline}/></svg>
 export const SaveIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="M6 3h12v18l-6-4-6 4V3Z"/></svg>
 export const XIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m6 6 12 12M18 6 6 18"/></svg>
 export const ChevronIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m9 18 6-6-6-6"/></svg>

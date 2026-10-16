@@ -573,7 +573,7 @@ button {
   right: 0;
   bottom: 0;
   width: 100%;
-  height: 70dvh;
+  height: 56dvh;
   min-height: 108px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 48px;
@@ -589,7 +589,7 @@ button {
   box-shadow: 0 -10px 42px rgba(28, 54, 45, 0.13);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transform: translate3d(0, calc(70dvh - 108px), 0);
+  transform: translate3d(0, calc(56dvh - 108px), 0);
   will-change: transform;
   backface-visibility: hidden;
   contain: layout paint style;
@@ -613,7 +613,6 @@ button {
   transform: translate3d(0, 0, 0);
   grid-template-rows: auto 1fr;
   align-items: start;
-  padding-top: 27px;
   touch-action: pan-y;
   cursor: default;
 }
@@ -923,7 +922,7 @@ button {
   font-size: 11px;
   line-height: 1.35;
 }
-.discovered-cities {
+.journey-overview {
   grid-column: 1 / -1;
   min-height: 0;
   align-self: stretch;
@@ -937,7 +936,7 @@ button {
   contain: layout style;
 }
 
-.journey-card[data-expanded="true"] .discovered-cities {
+.journey-card[data-expanded="true"] .journey-overview {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
@@ -1068,16 +1067,147 @@ button {
   padding-bottom: max(26px, env(safe-area-inset-bottom));
 }
 .global-milestones-sheet > .eyebrow {
-  margin-left: 58px;
+  margin-left: 46px;
 }
 .sheet.saved-places-sheet {
   padding-bottom: max(26px, env(safe-area-inset-bottom));
 }
 .saved-places-sheet > .eyebrow {
-  margin-left: 58px;
+  margin-left: 46px;
 }
 .saved-places-sheet > p {
   margin-bottom: 0;
+}
+.sheet.profile-collection-sheet {
+  padding-bottom: max(26px, env(safe-area-inset-bottom));
+}
+.profile-collection-sheet > .eyebrow {
+  margin-left: 46px;
+}
+.profile-collection-sheet > p {
+  margin-bottom: 0;
+}
+.global-milestones-sheet > h2,
+.saved-places-sheet > h2,
+.profile-collection-sheet > h2 {
+  margin-top: 36px;
+}
+.profile-collection-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(26, 58, 47, 0.1);
+  border-radius: 20px;
+  background: white;
+}
+.profile-collection-summary > span {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  text-align: center;
+}
+.profile-collection-summary > span + span {
+  border-left: 1px solid rgba(26, 58, 47, 0.1);
+}
+.profile-collection-summary strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--forest);
+  font:
+    700 17px/1 "Manrope",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-collection-summary small {
+  color: #748078;
+  font-size: 10px;
+}
+.profile-collection-empty {
+  margin: 24px 0 0;
+  border: 1px solid rgba(26, 58, 47, 0.1);
+  border-radius: 18px;
+  padding: 24px;
+  background: white;
+  color: #748078;
+  font-size: 12px;
+  text-align: center;
+}
+.cities-collection-list,
+.achievements-collection-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.cities-collection-list {
+  overflow: hidden;
+  border: 1px solid rgba(26, 58, 47, 0.1);
+  border-radius: 20px;
+  padding: 0 16px;
+  background: white;
+}
+.cities-collection-list li + li {
+  border-top: 1px solid rgba(34, 65, 53, 0.09);
+}
+.cities-collection-list button {
+  width: 100%;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 11px 0;
+  background: transparent;
+  color: var(--forest);
+  text-align: left;
+  cursor: pointer;
+}
+.cities-collection-list__identity {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+.cities-collection-list__identity strong,
+.cities-collection-list__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cities-collection-list__identity strong {
+  font-size: 14px;
+}
+.cities-collection-list__identity small {
+  color: #748078;
+  font-size: 9px;
+}
+.cities-collection-list__metrics {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+}
+.cities-collection-list__metrics > strong {
+  color: #78903b;
+  font:
+    700 16px/1 "Manrope",
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.achievements-collection-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.achievements-collection-list li {
+  min-width: 0;
+}
+.achievements-collection-list .achievement-card {
+  min-height: 150px;
 }
 .saved-places-overview {
   display: grid;
@@ -1370,7 +1500,15 @@ button {
   padding: 18px;
   background: white;
 }
+.walking-stats-overview__header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .walking-stats-overview__rank {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1415,6 +1553,26 @@ button {
   color: #748078;
   font-size: 11px;
 }
+.walking-stats-overview__hero {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  text-align: right;
+}
+.walking-stats-overview__hero strong {
+  color: var(--forest);
+  font:
+    700 24px/1 "Manrope",
+    sans-serif;
+  letter-spacing: -0.7px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.walking-stats-overview__hero small {
+  color: #748078;
+  font-size: 10px;
+}
 .walking-stats-overview__progress {
   height: 5px;
   overflow: hidden;
@@ -1430,7 +1588,7 @@ button {
 }
 .walking-stats-overview__metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .walking-stats-overview__metrics > span {
   min-width: 0;
@@ -1506,126 +1664,75 @@ button {
   color: #748078;
   font-size: 9px;
 }
-.discovered-cities__heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.discovered-cities__heading span {
-  font:
-    700 16px/1 "Manrope",
-    sans-serif;
-  color: var(--forest);
-}
-.discovered-cities__heading small {
-  color: #748078;
-  font-size: 11px;
-}
-.discovered-cities ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.discovered-cities > ul > li {
-  border-bottom: 1px solid rgba(34, 65, 53, 0.09);
-}
-.discovered-cities > ul > li > button {
-  width: 100%;
-  min-height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: #40544a;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-.discovered-cities__identity {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-.discovered-cities__identity > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.discovered-cities__identity small {
-  overflow: hidden;
-  color: #748078;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.discovered-cities > ul > li > button:active {
-  opacity: 0.65;
-}
-.discovered-cities > ul > li strong {
-  color: #78903b;
-  font:
-    700 16px/1 "Manrope",
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-}
-.discovered-cities__metrics {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-}
-.discovered-cities__metrics small {
-  color: #748078;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.discovered-cities > p {
+.journey-overview > p {
   margin: 20px 0;
   color: #748078;
   font-size: 13px;
   text-align: center;
 }
-.personal-achievements {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(34, 65, 53, 0.12);
-}
-.personal-achievements__heading {
+.journey-global-stats__heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
-.personal-achievements__heading > span {
+.journey-global-stats h3 {
+  margin: 0;
   color: var(--forest);
-  font:
-    700 16px/1 "Manrope",
-    sans-serif;
+  font-size: 13px;
+  font-weight: 700;
 }
-.personal-achievements__heading small {
-  color: #748078;
-  font-size: 11px;
-}
-.discovered-cities .personal-achievements ul {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(102px, 1fr));
-  gap: 9px;
-}
-.discovered-cities .personal-achievements li {
-  min-width: 0;
+.journey-global-stats__heading button {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   border: 0;
-  padding: 0;
+  padding: 4px 0 4px 8px;
   background: transparent;
+  color: var(--forest);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
 }
-.personal-achievements button.achievement-card {
-  width: 100%;
-  min-height: 142px;
-  display: block;
-  padding: 0;
-  text-align: center;
+.journey-global-stats__heading button:hover,
+.journey-global-stats__heading button:focus-visible {
+  color: #6f8637;
+}
+.journey-global-stats__heading button:focus-visible {
+  outline: 2px solid rgba(24, 60, 47, 0.25);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.journey-global-stats dl {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(26, 58, 47, 0.1);
+  border-radius: 20px;
+  padding: 0 17px;
+  background: white;
+}
+.journey-global-stats dl > div {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.journey-global-stats dl > div + div {
+  border-top: 1px solid rgba(26, 58, 47, 0.1);
+}
+.journey-global-stats dt {
+  color: #40544a;
+  font-size: 13px;
+}
+.journey-global-stats dd {
+  margin: 0;
+  color: var(--forest);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .achievement-card {
   --achievement-accent: #748f45;
@@ -3047,149 +3154,129 @@ button {
   font-size: 17px;
   font-weight: 700;
 }
-.account-walking-stats {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 11px 14px;
-  margin-top: 12px;
-  border: 1px solid rgba(26, 58, 47, 0.1);
-  border-radius: 17px;
-  padding: 14px;
-  background: #f7f7f2;
-  color: var(--forest);
-  text-align: left;
-  cursor: pointer;
-}
-.account-walking-stats:hover,
-.account-walking-stats:focus-visible {
-  border-color: rgba(24, 60, 47, 0.24);
-  background: #eef1e8;
-}
-.account-walking-stats:focus-visible {
-  outline: 2px solid rgba(24, 60, 47, 0.28);
-  outline-offset: 2px;
-}
-.account-walking-stats__rank-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.account-walking-stats__rank-icon {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--forest);
-  color: var(--lime);
-}
-.account-walking-stats__rank {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-.account-walking-stats__rank > span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.account-walking-stats__rank > span > small {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 7px;
-  background: var(--forest);
-  color: white;
-  font-size: 9px;
-  font-weight: 800;
-}
-.account-walking-stats__rank strong {
-  overflow: hidden;
-  font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-walking-stats__rank > small,
-.account-walking-stats__hero small,
-.account-walking-stats__metrics small {
-  color: #748078;
-  font-size: 10px;
-}
-.account-walking-stats__hero {
-  display: grid;
-  align-content: center;
-  justify-items: end;
-  gap: 1px;
-  text-align: right;
-}
-.account-walking-stats__hero strong {
-  font:
-    700 24px/1.05 "Manrope",
-    sans-serif;
-  letter-spacing: -0.8px;
-  font-variant-numeric: tabular-nums;
-}
-.account-walking-stats__hero small {
-  font-size: 11px;
-}
-.account-walking-stats__progress {
-  grid-column: 1 / -1;
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: rgba(24, 60, 47, 0.11);
-}
-.account-walking-stats__progress > span {
-  display: block;
-  height: 100%;
-  min-width: 3px;
-  border-radius: inherit;
-  background: var(--forest);
-}
-.account-walking-stats__metrics {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.account-walking-stats__metrics > span {
-  min-width: 0;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  padding: 0 7px;
-  text-align: center;
-}
-.account-walking-stats__metrics > span + span {
-  border-left: 1px solid rgba(26, 58, 47, 0.11);
-}
-.account-walking-stats__metrics strong {
-  overflow: hidden;
-  max-width: 100%;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-walking-stats__metrics small {
-  white-space: nowrap;
-}
-.account-walking-stats__action {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(26, 58, 47, 0.09);
-  font-size: 11px;
-  font-weight: 800;
-}
 .account-profile-links {
   display: grid;
   gap: 8px;
   margin-top: 10px;
+}
+.account-navigation {
+  margin-top: 18px;
+}
+.account-navigation__heading {
+  display: grid;
+  gap: 2px;
+  margin: 0 2px 9px;
+}
+.account-navigation__heading strong {
+  color: var(--forest);
+  font: 700 13px/1.2 "Manrope", sans-serif;
+}
+.account-navigation__heading small {
+  color: #748078;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.account-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.account-feature-tile {
+  position: relative;
+  min-width: 0;
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid rgba(29, 61, 49, 0.11);
+  border-radius: 17px;
+  padding: 13px 12px;
+  background: #f7f8f3;
+  color: var(--forest);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
+}
+.account-feature-tile:hover,
+.account-feature-tile:focus-visible {
+  border-color: rgba(24, 60, 47, 0.24);
+  background: #eef1e8;
+}
+.account-feature-tile:active {
+  transform: translateY(1px);
+}
+.account-feature-tile:focus-visible,
+.account-community-link:focus-visible {
+  outline: 2px solid rgba(24, 60, 47, 0.28);
+  outline-offset: 2px;
+}
+.account-feature-tile > svg {
+  position: absolute;
+  top: 14px;
+  right: 11px;
+}
+.account-feature-tile__mark,
+.account-community-link__mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 11px;
+  background: #e7edda;
+  color: var(--forest);
+}
+.account-feature-tile > strong {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.account-feature-tile > small {
+  margin-top: 3px;
+  color: #748078;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.account-navigation__heading--community {
+  margin-top: 17px;
+}
+.account-community-link {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(29, 61, 49, 0.11);
+  border-radius: 17px;
+  padding: 12px 13px;
+  background: #f7f8f3;
+  color: var(--forest);
+  text-align: left;
+  cursor: pointer;
+}
+.account-community-link:hover,
+.account-community-link:focus-visible {
+  border-color: rgba(24, 60, 47, 0.24);
+  background: #eef1e8;
+}
+.account-community-link > span:nth-child(2) {
+  min-width: 0;
+}
+.account-community-link strong,
+.account-community-link small {
+  display: block;
+}
+.account-community-link strong {
+  font-size: 13px;
+}
+.account-community-link small {
+  margin-top: 2px;
+  color: #748078;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .account-quick-link {
   width: 100%;
@@ -3708,38 +3795,33 @@ button {
 }
 .account-milestones__list {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 132px;
-  gap: 9px;
-  overflow-x: auto;
-  padding: 1px 1px 8px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  overflow: hidden;
+  padding: 1px 1px 6px;
 }
 .account-milestone {
-  min-height: 158px;
+  min-height: 134px;
   display: flex;
   align-items: center;
   flex-direction: column;
   overflow: hidden;
-  scroll-snap-align: start;
   border: 1px solid rgba(98, 123, 58, 0.17);
   border-radius: 15px;
-  padding: 10px 8px 9px;
+  padding: 7px 6px 7px;
   background: linear-gradient(155deg, #fbfcf8, #eff4df);
   text-align: center;
 }
 .account-milestone > .achievement-artwork {
-  max-width: calc(100% - 20px);
-  margin: 2px auto 5px;
+  margin: 0 auto 3px;
 }
 .account-milestone > strong {
-  min-height: 29px;
+  min-height: 24px;
   display: grid;
   place-items: center;
-  margin-top: 3px;
+  margin-top: 1px;
   color: var(--forest);
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.22;
 }
 .account-milestone__city {
@@ -3752,21 +3834,21 @@ button {
   white-space: nowrap;
 }
 .account-milestone__goal {
-  min-height: 28px;
+  min-height: 22px;
   display: grid;
   align-content: center;
-  gap: 2px;
+  gap: 1px;
   color: #6e7b74;
-  font-size: 8px;
+  font-size: 7px;
   line-height: 1.2;
 }
 .account-milestone__goal strong {
   color: var(--forest);
-  font-size: 9px;
+  font-size: 8px;
 }
 .account-milestone__goal small {
   color: #7b8780;
-  font-size: 8px;
+  font-size: 7px;
 }
 .account-milestone > .city-level-stars {
   margin-top: auto;

@@ -14,20 +14,14 @@ import {
 } from "../inactivityReminder";
 import { openLocationSettings } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
-import {
-  CITY_MILESTONE_TIERS,
-  currentWorldMilestone,
-  nextWorldMilestone,
-  WORLD_MILESTONE_TIERS,
-  worldMilestoneProgress,
-} from "../badges";
+import { currentWorldMilestone } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
 import type { FavoritePlace } from "../favoritePlaces";
 import { hostedLeaderboardUrl, publicLeaderboardUrl } from "../routes";
-import { AchievementArtwork } from "./AchievementArtwork";
-import { CityLevelStars } from "./CityLevelStars";
 import { WorldMilestoneIcon } from "./WorldMilestones";
 import {
+  AchievementsIcon,
+  CitiesIcon,
   ChevronIcon,
   InfoIcon,
   LeaderboardIcon,
@@ -35,7 +29,6 @@ import {
   XIcon,
 } from "./Icons";
 import type { Coordinate } from "../types";
-import type { WalkingStats } from "../walkingStats";
 
 type Props = {
   open: boolean;
@@ -44,20 +37,17 @@ type Props = {
   reminderEnabled: boolean;
   nativeApp: boolean;
   keyboardInset: number;
-  cityProgress: {
-    cityId: string;
-    cityName: string;
-    discoveredKm: number;
-  } | null;
-  discoveryDistance: number;
   travelledDistance: number;
-  walkingStats: WalkingStats;
   discoveredCityCount: number;
+  earnedAchievementCount: number;
+  achievementCount: number;
   favoritePlaces: FavoritePlace[];
   onReminderChange: (enabled: boolean) => Promise<string | null>;
   onGpxImport: (file: File) => Promise<GpxImportResult>;
   onShowGpxImport: (points: Coordinate[]) => void;
   onWalkingStatsOpen: () => void;
+  onCitiesOpen: () => void;
+  onAchievementsOpen: () => void;
   onSavedPlacesOpen: () => void;
 };
 type SignInMethod = "password" | "link";
@@ -77,16 +67,17 @@ export function SyncSheet({
   reminderEnabled,
   nativeApp,
   keyboardInset,
-  cityProgress,
-  discoveryDistance,
   travelledDistance,
-  walkingStats,
   discoveredCityCount,
+  earnedAchievementCount,
+  achievementCount,
   favoritePlaces,
   onReminderChange,
   onGpxImport,
   onShowGpxImport,
   onWalkingStatsOpen,
+  onCitiesOpen,
+  onAchievementsOpen,
   onSavedPlacesOpen,
 }: Props) {
   const [email, setEmail] = useState("");
@@ -115,7 +106,6 @@ export function SyncSheet({
   const [publishedDisplayName, setPublishedDisplayName] = useState<
     string | null
   >(null);
-  const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
 
   useEffect(() => {
     if (!keyboardInset) return;
@@ -145,7 +135,6 @@ export function SyncSheet({
   useEffect(() => {
     if (!open) {
       setConfirmingDelete(false);
-      setCityMilestoneInfoOpen(false);
       return;
     }
     if (!supabase) {
@@ -325,11 +314,6 @@ export function SyncSheet({
     .trim()
     .charAt(0)
     .toUpperCase();
-  const cityMilestoneCount = cityProgress
-    ? CITY_MILESTONE_TIERS.filter(
-        (tier) => cityProgress.discoveredKm >= tier.thresholdKm,
-      ).length
-    : 0;
   const favoriteCollectionCount = new Set(
     favoritePlaces.map((place) => place.icon),
   ).size;
@@ -341,13 +325,6 @@ export function SyncSheet({
     setMessage("");
   };
   const currentWorldRank = currentWorldMilestone(travelledDistance);
-  const nextWorldRank = nextWorldMilestone(travelledDistance);
-  const currentWorldRankLevel =
-    WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === currentWorldRank.id) + 1;
-  const remainingWorldRankKm = nextWorldRank
-    ? Math.max(0, nextWorldRank.thresholdKm - travelledDistance)
-    : 0;
-  const currentWorldRankProgress = worldMilestoneProgress(travelledDistance);
 
   const openLeaderboard = async () => {
     const nativePlatform = Capacitor.isNativePlatform();
@@ -456,204 +433,94 @@ export function SyncSheet({
                 </span>
               </div>
             </div>
-            <button
-              type="button"
-              className="account-walking-stats"
-              aria-label={`Open walking stats. Level ${currentWorldRankLevel}, ${currentWorldRank.title}. ${discoveryDistance.toFixed(1)} kilometers of new ground, ${travelledDistance.toFixed(1)} kilometers travelled across ${walkingStats.walkCount} walks and ${discoveredCityCount} cities.`}
-              onClick={onWalkingStatsOpen}
-            >
-              <span className="account-walking-stats__rank-header">
-                <span
-                  className="account-walking-stats__rank-icon"
-                  aria-hidden="true"
+            <nav className="account-navigation" aria-label="Profile features">
+              <div className="account-navigation__heading">
+                <strong>Your activity</strong>
+                <small>Progress, discoveries, and collections</small>
+              </div>
+              <div className="account-activity-grid">
+                <button
+                  type="button"
+                  className="account-feature-tile"
+                  aria-label={`Open walking stats. Current global rank: ${currentWorldRank.title}.`}
+                  onClick={onWalkingStatsOpen}
                 >
-                  <WorldMilestoneIcon icon={currentWorldRank.icon} />
-                </span>
-                <span className="account-walking-stats__rank">
-                  <span>
-                    <small>Lv. {currentWorldRankLevel}</small>
-                    <strong>{currentWorldRank.title}</strong>
+                  <span className="account-feature-tile__mark" aria-hidden="true">
+                    <WorldMilestoneIcon icon={currentWorldRank.icon} />
                   </span>
+                  <strong>Walking stats</strong>
+                  <small>Stats and milestones</small>
+                  <ChevronIcon size={15} strokeWidth={2.3} />
+                </button>
+                <button
+                  type="button"
+                  className="account-feature-tile"
+                  aria-label={`Open cities explored. ${discoveredCityCount} ${discoveredCityCount === 1 ? "city" : "cities"}.`}
+                  onClick={onCitiesOpen}
+                >
+                  <span className="account-feature-tile__mark" aria-hidden="true">
+                    <CitiesIcon size={18} />
+                  </span>
+                  <strong>Cities</strong>
+                  <small>{discoveredCityCount} explored</small>
+                  <ChevronIcon size={15} strokeWidth={2.3} />
+                </button>
+                <button
+                  type="button"
+                  className="account-feature-tile"
+                  aria-label={`Open achievements. ${earnedAchievementCount} of ${achievementCount} earned.`}
+                  onClick={onAchievementsOpen}
+                >
+                  <span className="account-feature-tile__mark" aria-hidden="true">
+                    <AchievementsIcon size={18} />
+                  </span>
+                  <strong>Achievements</strong>
                   <small>
-                    {nextWorldRank
-                      ? `${remainingWorldRankKm.toFixed(1)} km to the next rank`
-                      : "All global ranks complete"}
+                    {earnedAchievementCount} of {achievementCount} earned
                   </small>
-                </span>
-              </span>
-              <span className="account-walking-stats__hero">
-                <strong>{discoveryDistance.toFixed(1)} km</strong>
-                <small>Total new ground</small>
-              </span>
-              <span
-                className="account-walking-stats__progress"
-                aria-hidden="true"
-              >
-                <span style={{ width: `${currentWorldRankProgress * 100}%` }} />
-              </span>
-              <span className="account-walking-stats__metrics">
-                <span>
-                  <strong>{travelledDistance.toFixed(1)} km</strong>
-                  <small>Total travelled</small>
-                </span>
-                <span>
-                  <strong>{walkingStats.walkCount}</strong>
+                  <ChevronIcon size={15} strokeWidth={2.3} />
+                </button>
+                <button
+                  type="button"
+                  className="account-feature-tile"
+                  onClick={onSavedPlacesOpen}
+                  aria-label={`Open saved places. ${favoritePlaces.length} saved across ${favoriteCollectionCount} collections.`}
+                >
+                  <span className="account-feature-tile__mark" aria-hidden="true">
+                    <SaveIcon size={18} strokeWidth={2} />
+                  </span>
+                  <strong>Saved places</strong>
                   <small>
-                    {walkingStats.walkCount === 1 ? "Walk" : "Walks"}
+                    {favoritePlaces.length} {favoritePlaces.length === 1 ? "place" : "places"}
                   </small>
-                </span>
-                <span>
-                  <strong>{discoveredCityCount}</strong>
-                  <small>{discoveredCityCount === 1 ? "City" : "Cities"}</small>
-                </span>
-              </span>
-              <span className="account-walking-stats__action">
-                Walking stats
-                <ChevronIcon size={16} strokeWidth={2.3} />
-              </span>
-            </button>
-            <div className="account-profile-links">
+                  <ChevronIcon size={15} strokeWidth={2.3} />
+                </button>
+              </div>
+              <div className="account-navigation__heading account-navigation__heading--community">
+                <strong>Community</strong>
+              </div>
               <button
                 type="button"
-                className="account-quick-link"
+                className="account-community-link"
                 aria-label="Open the public leaderboard"
                 onClick={() => {
                   void openLeaderboard();
                 }}
               >
-                <span className="account-quick-link__identity">
-                  <span className="account-quick-link__mark" aria-hidden="true">
-                    <LeaderboardIcon size={17} />
-                  </span>
-                  <span>
-                    <strong>Leaderboard</strong>
-                    <small>City and overall ranking</small>
-                  </span>
+                <span className="account-community-link__mark" aria-hidden="true">
+                  <LeaderboardIcon size={18} />
                 </span>
-                <span className="account-quick-link__action" aria-hidden="true">
-                  Open
-                  <ChevronIcon size={16} strokeWidth={2.3} />
+                <span>
+                  <strong>Leaderboard</strong>
+                  <small>Compare your city and worldwide ranking</small>
                 </span>
+                <ChevronIcon size={16} strokeWidth={2.3} />
               </button>
-              <button
-                type="button"
-                className="account-favorites"
-                onClick={onSavedPlacesOpen}
-                aria-label={`Open saved places. ${favoritePlaces.length} saved across ${favoriteCollectionCount} collections.`}
-              >
-                <span className="account-favorites__heading">
-                  <span className="account-favorites__identity">
-                    <span
-                      className="account-favorites__mark"
-                      aria-hidden="true"
-                    >
-                      <SaveIcon size={17} strokeWidth={2} />
-                    </span>
-                    <span>
-                      <strong id="account-favorites-title">Saved places</strong>
-                      <small>
-                        {favoriteCollectionCount
-                          ? `${favoriteCollectionCount} ${favoriteCollectionCount === 1 ? "collection" : "collections"}`
-                          : "Your saved map collection"}
-                      </small>
-                    </span>
-                  </span>
-                  <span className="account-favorites__summary-meta">
-                    <small>{favoritePlaces.length}</small>
-                    <ChevronIcon size={16} strokeWidth={2.3} />
-                  </span>
-                </span>
-              </button>
-            </div>
+            </nav>
             {reminderError && (
               <div className="form-message form-message--error" role="alert">
                 {reminderError}
               </div>
-            )}
-            {cityProgress && (
-              <section
-                className="account-milestones"
-                aria-labelledby="account-milestones-title"
-              >
-                <div className="account-milestones__heading">
-                  <span>
-                    <span className="account-milestones__title-row">
-                      <strong id="account-milestones-title">
-                        City milestones
-                      </strong>
-                      <button
-                        type="button"
-                        className="account-milestones__info-button"
-                        aria-label="Why these city milestones are shown"
-                        aria-expanded={cityMilestoneInfoOpen}
-                        aria-controls="account-milestones-explanation"
-                        onClick={() =>
-                          setCityMilestoneInfoOpen((current) => !current)
-                        }
-                      >
-                        <InfoIcon size={15} strokeWidth={1.9} />
-                      </button>
-                    </span>
-                    <small>Your progress in {cityProgress.cityName}</small>
-                  </span>
-                  <small>
-                    {cityMilestoneCount} / {CITY_MILESTONE_TIERS.length} earned
-                  </small>
-                </div>
-                {cityMilestoneInfoOpen && (
-                  <p
-                    className="account-milestones__explanation"
-                    id="account-milestones-explanation"
-                    role="note"
-                  >
-                    This is the city you are currently in. Hecate shows one
-                    city’s milestones at a time and updates this section when
-                    your current city changes.
-                  </p>
-                )}
-                <div className="account-milestones__list">
-                  {CITY_MILESTONE_TIERS.map((milestone) => {
-                    const earned =
-                      cityProgress.discoveredKm >= milestone.thresholdKm;
-                    const remainingKm = Math.max(
-                      0,
-                      milestone.thresholdKm - cityProgress.discoveredKm,
-                    );
-                    return (
-                      <article
-                        className={`account-milestone${earned ? "" : " account-milestone--locked"}`}
-                        key={milestone.id}
-                        aria-label={
-                          earned
-                            ? `${milestone.title} earned in ${cityProgress.cityName}`
-                            : `${milestone.title} requires ${milestone.thresholdKm} kilometers in ${cityProgress.cityName}. ${remainingKm.toFixed(1)} kilometers remaining.`
-                        }
-                      >
-                        <AchievementArtwork
-                          image={milestone.image}
-                          title={milestone.title}
-                          size={48}
-                        />
-                        <strong>{milestone.title}</strong>
-                        {earned ? (
-                          <span className="account-milestone__goal">
-                            Earned at {milestone.thresholdKm} km
-                          </span>
-                        ) : (
-                          <span className="account-milestone__goal">
-                            <strong>
-                              {cityProgress.discoveredKm.toFixed(1)} /{" "}
-                              {milestone.thresholdKm} km
-                            </strong>
-                            <small>{remainingKm.toFixed(1)} km left</small>
-                          </span>
-                        )}
-                        <CityLevelStars level={milestone.level} decorative />
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
             )}
             <section
               className="account-settings-panel"

@@ -31,6 +31,7 @@ describe("GlobalMilestonesSheet", () => {
           bestStreakDays: 3,
         }}
         discoveredCityCount={2}
+        backLabel="Back to profile"
         onBack={() => undefined}
         onClose={() => undefined}
       />,
@@ -52,6 +53,7 @@ describe("GlobalMilestonesSheet", () => {
         travelledKm={42.2}
         walkingStats={emptyWalkingStats()}
         discoveredCityCount={0}
+        backLabel="Back to journey"
         onBack={() => undefined}
         onClose={() => undefined}
       />,

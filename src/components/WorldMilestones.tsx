@@ -126,9 +126,115 @@ type GlobalMilestonesSheetProps = {
   travelledKm: number;
   walkingStats: WalkingStats;
   discoveredCityCount: number;
+  backLabel: string;
   onBack: () => void;
   onClose: () => void;
 };
+
+type WalkingStatsOverviewProps = {
+  discoveryDistance: number;
+  travelledKm: number;
+  walkingStats: WalkingStats;
+  discoveredCityCount: number;
+};
+
+type WalkingPersonalBestsProps = {
+  walkingStats: WalkingStats;
+  headingId: string;
+};
+
+export function WalkingStatsOverview({
+  discoveryDistance,
+  travelledKm,
+  walkingStats,
+  discoveredCityCount,
+}: WalkingStatsOverviewProps) {
+  const current = currentWorldMilestone(travelledKm);
+  const next = nextWorldMilestone(travelledKm);
+  const level = WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === current.id) + 1;
+  const remainingKm = next ? Math.max(0, next.thresholdKm - travelledKm) : 0;
+  const progress = worldMilestoneProgress(travelledKm);
+
+  return (
+    <section className="walking-stats-overview" aria-label="Walking overview">
+      <div className="walking-stats-overview__header">
+        <div className="walking-stats-overview__rank">
+          <span className="walking-stats-overview__icon" aria-hidden="true">
+            <WorldMilestoneIcon icon={current.icon} />
+          </span>
+          <span>
+            <span>
+              <small>Lv. {level}</small>
+              <strong>{current.title}</strong>
+            </span>
+            <small>
+              {next
+                ? `${formatWalkingStatDistance(remainingKm)} to the next rank`
+                : "All global ranks complete"}
+            </small>
+          </span>
+        </div>
+        <div className="walking-stats-overview__hero">
+          <strong>{formatWalkingStatDistance(discoveryDistance)}</strong>
+          <small>New ground</small>
+        </div>
+      </div>
+      <div className="walking-stats-overview__progress" aria-hidden="true">
+        <span style={{ width: `${progress * 100}%` }} />
+      </div>
+      <div className="walking-stats-overview__metrics">
+        <span>
+          <strong>{formatWalkingStatDistance(travelledKm)}</strong>
+          <small>Travelled</small>
+        </span>
+        <span>
+          <strong>{walkingStats.walkCount}</strong>
+          <small>{walkingStats.walkCount === 1 ? "Walk" : "Walks"}</small>
+        </span>
+        <span>
+          <strong>{discoveredCityCount}</strong>
+          <small>{discoveredCityCount === 1 ? "City" : "Cities"}</small>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+export function WalkingPersonalBests({
+  walkingStats,
+  headingId,
+}: WalkingPersonalBestsProps) {
+  return (
+    <section className="walking-personal-bests" aria-labelledby={headingId}>
+      <h3 id={headingId}>Personal bests</h3>
+      <dl>
+        <div>
+          <dt>Longest walk</dt>
+          <dd>
+            <strong>{formatWalkingStatDistance(walkingStats.longestWalkKm)}</strong>
+            <small>{formatWalkingStatDate(walkingStats.longestWalkFinishedAt)}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Average per walk</dt>
+          <dd>{formatWalkingStatDistance(walkingStats.averageWalkKm)}</dd>
+        </div>
+        <div>
+          <dt>Current streak</dt>
+          <dd>{formatStreak(walkingStats.currentStreakDays)}</dd>
+        </div>
+        <div>
+          <dt>Best streak</dt>
+          <dd>{formatStreak(walkingStats.bestStreakDays)}</dd>
+        </div>
+        <div>
+          <dt>First walk</dt>
+          <dd>{formatWalkingStatDate(walkingStats.firstWalkAt)}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
 
 export function GlobalMilestonesSheet({
   open,
@@ -136,15 +242,11 @@ export function GlobalMilestonesSheet({
   travelledKm,
   walkingStats,
   discoveredCityCount,
+  backLabel,
   onBack,
   onClose,
 }: GlobalMilestonesSheetProps) {
   if (!open) return null;
-  const current = currentWorldMilestone(travelledKm);
-  const next = nextWorldMilestone(travelledKm);
-  const level = WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === current.id) + 1;
-  const remainingKm = next ? Math.max(0, next.thresholdKm - travelledKm) : 0;
-  const progress = worldMilestoneProgress(travelledKm);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -159,7 +261,7 @@ export function GlobalMilestonesSheet({
           className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
-          aria-label="Back to profile"
+          aria-label={backLabel}
         >
           <ArrowLeftIcon />
         </button>
@@ -174,73 +276,16 @@ export function GlobalMilestonesSheet({
         <div className="eyebrow">Walking stats</div>
         <h2 id="walking-stats-title">Walking stats</h2>
         <p>Your recorded journeys, personal bests, and worldwide progress.</p>
-        <section className="walking-stats-overview" aria-label="Walking overview">
-          <div className="walking-stats-overview__rank">
-            <span className="walking-stats-overview__icon" aria-hidden="true">
-              <WorldMilestoneIcon icon={current.icon} />
-            </span>
-            <span>
-              <span>
-                <small>Lv. {level}</small>
-                <strong>{current.title}</strong>
-              </span>
-              <small>
-                {next
-                  ? `${formatWalkingStatDistance(remainingKm)} to the next rank`
-                  : "All global ranks complete"}
-              </small>
-            </span>
-          </div>
-          <div className="walking-stats-overview__progress" aria-hidden="true">
-            <span style={{ width: `${progress * 100}%` }} />
-          </div>
-          <div className="walking-stats-overview__metrics">
-            <span>
-              <strong>{formatWalkingStatDistance(discoveryDistance)}</strong>
-              <small>New ground</small>
-            </span>
-            <span>
-              <strong>{formatWalkingStatDistance(travelledKm)}</strong>
-              <small>Travelled</small>
-            </span>
-            <span>
-              <strong>{walkingStats.walkCount}</strong>
-              <small>{walkingStats.walkCount === 1 ? "Walk" : "Walks"}</small>
-            </span>
-            <span>
-              <strong>{discoveredCityCount}</strong>
-              <small>{discoveredCityCount === 1 ? "City" : "Cities"}</small>
-            </span>
-          </div>
-        </section>
-        <section className="walking-personal-bests" aria-labelledby="personal-bests-title">
-          <h3 id="personal-bests-title">Personal bests</h3>
-          <dl>
-            <div>
-              <dt>Longest walk</dt>
-              <dd>
-                <strong>{formatWalkingStatDistance(walkingStats.longestWalkKm)}</strong>
-                <small>{formatWalkingStatDate(walkingStats.longestWalkFinishedAt)}</small>
-              </dd>
-            </div>
-            <div>
-              <dt>Average per walk</dt>
-              <dd>{formatWalkingStatDistance(walkingStats.averageWalkKm)}</dd>
-            </div>
-            <div>
-              <dt>Current streak</dt>
-              <dd>{formatStreak(walkingStats.currentStreakDays)}</dd>
-            </div>
-            <div>
-              <dt>Best streak</dt>
-              <dd>{formatStreak(walkingStats.bestStreakDays)}</dd>
-            </div>
-            <div>
-              <dt>First walk</dt>
-              <dd>{formatWalkingStatDate(walkingStats.firstWalkAt)}</dd>
-            </div>
-          </dl>
-        </section>
+        <WalkingStatsOverview
+          discoveryDistance={discoveryDistance}
+          travelledKm={travelledKm}
+          walkingStats={walkingStats}
+          discoveredCityCount={discoveredCityCount}
+        />
+        <WalkingPersonalBests
+          walkingStats={walkingStats}
+          headingId="walking-stats-personal-bests-title"
+        />
         <WorldMilestones travelledKm={travelledKm} />
       </section>
     </div>
