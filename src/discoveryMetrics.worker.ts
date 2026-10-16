@@ -1,7 +1,8 @@
 import { evaluatePersonalAchievements } from "./achievements";
 import { discoveredCityProgress, type CityBoundary } from "./city";
-import { discoveredDistanceKm } from "./geo";
+import { discoveryJourneyMetrics } from "./geo";
 import type { Coordinate, DiscoveryCell } from "./types";
+import { walkingStatsFromJourneys, type WalkingStats } from "./walkingStats";
 
 export type DiscoveryMetricsRequest = {
   generation: number;
@@ -15,6 +16,8 @@ export type DiscoveryProgressResponse = {
   kind: "progress";
   generation: number;
   discoveryDistance: number;
+  travelledDistance: number;
+  walkingStats: WalkingStats;
   cityMetrics: Array<{
     cityId: string;
     percentage: number;
@@ -44,10 +47,19 @@ self.addEventListener(
     const achievementCities = cities.filter((city) =>
       achievementCityIdSet.has(city.id),
     );
+    const journeys = discoveryJourneyMetrics(points);
     const progressResponse: DiscoveryProgressResponse = {
       kind: "progress",
       generation,
-      discoveryDistance: discoveredDistanceKm(points),
+      discoveryDistance: journeys.reduce(
+        (total, journey) => total + journey.newGroundKm,
+        0,
+      ),
+      travelledDistance: journeys.reduce(
+        (total, journey) => total + journey.travelledKm,
+        0,
+      ),
+      walkingStats: walkingStatsFromJourneys(journeys, Date.now()),
       cityMetrics,
     };
     self.postMessage(progressResponse);

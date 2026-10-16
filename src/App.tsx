@@ -46,6 +46,8 @@ import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
+import { GlobalMilestonesSheet } from "./components/WorldMilestones";
+import { SavedPlacesSheet } from "./components/SavedPlaces";
 import { Counter, type CounterPlace } from "./components/Counter";
 import { SyncSheet, type GpxImportResult } from "./components/SyncSheet";
 import {
@@ -71,6 +73,7 @@ import {
   routeDistanceKm,
   shouldRecordPoint,
 } from "./geo";
+import { emptyWalkingStats, type WalkingStats } from "./walkingStats";
 import {
   ExplorationReminder,
   isUnmappedArea,
@@ -274,11 +277,37 @@ type CachedDiscoveryProgress = Omit<
   DiscoveryProgressResponse,
   "kind" | "generation"
 > & {
-  version: 1;
+  version: 3;
   userId: string;
 };
 
-const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v1";
+const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v3";
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isWalkingStats(value: unknown): value is WalkingStats {
+  if (!value || typeof value !== "object") return false;
+  const stats = value as Partial<WalkingStats>;
+  return (
+    typeof stats.walkCount === "number" &&
+    Number.isInteger(stats.walkCount) &&
+    stats.walkCount >= 0 &&
+    typeof stats.longestWalkKm === "number" &&
+    Number.isFinite(stats.longestWalkKm) &&
+    isNullableFiniteNumber(stats.longestWalkFinishedAt) &&
+    typeof stats.averageWalkKm === "number" &&
+    Number.isFinite(stats.averageWalkKm) &&
+    typeof stats.currentStreakDays === "number" &&
+    Number.isInteger(stats.currentStreakDays) &&
+    stats.currentStreakDays >= 0 &&
+    typeof stats.bestStreakDays === "number" &&
+    Number.isInteger(stats.bestStreakDays) &&
+    stats.bestStreakDays >= 0 &&
+    isNullableFiniteNumber(stats.firstWalkAt)
+  );
+}
 
 export function discoveryProgressCacheKey(userId: string): string {
   return `${DISCOVERY_PROGRESS_CACHE_PREFIX}:${userId}`;
@@ -294,10 +323,13 @@ export function loadCachedDiscoveryProgress(
     if (!value || typeof value !== "object") return null;
     const cached = value as Partial<CachedDiscoveryProgress>;
     if (
-      cached.version !== 1 ||
+      cached.version !== 3 ||
       cached.userId !== userId ||
       typeof cached.discoveryDistance !== "number" ||
       !Number.isFinite(cached.discoveryDistance) ||
+      typeof cached.travelledDistance !== "number" ||
+      !Number.isFinite(cached.travelledDistance) ||
+      !isWalkingStats(cached.walkingStats) ||
       !Array.isArray(cached.cityMetrics) ||
       !cached.cityMetrics.every(
         (metric) =>
@@ -312,6 +344,8 @@ export function loadCachedDiscoveryProgress(
       return null;
     return {
       discoveryDistance: cached.discoveryDistance,
+      travelledDistance: cached.travelledDistance,
+      walkingStats: cached.walkingStats,
       cityMetrics: cached.cityMetrics,
     };
   } catch {
@@ -324,7 +358,7 @@ export function saveCachedDiscoveryProgress(
   progress: Omit<DiscoveryProgressResponse, "kind" | "generation">,
 ): void {
   const cached: CachedDiscoveryProgress = {
-    version: 1,
+    version: 3,
     userId,
     ...progress,
   };
@@ -678,6 +712,8 @@ export default function App() {
   trackingStateRef.current = tracking;
   const [zoom, setZoom] = useState(1.35);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
+  const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
   >("signin");
@@ -712,6 +748,8 @@ export default function App() {
     Omit<DiscoveryProgressResponse, "kind" | "generation">
   >({
     discoveryDistance: 0,
+    travelledDistance: 0,
+    walkingStats: emptyWalkingStats(),
     cityMetrics: [],
   });
   const [discoveryProgressReady, setDiscoveryProgressReady] = useState(false);
@@ -1165,7 +1203,12 @@ export default function App() {
   useEffect(() => {
     setDiscoveryProgressReady(false);
     if (!accountUserId) {
-      setDiscoveryProgress({ discoveryDistance: 0, cityMetrics: [] });
+      setDiscoveryProgress({
+        discoveryDistance: 0,
+        travelledDistance: 0,
+        walkingStats: emptyWalkingStats(),
+        cityMetrics: [],
+      });
       return;
     }
     const cached = loadCachedDiscoveryProgress(accountUserId);
@@ -1191,6 +1234,8 @@ export default function App() {
         if (event.data.kind === "progress") {
           const progress = {
             discoveryDistance: event.data.discoveryDistance,
+            travelledDistance: event.data.travelledDistance,
+            walkingStats: event.data.walkingStats,
             cityMetrics: event.data.cityMetrics,
           };
           setDiscoveryProgress(progress);
@@ -3867,7 +3912,9 @@ export default function App() {
         </button>
         <button
           className="avatar-button"
+          type="button"
           onClick={() => {
+            setGlobalMilestonesOpen(false);
             setSyncInitialIntent("signin");
             setSyncOpen(true);
           }}
@@ -4284,19 +4331,55 @@ export default function App() {
           </section>
         </div>
       )}
-      <SyncSheet
-        open={syncOpen}
-        initialAuthIntent={syncInitialIntent}
-        onClose={() => setSyncOpen(false)}
-        reminderEnabled={reminderEnabled}
-        nativeApp={nativeApp}
-        keyboardInset={keyboardInset}
-        cityProgress={accountCityProgress}
+      <div
+        aria-hidden={globalMilestonesOpen || savedPlacesOpen || undefined}
+        inert={globalMilestonesOpen || savedPlacesOpen || undefined}
+      >
+        <SyncSheet
+          open={syncOpen}
+          initialAuthIntent={syncInitialIntent}
+          onClose={() => setSyncOpen(false)}
+          reminderEnabled={reminderEnabled}
+          nativeApp={nativeApp}
+          keyboardInset={keyboardInset}
+          cityProgress={accountCityProgress}
+          discoveryDistance={discoveryProgress.discoveryDistance}
+          travelledDistance={discoveryProgress.travelledDistance}
+          walkingStats={discoveryProgress.walkingStats}
+          discoveredCityCount={cityProgresses.length}
+          favoritePlaces={favoritePlaces}
+          onReminderChange={updateReminderEnabled}
+          onGpxImport={importGpxFile}
+          onShowGpxImport={showImportedRoute}
+          onWalkingStatsOpen={() => {
+            setGlobalMilestonesOpen(true);
+          }}
+          onSavedPlacesOpen={() => {
+            setSavedPlacesOpen(true);
+          }}
+        />
+      </div>
+      <GlobalMilestonesSheet
+        open={Boolean(accountUserId && globalMilestonesOpen)}
+        discoveryDistance={discoveryProgress.discoveryDistance}
+        travelledKm={discoveryProgress.travelledDistance}
+        walkingStats={discoveryProgress.walkingStats}
+        discoveredCityCount={cityProgresses.length}
+        onBack={() => {
+          setGlobalMilestonesOpen(false);
+        }}
+        onClose={() => setGlobalMilestonesOpen(false)}
+      />
+      <SavedPlacesSheet
+        open={Boolean(accountUserId && savedPlacesOpen)}
         favoritePlaces={favoritePlaces}
-        onFavoriteSelect={openFavoritePlace}
-        onReminderChange={updateReminderEnabled}
-        onGpxImport={importGpxFile}
-        onShowGpxImport={showImportedRoute}
+        onFavoriteSelect={(favorite) => {
+          setSavedPlacesOpen(false);
+          openFavoritePlace(favorite);
+        }}
+        onFavoriteDelete={deleteFavoriteDraft}
+        onBack={() => setSavedPlacesOpen(false)}
+        onClose={() => setSavedPlacesOpen(false)}
       />
       {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">

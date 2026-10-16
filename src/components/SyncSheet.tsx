@@ -14,19 +14,28 @@ import {
 } from "../inactivityReminder";
 import { openLocationSettings } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
-import { CITY_MILESTONE_TIERS } from "../badges";
-import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
 import {
-  FAVORITE_PLACE_ICONS,
-  favoritePlaceIconVector,
-  type FavoritePlace,
-  type FavoritePlaceIcon,
-} from "../favoritePlaces";
+  CITY_MILESTONE_TIERS,
+  currentWorldMilestone,
+  nextWorldMilestone,
+  WORLD_MILESTONE_TIERS,
+  worldMilestoneProgress,
+} from "../badges";
+import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
+import type { FavoritePlace } from "../favoritePlaces";
 import { hostedLeaderboardUrl, publicLeaderboardUrl } from "../routes";
 import { AchievementArtwork } from "./AchievementArtwork";
 import { CityLevelStars } from "./CityLevelStars";
-import { ChevronIcon, InfoIcon, SaveIcon, XIcon } from "./Icons";
+import { WorldMilestoneIcon } from "./WorldMilestones";
+import {
+  ChevronIcon,
+  InfoIcon,
+  LeaderboardIcon,
+  SaveIcon,
+  XIcon,
+} from "./Icons";
 import type { Coordinate } from "../types";
+import type { WalkingStats } from "../walkingStats";
 
 type Props = {
   open: boolean;
@@ -40,11 +49,16 @@ type Props = {
     cityName: string;
     discoveredKm: number;
   } | null;
+  discoveryDistance: number;
+  travelledDistance: number;
+  walkingStats: WalkingStats;
+  discoveredCityCount: number;
   favoritePlaces: FavoritePlace[];
-  onFavoriteSelect: (favorite: FavoritePlace) => void;
   onReminderChange: (enabled: boolean) => Promise<string | null>;
   onGpxImport: (file: File) => Promise<GpxImportResult>;
   onShowGpxImport: (points: Coordinate[]) => void;
+  onWalkingStatsOpen: () => void;
+  onSavedPlacesOpen: () => void;
 };
 type SignInMethod = "password" | "link";
 type PasswordIntent = "signin" | "signup";
@@ -56,19 +70,6 @@ export type GpxImportResult = {
   points?: Coordinate[];
 };
 
-function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
-  const vector = favoritePlaceIconVector(icon);
-  return (
-    <svg
-      className={vector.filled ? "favorite-icon--filled" : undefined}
-      viewBox={vector.viewBox}
-      preserveAspectRatio="xMidYMid meet"
-      aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: vector.markup }}
-    />
-  );
-}
-
 export function SyncSheet({
   open,
   initialAuthIntent = "signin",
@@ -77,11 +78,16 @@ export function SyncSheet({
   nativeApp,
   keyboardInset,
   cityProgress,
+  discoveryDistance,
+  travelledDistance,
+  walkingStats,
+  discoveredCityCount,
   favoritePlaces,
-  onFavoriteSelect,
   onReminderChange,
   onGpxImport,
   onShowGpxImport,
+  onWalkingStatsOpen,
+  onSavedPlacesOpen,
 }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -110,8 +116,6 @@ export function SyncSheet({
     string | null
   >(null);
   const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
-  const [favoriteCategoryId, setFavoriteCategoryId] =
-    useState<FavoritePlaceIcon | null>(null);
 
   useEffect(() => {
     if (!keyboardInset) return;
@@ -326,12 +330,9 @@ export function SyncSheet({
         (tier) => cityProgress.discoveredKm >= tier.thresholdKm,
       ).length
     : 0;
-  const favoriteGroups = FAVORITE_PLACE_ICONS.flatMap((category) => {
-    const places = favoritePlaces
-      .filter((place) => place.icon === category.id)
-      .sort((first, second) => first.name.localeCompare(second.name));
-    return places.length ? [{ ...category, places }] : [];
-  });
+  const favoriteCollectionCount = new Set(
+    favoritePlaces.map((place) => place.icon),
+  ).size;
   const beginAccountCreation = () => {
     setSignInMethod("password");
     setPasswordIntent("signup");
@@ -339,6 +340,14 @@ export function SyncSheet({
     setConfirmPassword("");
     setMessage("");
   };
+  const currentWorldRank = currentWorldMilestone(travelledDistance);
+  const nextWorldRank = nextWorldMilestone(travelledDistance);
+  const currentWorldRankLevel =
+    WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === currentWorldRank.id) + 1;
+  const remainingWorldRankKm = nextWorldRank
+    ? Math.max(0, nextWorldRank.thresholdKm - travelledDistance)
+    : 0;
+  const currentWorldRankProgress = worldMilestoneProgress(travelledDistance);
 
   const openLeaderboard = async () => {
     const nativePlatform = Capacitor.isNativePlatform();
@@ -423,11 +432,11 @@ export function SyncSheet({
           </div>
         )}
         <h2 id="sync-title">
-          {user ? "Your map is with you." : "Carry your map everywhere."}
+          {user ? "Profile" : "Carry your map everywhere."}
         </h2>
         <p>
           {user
-            ? "Your discoveries are connected to your private Hecate account and available across your signed-in devices."
+            ? "Your private discoveries, progress, and account settings in one place."
             : "Sign in to start discovering. Your paths belong to your account and stay in sync across your devices."}
         </p>
         {authLoading ? (
@@ -436,102 +445,126 @@ export function SyncSheet({
           </div>
         ) : user ? (
           <div className="account-card">
-            <div className="account-card__identity">
-              <span className="account-card__avatar" aria-hidden="true">
-                {accountInitial}
-              </span>
-              <span>
-                <strong>{accountDisplayName}</strong>
-                <small>{accountEmail}</small>
-              </span>
-            </div>
-            <div className="account-card__status">
-              <span /> Signed in and syncing
+            <div className="account-profile-card">
+              <div className="account-card__identity">
+                <span className="account-card__avatar" aria-hidden="true">
+                  {accountInitial}
+                </span>
+                <span>
+                  <strong>{accountDisplayName}</strong>
+                  <small>{accountEmail}</small>
+                </span>
+              </div>
             </div>
             <button
               type="button"
-              className="account-quick-link"
-              aria-label="Open the public leaderboard"
-              onClick={() => {
-                void openLeaderboard();
-              }}
+              className="account-walking-stats"
+              aria-label={`Open walking stats. Level ${currentWorldRankLevel}, ${currentWorldRank.title}. ${discoveryDistance.toFixed(1)} kilometers of new ground, ${travelledDistance.toFixed(1)} kilometers travelled across ${walkingStats.walkCount} walks and ${discoveredCityCount} cities.`}
+              onClick={onWalkingStatsOpen}
             >
-              <span>
-                <strong>Go to Leaderboard</strong>
-                <small>See your city and overall ranking</small>
+              <span className="account-walking-stats__rank-header">
+                <span
+                  className="account-walking-stats__rank-icon"
+                  aria-hidden="true"
+                >
+                  <WorldMilestoneIcon icon={currentWorldRank.icon} />
+                </span>
+                <span className="account-walking-stats__rank">
+                  <span>
+                    <small>Lv. {currentWorldRankLevel}</small>
+                    <strong>{currentWorldRank.title}</strong>
+                  </span>
+                  <small>
+                    {nextWorldRank
+                      ? `${remainingWorldRankKm.toFixed(1)} km to the next rank`
+                      : "All global ranks complete"}
+                  </small>
+                </span>
               </span>
-              <span aria-hidden="true">Open</span>
+              <span className="account-walking-stats__hero">
+                <strong>{discoveryDistance.toFixed(1)} km</strong>
+                <small>Total new ground</small>
+              </span>
+              <span
+                className="account-walking-stats__progress"
+                aria-hidden="true"
+              >
+                <span style={{ width: `${currentWorldRankProgress * 100}%` }} />
+              </span>
+              <span className="account-walking-stats__metrics">
+                <span>
+                  <strong>{travelledDistance.toFixed(1)} km</strong>
+                  <small>Total travelled</small>
+                </span>
+                <span>
+                  <strong>{walkingStats.walkCount}</strong>
+                  <small>
+                    {walkingStats.walkCount === 1 ? "Walk" : "Walks"}
+                  </small>
+                </span>
+                <span>
+                  <strong>{discoveredCityCount}</strong>
+                  <small>{discoveredCityCount === 1 ? "City" : "Cities"}</small>
+                </span>
+              </span>
+              <span className="account-walking-stats__action">
+                Walking stats
+                <ChevronIcon size={16} strokeWidth={2.3} />
+              </span>
             </button>
-            <details className="account-favorites">
-              <summary className="account-favorites__heading">
-                <span className="account-favorites__identity">
-                  <span className="account-favorites__mark" aria-hidden="true">
-                    <SaveIcon size={17} strokeWidth={2} />
+            <div className="account-profile-links">
+              <button
+                type="button"
+                className="account-quick-link"
+                aria-label="Open the public leaderboard"
+                onClick={() => {
+                  void openLeaderboard();
+                }}
+              >
+                <span className="account-quick-link__identity">
+                  <span className="account-quick-link__mark" aria-hidden="true">
+                    <LeaderboardIcon size={17} />
                   </span>
                   <span>
-                    <strong id="account-favorites-title">Saved places</strong>
-                    <small>
-                      {favoriteGroups.length
-                        ? `${favoriteGroups.length} ${favoriteGroups.length === 1 ? "collection" : "collections"}`
-                        : "Your saved map collection"}
-                    </small>
+                    <strong>Leaderboard</strong>
+                    <small>City and overall ranking</small>
                   </span>
                 </span>
-                <span className="account-favorites__summary-meta">
-                  <small>{favoritePlaces.length}</small>
+                <span className="account-quick-link__action" aria-hidden="true">
+                  Open
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </span>
-              </summary>
-              <div className="account-favorites__groups">
-                {favoriteGroups.length === 0 && (
-                  <p className="account-favorites__empty">
-                    Places you save from the map will appear here.
-                  </p>
-                )}
-                <div className="account-favorites__categories">
-                  {favoriteGroups.map((group) => (
-                    <button
-                      key={group.id}
-                      type="button"
-                      className={
-                        favoriteCategoryId === group.id ? "active" : ""
-                      }
-                      aria-expanded={favoriteCategoryId === group.id}
-                      onClick={() =>
-                        setFavoriteCategoryId((current) =>
-                          current === group.id ? null : group.id,
-                        )
-                      }
+              </button>
+              <button
+                type="button"
+                className="account-favorites"
+                onClick={onSavedPlacesOpen}
+                aria-label={`Open saved places. ${favoritePlaces.length} saved across ${favoriteCollectionCount} collections.`}
+              >
+                <span className="account-favorites__heading">
+                  <span className="account-favorites__identity">
+                    <span
+                      className="account-favorites__mark"
+                      aria-hidden="true"
                     >
-                      <span className="account-favorites__category-icon">
-                        <FavoriteGlyph icon={group.id} />
-                      </span>
-                      <strong>{group.label}</strong>
-                      <small>{group.places.length}</small>
-                    </button>
-                  ))}
-                </div>
-                {favoriteGroups
-                  .filter((group) => group.id === favoriteCategoryId)
-                  .map((group) => (
-                    <div className="account-favorites__places" key={group.id}>
-                      {group.places.map((place) => (
-                        <button
-                          key={place.id}
-                          type="button"
-                          onClick={() => onFavoriteSelect(place)}
-                        >
-                          <span>
-                            <strong>{place.name}</strong>
-                            <small>{place.comment}</small>
-                          </span>
-                          <ChevronIcon size={16} strokeWidth={2.3} />
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-              </div>
-            </details>
+                      <SaveIcon size={17} strokeWidth={2} />
+                    </span>
+                    <span>
+                      <strong id="account-favorites-title">Saved places</strong>
+                      <small>
+                        {favoriteCollectionCount
+                          ? `${favoriteCollectionCount} ${favoriteCollectionCount === 1 ? "collection" : "collections"}`
+                          : "Your saved map collection"}
+                      </small>
+                    </span>
+                  </span>
+                  <span className="account-favorites__summary-meta">
+                    <small>{favoritePlaces.length}</small>
+                    <ChevronIcon size={16} strokeWidth={2.3} />
+                  </span>
+                </span>
+              </button>
+            </div>
             {reminderError && (
               <div className="form-message form-message--error" role="alert">
                 {reminderError}

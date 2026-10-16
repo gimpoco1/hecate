@@ -6,6 +6,7 @@ import {
   loadCachedDiscoveryProgress,
   saveCachedDiscoveryProgress,
 } from "./App";
+import { emptyWalkingStats } from "./walkingStats";
 
 describe("journey counters", () => {
   it("shows completed elapsed minutes from the original walk start", () => {
@@ -46,9 +47,19 @@ describe("discovery progress cache", () => {
     localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 3,
         userId: "user-42",
         discoveryDistance: "not-a-number",
+        travelledDistance: 60,
+        walkingStats: {
+          walkCount: 4,
+          longestWalkKm: 20,
+          longestWalkFinishedAt: 2,
+          averageWalkKm: 15,
+          currentStreakDays: 1,
+          bestStreakDays: 3,
+          firstWalkAt: 1,
+        },
         cityMetrics: [],
       }),
     );
@@ -57,14 +68,50 @@ describe("discovery progress cache", () => {
     localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 3,
         userId: "user-42",
         discoveryDistance: 42,
+        travelledDistance: 60,
+        walkingStats: {
+          ...emptyWalkingStats(),
+          averageWalkKm: "not-a-number",
+        },
+        cityMetrics: [],
+      }),
+    );
+    expect(loadCachedDiscoveryProgress("user-42")).toBeNull();
+
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 3,
+        userId: "user-42",
+        discoveryDistance: 42,
+        travelledDistance: 60,
+        walkingStats: {
+          walkCount: 4,
+          longestWalkKm: 20,
+          longestWalkFinishedAt: 2,
+          averageWalkKm: 15,
+          currentStreakDays: 1,
+          bestStreakDays: 3,
+          firstWalkAt: 1,
+        },
         cityMetrics: [{ cityId: "some-city", percentage: 42, distance: 10 }],
       }),
     );
     expect(loadCachedDiscoveryProgress("user-42")).toEqual({
       discoveryDistance: 42,
+      travelledDistance: 60,
+      walkingStats: {
+        walkCount: 4,
+        longestWalkKm: 20,
+        longestWalkFinishedAt: 2,
+        averageWalkKm: 15,
+        currentStreakDays: 1,
+        bestStreakDays: 3,
+        firstWalkAt: 1,
+      },
       cityMetrics: [{ cityId: "some-city", percentage: 42, distance: 10 }],
     });
   });
@@ -82,6 +129,8 @@ describe("discovery progress cache", () => {
     expect(() =>
       saveCachedDiscoveryProgress("user-42", {
         discoveryDistance: 42,
+        travelledDistance: 60,
+        walkingStats: emptyWalkingStats(),
         cityMetrics: [],
       }),
     ).not.toThrow();
