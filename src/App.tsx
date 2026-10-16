@@ -273,21 +273,15 @@ function formatDiscoveryPercentage(
   return `${Math.round(percentage)}%`;
 }
 
-type CityProgress = {
-  city: CityBoundary;
-  percentage: number;
-  distance: number;
-};
-
 type CachedDiscoveryProgress = Omit<
   DiscoveryProgressResponse,
   "kind" | "generation"
 > & {
-  version: 3;
+  version: 5;
   userId: string;
 };
 
-const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v3";
+const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v5";
 
 function isNullableFiniteNumber(value: unknown): value is number | null {
   return value === null || (typeof value === "number" && Number.isFinite(value));
@@ -329,12 +323,26 @@ export function loadCachedDiscoveryProgress(
     if (!value || typeof value !== "object") return null;
     const cached = value as Partial<CachedDiscoveryProgress>;
     if (
-      cached.version !== 3 ||
+      cached.version !== 5 ||
       cached.userId !== userId ||
       typeof cached.discoveryDistance !== "number" ||
       !Number.isFinite(cached.discoveryDistance) ||
       typeof cached.travelledDistance !== "number" ||
       !Number.isFinite(cached.travelledDistance) ||
+      typeof cached.todayDiscoveryDistance !== "number" ||
+      !Number.isFinite(cached.todayDiscoveryDistance) ||
+      typeof cached.todayTravelledDistance !== "number" ||
+      !Number.isFinite(cached.todayTravelledDistance) ||
+      typeof cached.todayActiveTimeMs !== "number" ||
+      !Number.isFinite(cached.todayActiveTimeMs) ||
+      typeof cached.weekDiscoveryDistance !== "number" ||
+      !Number.isFinite(cached.weekDiscoveryDistance) ||
+      typeof cached.weekActiveTimeMs !== "number" ||
+      !Number.isFinite(cached.weekActiveTimeMs) ||
+      typeof cached.weekDiscoveryDeltaDistance !== "number" ||
+      !Number.isFinite(cached.weekDiscoveryDeltaDistance) ||
+      typeof cached.weekActiveDeltaTimeMs !== "number" ||
+      !Number.isFinite(cached.weekActiveDeltaTimeMs) ||
       !isWalkingStats(cached.walkingStats) ||
       !Array.isArray(cached.cityMetrics) ||
       !cached.cityMetrics.every(
@@ -352,6 +360,13 @@ export function loadCachedDiscoveryProgress(
       discoveryDistance: cached.discoveryDistance,
       travelledDistance: cached.travelledDistance,
       walkingStats: cached.walkingStats,
+      todayDiscoveryDistance: cached.todayDiscoveryDistance,
+      todayTravelledDistance: cached.todayTravelledDistance,
+      todayActiveTimeMs: cached.todayActiveTimeMs,
+      weekDiscoveryDistance: cached.weekDiscoveryDistance,
+      weekActiveTimeMs: cached.weekActiveTimeMs,
+      weekDiscoveryDeltaDistance: cached.weekDiscoveryDeltaDistance,
+      weekActiveDeltaTimeMs: cached.weekActiveDeltaTimeMs,
       cityMetrics: cached.cityMetrics,
     };
   } catch {
@@ -364,7 +379,7 @@ export function saveCachedDiscoveryProgress(
   progress: Omit<DiscoveryProgressResponse, "kind" | "generation">,
 ): void {
   const cached: CachedDiscoveryProgress = {
-    version: 3,
+    version: 5,
     userId,
     ...progress,
   };
@@ -387,25 +402,31 @@ export function saveCachedDiscoveryProgress(
 type JourneyDetailsProps = {
   accountUserId: string | null;
   expanded: boolean;
-  discoveryDistance: number;
-  travelledDistance: number;
-  walkingStats: WalkingStats;
-  discoveredCityCount: number;
+  todayDiscoveryDistance: number;
+  todayTravelledDistance: number;
+  todayActiveTimeMs: number;
+  currentStreakDays: number;
+  weekDiscoveryDistance: number;
+  weekActiveTimeMs: number;
+  weekDiscoveryDeltaDistance: number;
+  weekActiveDeltaTimeMs: number;
   cityProgress: CityMilestoneProgress | null;
   onWalkingStatsOpen: () => void;
-  onCitiesOpen: () => void;
 };
 
 const JourneyDetails = memo(function JourneyDetails({
   accountUserId,
   expanded,
-  discoveryDistance,
-  travelledDistance,
-  walkingStats,
-  discoveredCityCount,
+  todayDiscoveryDistance,
+  todayTravelledDistance,
+  todayActiveTimeMs,
+  currentStreakDays,
+  weekDiscoveryDistance,
+  weekActiveTimeMs,
+  weekDiscoveryDeltaDistance,
+  weekActiveDeltaTimeMs,
   cityProgress,
   onWalkingStatsOpen,
-  onCitiesOpen,
 }: JourneyDetailsProps) {
   return (
     <div
@@ -432,27 +453,42 @@ const JourneyDetails = memo(function JourneyDetails({
             </div>
             <dl>
               <div>
-                <dt>New ground</dt>
-                <dd>{formatDistance(discoveryDistance)}</dd>
+                <dt>New ground today</dt>
+                <dd>{formatDistance(todayDiscoveryDistance)}</dd>
               </div>
               <div>
-                <dt>Total travelled</dt>
-                <dd>{formatDistance(travelledDistance)}</dd>
+                <dt>Travelled today</dt>
+                <dd>{formatDistance(todayTravelledDistance)}</dd>
               </div>
               <div>
-                <dt>Walks</dt>
-                <dd>{walkingStats.walkCount}</dd>
+                <dt>Time active today</dt>
+                <dd>{formatElapsedDuration(todayActiveTimeMs)}</dd>
               </div>
               <div>
-                <button
-                  type="button"
-                  className="journey-global-stats__action-row"
-                  onClick={onCitiesOpen}
-                  aria-label={`Open cities explored. ${discoveredCityCount} ${discoveredCityCount === 1 ? "city" : "cities"}.`}
-                >
-                  <span>Cities explored</span>
-                  <strong>{discoveredCityCount}</strong>
-                </button>
+                <dt>Current streak</dt>
+                <dd>{formatStreakDays(currentStreakDays)}</dd>
+              </div>
+              <div>
+                <dt>New ground this week</dt>
+                <dd>
+                  <span>{formatDistance(weekDiscoveryDistance)}</span>
+                  <small
+                    className={weekDeltaClassName(weekDiscoveryDeltaDistance)}
+                  >
+                    {formatWeekDistanceDelta(weekDiscoveryDeltaDistance)}
+                  </small>
+                </dd>
+              </div>
+              <div>
+                <dt>Time active this week</dt>
+                <dd>
+                  <span>{formatElapsedDuration(weekActiveTimeMs)}</span>
+                  <small
+                    className={weekDeltaClassName(weekActiveDeltaTimeMs, 30_000)}
+                  >
+                    {formatWeekTimeDelta(weekActiveDeltaTimeMs)}
+                  </small>
+                </dd>
               </div>
             </dl>
           </section>
@@ -477,6 +513,36 @@ function formatDuration(startedAt: number, finishedAt: number) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+}
+
+function formatElapsedDuration(durationMs: number) {
+  const minutes = Math.max(0, Math.round(durationMs / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+}
+
+function formatStreakDays(days: number) {
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
+function formatWeekDistanceDelta(deltaKm: number) {
+  if (Math.abs(deltaKm) < 0.0005) return "No change vs last week";
+  const sign = deltaKm > 0 ? "+" : "-";
+  return `${sign}${formatDistance(Math.abs(deltaKm))} vs last week`;
+}
+
+function formatWeekTimeDelta(deltaMs: number) {
+  if (Math.abs(deltaMs) < 30_000) return "No change vs last week";
+  const sign = deltaMs > 0 ? "+" : "-";
+  return `${sign}${formatElapsedDuration(Math.abs(deltaMs))} vs last week`;
+}
+
+function weekDeltaClassName(delta: number, deadZone = 0.0005) {
+  if (Math.abs(delta) < deadZone) return "journey-global-stats__delta";
+  return delta > 0
+    ? "journey-global-stats__delta journey-global-stats__delta--up"
+    : "journey-global-stats__delta journey-global-stats__delta--down";
 }
 
 type JourneyCounterDisplay = {
@@ -732,6 +798,13 @@ export default function App() {
     discoveryDistance: 0,
     travelledDistance: 0,
     walkingStats: emptyWalkingStats(),
+    todayDiscoveryDistance: 0,
+    todayTravelledDistance: 0,
+    todayActiveTimeMs: 0,
+    weekDiscoveryDistance: 0,
+    weekActiveTimeMs: 0,
+    weekDiscoveryDeltaDistance: 0,
+    weekActiveDeltaTimeMs: 0,
     cityMetrics: [],
   });
   const [discoveryProgressReady, setDiscoveryProgressReady] = useState(false);
@@ -1193,6 +1266,13 @@ export default function App() {
         discoveryDistance: 0,
         travelledDistance: 0,
         walkingStats: emptyWalkingStats(),
+        todayDiscoveryDistance: 0,
+        todayTravelledDistance: 0,
+        todayActiveTimeMs: 0,
+        weekDiscoveryDistance: 0,
+        weekActiveTimeMs: 0,
+        weekDiscoveryDeltaDistance: 0,
+        weekActiveDeltaTimeMs: 0,
         cityMetrics: [],
       });
       return;
@@ -1222,6 +1302,13 @@ export default function App() {
             discoveryDistance: event.data.discoveryDistance,
             travelledDistance: event.data.travelledDistance,
             walkingStats: event.data.walkingStats,
+            todayDiscoveryDistance: event.data.todayDiscoveryDistance,
+            todayTravelledDistance: event.data.todayTravelledDistance,
+            todayActiveTimeMs: event.data.todayActiveTimeMs,
+            weekDiscoveryDistance: event.data.weekDiscoveryDistance,
+            weekActiveTimeMs: event.data.weekActiveTimeMs,
+            weekDiscoveryDeltaDistance: event.data.weekDiscoveryDeltaDistance,
+            weekActiveDeltaTimeMs: event.data.weekActiveDeltaTimeMs,
             cityMetrics: event.data.cityMetrics,
           };
           setDiscoveryProgress(progress);
@@ -2401,40 +2488,24 @@ export default function App() {
   };
 
   useEffect(() => {
+    const focusIdentity = accountUserId ?? "__anonymous__";
     if (
-      !accountUserId ||
-      !discoveryHistoryReadyRef.current ||
-      initialMapFocusUserRef.current === accountUserId
+      initialMapFocusUserRef.current === focusIdentity ||
+      !currentPoint
     )
       return;
-    const latestPoint = points.at(-1);
-    const latestCell = cells.reduce<DiscoveryCell | undefined>(
-      (latest, cell) =>
-        !latest || cell.discoveredAt > latest.discoveredAt ? cell : latest,
-      undefined,
-    );
-    const latestDiscovery =
-      latestPoint ??
-      (latestCell
-        ? (() => {
-            const [lng, lat] = discoveryCellCenter(latestCell);
-            return { lng, lat, recordedAt: latestCell.discoveredAt };
-          })()
-        : undefined);
-    const focus = latestDiscovery ?? currentPoint;
-    if (!focus) return;
-    initialMapFocusUserRef.current = accountUserId;
-    const targetZoom = latestDiscovery ? 14.3 : 15;
-    setViewCenter({ lng: focus.lng, lat: focus.lat });
+    initialMapFocusUserRef.current = focusIdentity;
+    const targetZoom = 15;
+    setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
     setZoom(targetZoom);
     setViewedCity(null);
     mapRef.current?.jumpTo({
-      center: [focus.lng, focus.lat],
+      center: [currentPoint.lng, currentPoint.lat],
       zoom: targetZoom,
       pitch: 0,
       bearing: 0,
     });
-  }, [accountUserId, cells, currentPoint, discoveryLoading, points]);
+  }, [accountUserId, currentPoint]);
 
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) {
@@ -4340,16 +4411,16 @@ export default function App() {
           <JourneyDetails
             accountUserId={accountUserId}
             expanded={citiesExpanded}
-            discoveryDistance={discoveryProgress.discoveryDistance}
-            travelledDistance={discoveryProgress.travelledDistance}
-            walkingStats={discoveryProgress.walkingStats}
-            discoveredCityCount={cityProgresses.length}
+            todayDiscoveryDistance={discoveryProgress.todayDiscoveryDistance}
+            todayTravelledDistance={discoveryProgress.todayTravelledDistance}
+            todayActiveTimeMs={discoveryProgress.todayActiveTimeMs}
+            currentStreakDays={discoveryProgress.walkingStats.currentStreakDays}
+            weekDiscoveryDistance={discoveryProgress.weekDiscoveryDistance}
+            weekActiveTimeMs={discoveryProgress.weekActiveTimeMs}
+            weekDiscoveryDeltaDistance={discoveryProgress.weekDiscoveryDeltaDistance}
+            weekActiveDeltaTimeMs={discoveryProgress.weekActiveDeltaTimeMs}
             cityProgress={accountCityProgress}
             onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
-            onCitiesOpen={() => {
-              setSyncOpen(true);
-              setCitiesOpen(true);
-            }}
           />
         </section>
       )}

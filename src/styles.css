@@ -1718,46 +1718,29 @@ button {
 }
 .journey-global-stats dd {
   margin: 0;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
   color: var(--forest);
   font-size: 13px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.journey-global-stats__action-row {
-  width: 100%;
-  min-height: 46px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
+.journey-global-stats dd > span {
+  display: block;
 }
-.journey-global-stats__action-row > span {
-  color: #40544a;
-  font-size: 13px;
+.journey-global-stats__delta {
+  color: #748078;
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.2;
 }
-.journey-global-stats__action-row > strong {
-  margin: 0;
-  color: var(--forest);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+.journey-global-stats__delta--up {
+  color: #5f7f33;
 }
-.journey-global-stats__action-row:hover > span,
-.journey-global-stats__action-row:focus-visible > span {
-  color: #2f4b3f;
-}
-.journey-global-stats__action-row:focus-visible {
-  outline: 2px solid rgba(24, 60, 47, 0.25);
-  outline-offset: 2px;
-  border-radius: 6px;
+.journey-global-stats__delta--down {
+  color: #8b5652;
 }
 .achievement-card {
   --achievement-accent: #748f45;

@@ -62,13 +62,17 @@ export function walkingStatsFromJourneys(
     (total, journey) => total + journey.travelledKm,
     0,
   );
-  const walkingDays = journeys.map(({ finishedAt }) =>
+  const streakJourneys = journeys.filter((journey) => journey.travelledKm > 0);
+  const walkingDays = streakJourneys.map(({ finishedAt }) =>
     localDayOrdinal(finishedAt),
   );
-  const lastWalkingDay = Math.max(...walkingDays);
+  const lastWalkingDay = walkingDays.length > 0 ? Math.max(...walkingDays) : null;
   const today = localDayOrdinal(now);
-  const currentStreakDays = lastWalkingDay >= today - 1
+  const currentStreakDays = lastWalkingDay !== null && lastWalkingDay >= today - 1
     ? consecutiveRunEndingAt(walkingDays, lastWalkingDay)
+    : 0;
+  const bestStreakDays = walkingDays.length > 0
+    ? longestConsecutiveRun(walkingDays)
     : 0;
 
   return {
@@ -77,7 +81,7 @@ export function walkingStatsFromJourneys(
     longestWalkFinishedAt: longestWalk.finishedAt,
     averageWalkKm: totalDistance / journeys.length,
     currentStreakDays,
-    bestStreakDays: longestConsecutiveRun(walkingDays),
+    bestStreakDays,
     firstWalkAt: Math.min(...journeys.map(({ startedAt }) => startedAt)),
   };
 }
