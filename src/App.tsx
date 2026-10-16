@@ -2495,7 +2495,7 @@ export default function App() {
     )
       return;
     initialMapFocusUserRef.current = focusIdentity;
-    const targetZoom = 15;
+    const targetZoom = 14;
     setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
     setZoom(targetZoom);
     setViewedCity(null);
