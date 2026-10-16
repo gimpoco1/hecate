@@ -273,7 +273,7 @@ export function GlobalMilestonesSheet({
         >
           <XIcon />
         </button>
-        <div className="eyebrow">Walking stats</div>
+        <div className="eyebrow">Your activity</div>
         <h2 id="walking-stats-title">Walking stats</h2>
         <p>Your recorded journeys, personal bests, and worldwide progress.</p>
         <WalkingStatsOverview

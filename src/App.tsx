@@ -393,6 +393,7 @@ type JourneyDetailsProps = {
   discoveredCityCount: number;
   cityProgress: CityMilestoneProgress | null;
   onWalkingStatsOpen: () => void;
+  onCitiesOpen: () => void;
 };
 
 const JourneyDetails = memo(function JourneyDetails({
@@ -404,6 +405,7 @@ const JourneyDetails = memo(function JourneyDetails({
   discoveredCityCount,
   cityProgress,
   onWalkingStatsOpen,
+  onCitiesOpen,
 }: JourneyDetailsProps) {
   return (
     <div
@@ -442,8 +444,15 @@ const JourneyDetails = memo(function JourneyDetails({
                 <dd>{walkingStats.walkCount}</dd>
               </div>
               <div>
-                <dt>Cities explored</dt>
-                <dd>{discoveredCityCount}</dd>
+                <button
+                  type="button"
+                  className="journey-global-stats__action-row"
+                  onClick={onCitiesOpen}
+                  aria-label={`Open cities explored. ${discoveredCityCount} ${discoveredCityCount === 1 ? "city" : "cities"}.`}
+                >
+                  <span>Cities explored</span>
+                  <strong>{discoveredCityCount}</strong>
+                </button>
               </div>
             </dl>
           </section>
@@ -2796,10 +2805,22 @@ export default function App() {
       0,
       discoveredDistanceKm(mergedPoints) - previousDistance,
     );
+    const importedAt = Date.now();
+    const baseTitle = file.name.replace(/\.gpx$/i, "").trim() || "GPX route";
+    const importedRoutes = newWalks.map((walk, index) => ({
+      id: walk.id,
+      title:
+        newWalks.length === 1
+          ? baseTitle
+          : `${baseTitle} · Segment ${index + 1}`,
+      addedAt: importedAt,
+      addedKm: routeDistanceKm(walk.points),
+    }));
     return {
       tone: "success",
-      message: `Route imported · ${formatDistance(addedKm)} added to your map.`,
+      message: `${newWalks.length === 1 ? "Route" : `${newWalks.length} routes`} imported · ${formatDistance(addedKm)} added.`,
       points: importedPoints,
+      importedRoutes,
     };
   };
 
@@ -3743,6 +3764,17 @@ export default function App() {
     [settleJourneySheet],
   );
 
+  const showImportedRouteById = useCallback(
+    (routeId: string) => {
+      const routePoints = pointsRef.current
+        .filter((point) => point.walkId === routeId)
+        .sort((first, second) => first.recordedAt - second.recordedAt);
+      if (routePoints.length === 0) return;
+      showImportedRoute(routePoints);
+    },
+    [showImportedRoute],
+  );
+
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedImportPoints([]);
@@ -4314,6 +4346,10 @@ export default function App() {
             discoveredCityCount={cityProgresses.length}
             cityProgress={accountCityProgress}
             onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
+            onCitiesOpen={() => {
+              setSyncOpen(true);
+              setCitiesOpen(true);
+            }}
           />
         </section>
       )}
@@ -4384,6 +4420,7 @@ export default function App() {
           onReminderChange={updateReminderEnabled}
           onGpxImport={importGpxFile}
           onShowGpxImport={showImportedRoute}
+          onShowGpxImportRoute={showImportedRouteById}
           onWalkingStatsOpen={() => {
             setGlobalMilestonesOpen(true);
           }}

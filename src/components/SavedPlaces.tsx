@@ -194,9 +194,6 @@ export function SavedPlacesSheet({
         <p>Keep your favourite places organised and return to them on the map.</p>
 
         <section className="saved-places-overview" aria-label="Saved places summary">
-          <span aria-hidden="true">
-            <SaveIcon size={22} strokeWidth={2} />
-          </span>
           <span>
             <strong>{favoritePlaces.length}</strong>
             <small>{favoritePlaces.length === 1 ? "Saved place" : "Saved places"}</small>
