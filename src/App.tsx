@@ -4,7 +4,11 @@ import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
 import { Keyboard } from "@capacitor/keyboard";
-import { LocalNotifications } from "@capacitor/local-notifications";
+import {
+  LocalNotifications,
+  Weekday,
+  type LocalNotificationSchema,
+} from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
 import type {
@@ -88,11 +92,7 @@ import {
   isUnmappedArea,
   loadReminderPreference,
   pauseReminderAfterTap,
-  REMINDER_COOLDOWN_MS,
-  REMINDER_DISTANCE_M,
-  REMINDER_MINUTES,
   saveReminderPreference,
-  simulateUnmappedWalk,
   type ReminderKind,
 } from "./explorationReminder";
 import {
@@ -116,6 +116,19 @@ import {
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
+import {
+  defaultActivityNotificationPreferences,
+  enabledActivityNotificationPreferences,
+  hasSavedActivityNotificationPreferences,
+  loadActivityNotificationPreferences,
+  morningInviteMessage,
+  saveActivityNotificationPreferences,
+  streakReminderDate,
+  streakReminderMessage,
+  weeklyRecapMessage,
+  type ActivityNotificationCategory,
+  type ActivityNotificationPreferences,
+} from "./activityNotifications";
 import {
   isInSystemGestureZone,
   journeySheetOffsetPx,
@@ -160,7 +173,7 @@ import {
   walkIsAlreadyStored,
 } from "./gpx";
 
-type ActiveWalk = Omit<PendingWalk, "finishedAt"> & { isTest?: boolean };
+type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
   walkId: string;
   points: Coordinate[];
@@ -171,12 +184,6 @@ type ExplorationSummary = {
   travelledKm: number;
   cityName?: string;
   cityPercentageAdded?: number;
-};
-
-type JourneyMetricsPreview = {
-  distanceKm: number;
-  percentage: number;
-  elapsedMs: number;
 };
 
 type PassiveLocationStatus =
@@ -190,9 +197,16 @@ const PASSIVE_LOCATION_ACQUISITION_TIMEOUT_MS = 12_000;
 const PASSIVE_LOCATION_RETRY_MS = 5_000;
 const REMINDER_NOTIFICATION_ID = 1042;
 const INACTIVITY_NOTIFICATION_ID = 1043;
-const INACTIVITY_TEST_NOTIFICATION_ID = 1044;
 const REMINDER_TEST_NOTIFICATION_ID = 1045;
 const ACHIEVEMENT_NOTIFICATION_ID_START = 1100;
+const MORNING_INVITE_NOTIFICATION_ID = 1200;
+const WEEKLY_RECAP_NOTIFICATION_ID = 1201;
+const STREAK_REMINDER_NOTIFICATION_ID = 1202;
+const MORNING_INVITE_TEST_NOTIFICATION_ID = 1210;
+const WEEKLY_RECAP_TEST_NOTIFICATION_ID = 1211;
+const STREAK_REMINDER_TEST_NOTIFICATION_ID = 1212;
+const MORNING_INVITE_ACTION_TYPE_ID = "morning-invite-actions";
+const START_WALK_ACTION_ID = "start-walk";
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
@@ -203,17 +217,15 @@ function reminderMessage() {
 
 async function sendReminderNotification(
   userId: string,
-  delayMs = 1_000,
-  test = false,
 ) {
   await LocalNotifications.schedule({
     notifications: [
       {
-        id: test ? REMINDER_TEST_NOTIFICATION_ID : REMINDER_NOTIFICATION_ID,
+        id: REMINDER_NOTIFICATION_ID,
         title: "Discovering somewhere new?",
         body: reminderMessage(),
-        schedule: { at: new Date(Date.now() + delayMs) },
-        extra: { kind: test ? "test-unmapped" : "unmapped", userId },
+        schedule: { at: new Date(Date.now() + 1_000) },
+        extra: { kind: "unmapped", userId },
       },
     ],
   });
@@ -718,27 +730,19 @@ export default function App() {
     setPassiveLocationRefreshGeneration,
   ] = useState(0);
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [activityNotificationPreferences, setActivityNotificationPreferences] =
+    useState<ActivityNotificationPreferences>(
+      defaultActivityNotificationPreferences,
+    );
   const [notificationPermissionReady, setNotificationPermissionReady] =
     useState<boolean | null>(() => (isNativeApp() ? null : true));
   const [reminderPrompt, setReminderPrompt] = useState<ReminderKind | null>(
     null,
   );
   const [inactivityPrompt, setInactivityPrompt] = useState(false);
-  const [reminderDebug, setReminderDebug] = useState({
-    elapsedMs: 0,
-    distanceM: 0,
-    status: "Waiting for location",
-  });
-  const [reminderTestMessage, setReminderTestMessage] = useState("");
+  const [activityNotificationTestMessage, setActivityNotificationTestMessage] =
+    useState("");
   const [achievementTestMessage, setAchievementTestMessage] = useState("");
-  const [journeyMetricsPreviewActive, setJourneyMetricsPreviewActive] =
-    useState(false);
-  const [journeyMetricsPreview, setJourneyMetricsPreview] =
-    useState<JourneyMetricsPreview>({
-      distanceKm: 0,
-      percentage: 0,
-      elapsedMs: 60_000,
-    });
   const [devToolsVisible, setDevToolsVisible] = useState(() => {
     if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
       return false;
@@ -820,7 +824,6 @@ export default function App() {
   const [walkFinalizing, setWalkFinalizing] = useState(false);
   const [achievementTestPreview, setAchievementTestPreview] =
     useState<PersonalAchievementId | null>(null);
-  const [testRouteRunning, setTestRouteRunning] = useState(false);
   const mapRef = useRef<MapLibreMap | null>(null);
   const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
@@ -850,6 +853,8 @@ export default function App() {
   const walkUploadPromiseRef = useRef<Promise<void> | null>(null);
   const accountUserIdRef = useRef(accountUserId);
   accountUserIdRef.current = accountUserId;
+  const pendingMorningWalkStartUserIdRef = useRef<string | null>(null);
+  const [morningWalkStartRequest, setMorningWalkStartRequest] = useState(0);
   const journeyCardRef = useRef<HTMLElement | null>(null);
   const journeyDragRef = useRef<{
     pointerId: number;
@@ -1061,25 +1066,15 @@ export default function App() {
         discoveredCityPercentage(previousCells, activeCity),
     );
   }, [activeCity, cells, tracking]);
-  const showActiveJourneyMetrics =
-    tracking === "tracking" || journeyMetricsPreviewActive;
-  const displayedWalkDistance = journeyMetricsPreviewActive
-    ? journeyMetricsPreview.distanceKm
-    : activeWalkDistance;
-  const displayedWalkPercentageAdded = journeyMetricsPreviewActive
-    ? journeyMetricsPreview.percentage
-    : activeWalkPercentageAdded;
-  const displayedWalkElapsedMs = journeyMetricsPreviewActive
-    ? journeyMetricsPreview.elapsedMs
-    : activeWalkElapsedMs;
+  const showActiveJourneyMetrics = tracking === "tracking";
   const displayedDistanceCounter = journeyDistanceCounter(
-    displayedWalkDistance,
+    activeWalkDistance,
   );
   const displayedPercentageCounter =
-    displayedWalkPercentageAdded === null
+    activeWalkPercentageAdded === null
       ? null
-      : journeyPercentageCounter(displayedWalkPercentageAdded);
-  const displayedTimeCounter = journeyTimeCounter(displayedWalkElapsedMs);
+      : journeyPercentageCounter(activeWalkPercentageAdded);
+  const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
   const nativeApp = isNativeApp();
   const devToolsEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
@@ -1176,12 +1171,8 @@ export default function App() {
   const resetInactivityReminder = useCallback(() => {
     inactivityReminderRef.current.reset();
     updateInactivitySchedule(null);
-    if (nativeApp)
-      void LocalNotifications.cancel({
-        notifications: [{ id: INACTIVITY_TEST_NOTIFICATION_ID }],
-      }).catch(() => undefined);
     setInactivityPrompt(false);
-  }, [nativeApp, updateInactivitySchedule]);
+  }, [updateInactivitySchedule]);
 
   useEffect(() => {
     cellsRef.current = cells;
@@ -1215,22 +1206,6 @@ export default function App() {
       document.removeEventListener("visibilitychange", updateElapsedNow);
     };
   }, [tracking]);
-  useEffect(() => {
-    if (!journeyMetricsPreviewActive) return;
-    setJourneyMetricsPreview({
-      distanceKm: 0,
-      percentage: 0,
-      elapsedMs: 60_000,
-    });
-    const timer = window.setInterval(() => {
-      setJourneyMetricsPreview((current) => ({
-        distanceKm: current.distanceKm + 0.18,
-        percentage: current.percentage + 0.04,
-        elapsedMs: current.elapsedMs + 60_000,
-      }));
-    }, 1_400);
-    return () => window.clearInterval(timer);
-  }, [journeyMetricsPreviewActive]);
   useEffect(
     () => () => {
       if (journeyDragFrameRef.current !== null)
@@ -1253,7 +1228,7 @@ export default function App() {
     if (!card || journeyAnimationRef.current) return;
     journeyExpandedRef.current = citiesExpanded;
     card.dataset.expanded = String(citiesExpanded);
-  }, [citiesExpanded, isCityScale, journeyMetricsPreviewActive]);
+  }, [citiesExpanded, isCityScale]);
   const progressCities = useMemo(() => {
     const unique = new Map(discoveredCities.map((city) => [city.id, city]));
     if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
@@ -1384,8 +1359,6 @@ export default function App() {
       return;
     }
     if (
-      testRouteRunning ||
-      activeWalkRef.current?.isTest ||
       tracking === "requesting" ||
       tracking === "tracking" ||
       walkFinalizing ||
@@ -1422,39 +1395,10 @@ export default function App() {
             earnedAchievementIds,
           );
           setAchievementCelebrations(confirmedPending);
-          if (nativeApp) {
-            confirmedPendingAchievementIds(
-              synced.newlyEarned,
-              earnedAchievementIds,
-            ).forEach((achievementId) => {
-              void sendAchievementNotification(
-                achievementId,
-                accountUserId,
-              ).catch((error) =>
-                console.warn("Could not show achievement notification", error),
-              );
-            });
-          }
         }
       })
       .catch((error) => {
         console.warn("Could not sync achievement unlocks", error);
-        if (nativeApp && document.visibilityState === "visible") {
-          confirmedPendingAchievementIds(
-            unlocks.newlyEarned,
-            earnedAchievementIds,
-          ).forEach((achievementId) => {
-            void sendAchievementNotification(
-              achievementId,
-              accountUserId,
-            ).catch((notificationError) =>
-              console.warn(
-                "Could not show achievement notification",
-                notificationError,
-              ),
-            );
-          });
-        }
       });
   }, [
     accountUserId,
@@ -1462,7 +1406,6 @@ export default function App() {
     documentVisible,
     earnedAchievementIds,
     nativeApp,
-    testRouteRunning,
     tracking,
     walkFinalizing,
   ]);
@@ -1578,19 +1521,144 @@ export default function App() {
   }, [accountUserId, notificationPermissionReady]);
 
   useEffect(() => {
+    if (!accountUserId) {
+      setActivityNotificationPreferences(defaultActivityNotificationPreferences());
+      return;
+    }
+    setActivityNotificationPreferences(
+      loadActivityNotificationPreferences(accountUserId),
+    );
+  }, [accountUserId]);
+
+  useEffect(() => {
+    if (
+      !nativeApp ||
+      !accountUserId ||
+      notificationPermissionReady !== true ||
+      hasSavedActivityNotificationPreferences(accountUserId)
+    )
+      return;
+    const preferences = enabledActivityNotificationPreferences();
+    setActivityNotificationPreferences(preferences);
+    saveActivityNotificationPreferences(accountUserId, preferences);
+  }, [accountUserId, nativeApp, notificationPermissionReady]);
+
+  useEffect(() => {
+    if (!nativeApp || !accountUserId || notificationPermissionReady !== true)
+      return;
+    const preferences = activityNotificationPreferences;
+    const notifications: LocalNotificationSchema[] = [];
+    if (preferences.morningInvite) {
+      notifications.push({
+        id: MORNING_INVITE_NOTIFICATION_ID,
+        title: "Heading out today?",
+        body: morningInviteMessage(discoveryProgress.discoveryDistance),
+        schedule: {
+          on: { hour: 10, minute: 0 },
+          allowWhileIdle: false,
+        },
+        isExactNotification: false,
+        actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
+        extra: { kind: "morning-invite", userId: accountUserId },
+      });
+    }
+    if (preferences.weeklyRecap) {
+      notifications.push({
+        id: WEEKLY_RECAP_NOTIFICATION_ID,
+        title: "Your weekly walking summary",
+        body: weeklyRecapMessage(
+          discoveryProgress.weekDiscoveryDistance,
+          discoveryProgress.todayTravelledDistance,
+          discoveryProgress.walkingStats.currentStreakDays,
+          null,
+        ),
+        schedule: {
+          on: { weekday: Weekday.Sunday, hour: 18, minute: 0 },
+          allowWhileIdle: false,
+        },
+        isExactNotification: false,
+        extra: { kind: "weekly-recap", userId: accountUserId },
+      });
+    }
+    if (
+      preferences.streakReminder &&
+      discoveryProgress.walkingStats.currentStreakDays > 0
+    ) {
+      notifications.push({
+        id: STREAK_REMINDER_NOTIFICATION_ID,
+        title: "Your walking streak is at risk",
+        body: streakReminderMessage(
+          discoveryProgress.walkingStats.currentStreakDays,
+        ),
+        schedule: {
+          at: streakReminderDate(
+            Date.now(),
+            discoveryProgress.todayTravelledDistance,
+          ),
+          allowWhileIdle: false,
+        },
+        isExactNotification: false,
+        extra: { kind: "streak-reminder", userId: accountUserId },
+      });
+    }
+    void LocalNotifications.registerActionTypes({
+      types: [
+        {
+          id: MORNING_INVITE_ACTION_TYPE_ID,
+          actions: [
+            {
+              id: START_WALK_ACTION_ID,
+              title: "Start walk",
+              foreground: true,
+            },
+          ],
+        },
+      ],
+    })
+      .then(() =>
+        LocalNotifications.cancel({
+          notifications: [
+            { id: MORNING_INVITE_NOTIFICATION_ID },
+            { id: WEEKLY_RECAP_NOTIFICATION_ID },
+            { id: STREAK_REMINDER_NOTIFICATION_ID },
+          ],
+        }),
+      )
+      .then(() =>
+        notifications.length
+          ? LocalNotifications.schedule({ notifications })
+          : undefined,
+      )
+      .catch((error) => console.warn("Could not update activity notifications", { error }));
+  }, [
+    accountUserId,
+    activityNotificationPreferences,
+    discoveryProgress,
+    nativeApp,
+    notificationPermissionReady,
+  ]);
+
+  useEffect(() => {
     if (!nativeApp) return;
     let disposed = false;
     let listener: { remove: () => Promise<void> } | undefined;
     // A recording is never resumed automatically after a fresh app launch.
     void LocalNotifications.cancel({
-      notifications: [
-        { id: INACTIVITY_NOTIFICATION_ID },
-        { id: INACTIVITY_TEST_NOTIFICATION_ID },
-      ],
+      notifications: [{ id: INACTIVITY_NOTIFICATION_ID }],
     }).catch(() => undefined);
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
       (event) => {
+        if (
+          event.actionId === START_WALK_ACTION_ID &&
+          event.notification.extra?.kind === "morning-invite" &&
+          typeof event.notification.extra.userId === "string"
+        ) {
+          pendingMorningWalkStartUserIdRef.current =
+            event.notification.extra.userId;
+          setMorningWalkStartRequest((current) => current + 1);
+          return;
+        }
         if (
           event.notification.extra?.kind === "achievement-test" &&
           isPersonalAchievementId(event.notification.extra.achievementId)
@@ -1627,8 +1695,7 @@ export default function App() {
           return;
         }
         if (
-          event.notification.id === INACTIVITY_NOTIFICATION_ID ||
-          event.notification.id === INACTIVITY_TEST_NOTIFICATION_ID
+          event.notification.id === INACTIVITY_NOTIFICATION_ID
         ) {
           if (trackingStateRef.current === "tracking") {
             inactivityReminderRef.current.markReminded();
@@ -1680,7 +1747,7 @@ export default function App() {
     if (activeWalkOwner && activeWalkOwner !== accountUserId) {
       const tracker = trackerRef.current;
       trackerRef.current = null;
-      if (activeWalk && !activeWalk.isTest) {
+      if (activeWalk) {
         saveWalkJournal(activeWalkOwner, pendingWalksRef.current, {
           ...activeWalk,
           finishedAt: Math.max(
@@ -1775,7 +1842,7 @@ export default function App() {
             saveWalkJournal(
               accountUserId,
               pendingWalksRef.current,
-              activeWalkRef.current && !activeWalkRef.current.isTest
+              activeWalkRef.current
                 ? {
                     ...activeWalkRef.current,
                     finishedAt: Math.max(
@@ -1860,7 +1927,7 @@ export default function App() {
         saveWalkJournal(
           userId,
           pendingWalksRef.current,
-          activeWalkRef.current && !activeWalkRef.current.isTest
+          activeWalkRef.current
             ? {
                 ...activeWalkRef.current,
                 finishedAt: Math.max(
@@ -1929,7 +1996,7 @@ export default function App() {
       void (async () => {
         await flushPendingWalks(accountUserId);
         if (pendingWalksRef.current.length) return;
-        if (cellsRef.current.length && !activeWalkRef.current?.isTest) {
+        if (cellsRef.current.length) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
         await refreshLiveLeaderboard(accountUserId);
@@ -2024,9 +2091,7 @@ export default function App() {
   useEffect(() => {
     if (
       !accountUserId ||
-      cells.length === 0 ||
-      testRouteRunning ||
-      activeWalkRef.current?.isTest
+      cells.length === 0
     )
       return;
     const timer = window.setTimeout(
@@ -2034,7 +2099,7 @@ export default function App() {
       1200,
     );
     return () => window.clearTimeout(timer);
-  }, [accountUserId, cells, testRouteRunning]);
+  }, [accountUserId, cells]);
 
   useEffect(() => {
     if (!trackingUserRef.current || trackingUserRef.current === accountUserId)
@@ -2193,42 +2258,10 @@ export default function App() {
             if (!reminderEnabled || !accountUserId) return;
             if (!discoveryHistoryReadyRef.current) {
               reminderRef.current.reset();
-              if (devToolsEnabled && visible)
-                setReminderDebug({
-                  elapsedMs: 0,
-                  distanceM: 0,
-                  status: "Waiting for discovery history",
-                });
               return;
             }
             const unmapped = isUnmappedArea(point, cellKeysRef.current);
             const kind = reminderRef.current.observe(point, unmapped);
-            if (devToolsEnabled && visible) {
-              const progress = reminderRef.current.progress;
-              const pauseMinutes = Math.ceil(
-                (reminderRef.current.pausedUntil - point.recordedAt) / 60_000,
-              );
-              const cooldownMinutes = reminderRef.current.promptedAt
-                ? Math.ceil(
-                    (REMINDER_COOLDOWN_MS -
-                      (point.recordedAt - reminderRef.current.promptedAt)) /
-                      60_000,
-                  )
-                : 0;
-              setReminderDebug({
-                elapsedMs: progress.elapsedMs,
-                distanceM: progress.distanceM,
-                status: kind
-                  ? "Reminder triggered"
-                  : pauseMinutes > 0
-                    ? `Paused after tap: ${pauseMinutes} min left`
-                    : cooldownMinutes > 0
-                      ? `Cooldown: ${cooldownMinutes} min left`
-                      : unmapped
-                        ? "New area"
-                        : "Already discovered",
-              });
-            }
             if (!kind) return;
             saveReminderPreference(
               accountUserId,
@@ -2536,9 +2569,9 @@ export default function App() {
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) {
       if (
+        reminderEnabled &&
         trackingUserRef.current &&
-        activeWalkRef.current &&
-        !activeWalkRef.current.isTest
+        activeWalkRef.current
       ) {
         updateInactivitySchedule(
           inactivityReminderRef.current.observe(point, false, Date.now()),
@@ -2553,9 +2586,9 @@ export default function App() {
     }
     const considerStopReminder = () => {
       if (
+        !reminderEnabled ||
         !trackingUserRef.current ||
-        !activeWalkRef.current ||
-        activeWalkRef.current.isTest
+        !activeWalkRef.current
       )
         return;
       const dueAt = inactivityReminderRef.current.observe(
@@ -2583,11 +2616,7 @@ export default function App() {
     activeWalkRef.current?.points.push(recordedPoint);
     pointsRef.current.push(recordedPoint);
     fogLayerRef.current?.appendRoutePoint(previousRecordedPoint, recordedPoint);
-    if (
-      trackingUserRef.current &&
-      activeWalkRef.current &&
-      !activeWalkRef.current.isTest
-    ) {
+    if (trackingUserRef.current && activeWalkRef.current) {
       saveWalkJournal(trackingUserRef.current, pendingWalksRef.current, {
         ...activeWalkRef.current,
         finishedAt: Math.max(
@@ -2645,28 +2674,26 @@ export default function App() {
           active.points.at(-1)?.recordedAt ?? Date.now(),
         ),
       };
-      if (!active.isTest) {
-        if (isAutomaticUpdatesEnabled()) {
-          setAutomaticUpdatePending(walkOwner, true);
-        }
-        pendingWalksRef.current.push(completed);
-        saveWalkJournal(walkOwner, pendingWalksRef.current, null);
-        await flushPendingWalks(walkOwner);
-        // The recap and the next app launch must be based on the same completed
-        // discovery. Do not rely only on the debounced background cell sync.
-        let discoverySynced = false;
-        try {
-          await syncDiscoveryCells(cellsRef.current, walkOwner);
-          discoverySynced = true;
-        } catch {
-          /* The existing debounced sync retries if this request fails. */
-        }
-        const completedWalkSynced = !pendingWalksRef.current.some(
-          walk => walk.id === completed.id,
-        );
-        if (completedWalkSynced && discoverySynced) {
-          await refreshLiveLeaderboard(walkOwner);
-        }
+      if (isAutomaticUpdatesEnabled()) {
+        setAutomaticUpdatePending(walkOwner, true);
+      }
+      pendingWalksRef.current.push(completed);
+      saveWalkJournal(walkOwner, pendingWalksRef.current, null);
+      await flushPendingWalks(walkOwner);
+      // The recap and the next app launch must be based on the same completed
+      // discovery. Do not rely only on the debounced background cell sync.
+      let discoverySynced = false;
+      try {
+        await syncDiscoveryCells(cellsRef.current, walkOwner);
+        discoverySynced = true;
+      } catch {
+        /* The existing debounced sync retries if this request fails. */
+      }
+      const completedWalkSynced = !pendingWalksRef.current.some(
+        walk => walk.id === completed.id,
+      );
+      if (completedWalkSynced && discoverySynced) {
+        await refreshLiveLeaderboard(walkOwner);
       }
       if (started) {
         const completedCells = cellsRef.current;
@@ -2695,8 +2722,7 @@ export default function App() {
 
         // React state can still describe the city where tracking began. Look
         // up the final recorded position instead, then compare its coverage
-        // before and after this session. This also works for test routes that
-        // finish in a different city.
+        // before and after this session.
         const finalPoint = active.points.at(-1);
         if (finalPoint) {
           void fetchCityBoundary(finalPoint)
@@ -2706,15 +2732,13 @@ export default function App() {
                 discoveredCityPercentage(completedCells, city) -
                   discoveredCityPercentage(previousCells, city),
               );
-              if (!active.isTest) {
-                setCityBoundary(city);
-                setDiscoveredCities((current) =>
-                  current.some((saved) => saved.id === city.id)
-                    ? current
-                    : [...current, city],
-                );
-                void syncDiscoveredCity(city, walkOwner).catch(() => undefined);
-              }
+              setCityBoundary(city);
+              setDiscoveredCities((current) =>
+                current.some((saved) => saved.id === city.id)
+                  ? current
+                  : [...current, city],
+              );
+              void syncDiscoveredCity(city, walkOwner).catch(() => undefined);
               setExplorationSummary((current) =>
                 current?.walkId === active.id
                   ? {
@@ -2730,19 +2754,8 @@ export default function App() {
               // stale one when reverse geocoding is temporarily unavailable.
             });
         }
-
-        if (active.isTest) {
-          // GPX routes are a visual test tool only. Restore the account's real
-          // history before the recap is dismissed, so no test path can sync.
-          pointsRef.current = started.points;
-          cellsRef.current = previousCells;
-          cellKeysRef.current = new Set(previousCells.map(discoveryCellKey));
-          lastPointRef.current = started.points.at(-1);
-          setPoints(started.points);
-          setCells(previousCells);
-        }
       }
-    } else if (active && walkOwner && !active.isTest) {
+    } else if (active && walkOwner) {
       saveWalkJournal(walkOwner, pendingWalksRef.current, null);
     }
     explorationStartRef.current = null;
@@ -2755,79 +2768,6 @@ export default function App() {
         console.error("Could not finalize recorded walk", { error });
       })
       .finally(() => setWalkFinalizing(false));
-  };
-
-  const runTestRoute = async (routeFile: string) => {
-    if (!accountUserId) {
-      setSyncOpen(true);
-      return;
-    }
-    if (tracking !== "idle" || testRouteRunning) return;
-    setTestRouteRunning(true);
-    followCameraEnabledRef.current = true;
-    resetInactivityReminder();
-    setExplorationSummary(null);
-    setPassiveLocationStatus("idle");
-    try {
-      const response = await fetch(`/test-routes/${routeFile}`);
-      if (!response.ok) throw new Error("Unable to load test route");
-      const document = new DOMParser().parseFromString(
-        await response.text(),
-        "application/xml",
-      );
-      const route = [...document.querySelectorAll("trkpt")].flatMap(
-        (point, index): Coordinate[] => {
-          const lat = Number(point.getAttribute("lat"));
-          const lng = Number(point.getAttribute("lon"));
-          return Number.isFinite(lat) && Number.isFinite(lng)
-            ? [
-                {
-                  lat,
-                  lng,
-                  accuracy: 5,
-                  recordedAt: Date.now() + index * 20_000,
-                },
-              ]
-            : [];
-        },
-      );
-      if (route.length < 2)
-        throw new Error("Test route needs at least two points");
-
-      lastPointRef.current = undefined;
-      const startingPoints = pointsRef.current;
-      pointsRef.current = [...startingPoints];
-      cellsRef.current = [...cellsRef.current];
-      explorationStartRef.current = {
-        cells: new Set(cellKeysRef.current),
-        points: startingPoints,
-        discoveryDistance: discoveredDistanceKm(startingPoints),
-      };
-      activeWalkRef.current = {
-        id: createWalkId(),
-        startedAt: route[0].recordedAt,
-        points: [],
-        isTest: true,
-      };
-      trackingUserRef.current = accountUserId;
-      setTracking("tracking");
-      for (const point of route) {
-        addPoint(point);
-        await new Promise((resolve) => window.setTimeout(resolve, 350));
-      }
-      await finishActiveWalk();
-      setTracking("idle");
-      setPassiveLocationStatus("idle");
-    } catch (error) {
-      console.error("Test route failed", error);
-      activeWalkRef.current = null;
-      trackingUserRef.current = null;
-      explorationStartRef.current = null;
-      setTracking("idle");
-      setPassiveLocationStatus("idle");
-    } finally {
-      setTestRouteRunning(false);
-    }
   };
 
   const importGpxFile = async (file: File): Promise<GpxImportResult> => {
@@ -2937,6 +2877,7 @@ export default function App() {
     }
     setReminderEnabled(enabled);
     reminderRef.current.reset();
+    if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
     saveReminderPreference(
       accountUserId,
@@ -2947,76 +2888,176 @@ export default function App() {
     return null;
   };
 
-  const simulateReminder = async () => {
-    if (!accountUserId || !reminderEnabled) {
-      setReminderTestMessage(
-        "Sign in and enable Discovery reminders in Account & sync first.",
-      );
-      return;
+  const updateActivityNotificationPreference = async (
+    category: ActivityNotificationCategory,
+    enabled: boolean,
+  ): Promise<string | null> => {
+    if (!accountUserId) return "Sign in before enabling activity notifications.";
+    const preferencesHaveBeenSaved =
+      hasSavedActivityNotificationPreferences(accountUserId);
+    if (enabled && nativeApp) {
+      const notificationAllowed = await ensureNotificationPermission();
+      setNotificationPermissionReady(notificationAllowed);
+      if (!notificationAllowed)
+        return "Allow notifications in your device settings to enable this.";
     }
-    if (!discoveryHistoryReadyRef.current) {
-      setReminderTestMessage(
-        "Wait for your discovery history to finish loading.",
-      );
-      return;
+    if (enabled && !preferencesHaveBeenSaved) {
+      const initialPreferences = enabledActivityNotificationPreferences();
+      setActivityNotificationPreferences(initialPreferences);
+      saveActivityNotificationPreferences(accountUserId, initialPreferences);
+      return null;
     }
-    if (!simulateUnmappedWalk(cellKeysRef.current)) {
-      setReminderTestMessage("Could not find an unmapped test route.");
-      return;
-    }
-    if (nativeApp) {
-      try {
-        const permission = await LocalNotifications.checkPermissions();
-        if (permission.display !== "granted") {
-          setReminderTestMessage(
-            "Allow notifications in iPhone Settings, then try again.",
-          );
-          return;
-        }
-        await sendReminderNotification(accountUserId, 5_000, true);
-        setReminderTestMessage(
-          "A local notification is scheduled in 5 seconds. Lock your phone to check background delivery.",
-        );
-      } catch {
-        setReminderTestMessage("Could not schedule the local notification.");
-      }
-    } else {
-      setReminderPrompt("unmapped");
-      setReminderTestMessage(
-        "The simulated route qualified. Browsers show the in-app reminder only.",
-      );
-    }
+    const next = { ...activityNotificationPreferences, [category]: enabled };
+    setActivityNotificationPreferences(next);
+    saveActivityNotificationPreferences(accountUserId, next);
+    return null;
   };
 
-  const simulateInactivityNotification = async () => {
-    if (tracking !== "tracking") return;
+  const updateAllNotifications = async (
+    enabled: boolean,
+  ): Promise<string | null> => {
+    if (!accountUserId) return "Sign in before changing notifications.";
+    if (enabled && nativeApp) {
+      try {
+        const notificationAllowed = await ensureNotificationPermission();
+        setNotificationPermissionReady(notificationAllowed);
+        if (!notificationAllowed)
+          return "Allow notifications in your device settings to enable this.";
+      } catch {
+        return "Notifications are unavailable right now. Try again later.";
+      }
+    }
+    const nextActivityPreferences = enabled
+      ? enabledActivityNotificationPreferences()
+      : defaultActivityNotificationPreferences();
+    setReminderEnabled(enabled);
+    reminderRef.current.reset();
+    if (!enabled) resetInactivityReminder();
+    setReminderPrompt(null);
+    saveReminderPreference(
+      accountUserId,
+      enabled,
+      reminderRef.current.promptedAt,
+      reminderRef.current.pausedUntil,
+    );
+    setActivityNotificationPreferences(nextActivityPreferences);
+    saveActivityNotificationPreferences(
+      accountUserId,
+      nextActivityPreferences,
+    );
+    return null;
+  };
+
+  const scheduleActivityNotificationTest = async (
+    notification: LocalNotificationSchema,
+    notificationName: string,
+  ): Promise<void> => {
     if (!nativeApp) {
-      setInactivityPrompt(true);
+      setActivityNotificationTestMessage(
+        `${notificationName} is only available in the native app.`,
+      );
+      return;
+    }
+    if (!accountUserId) {
+      setActivityNotificationTestMessage(
+        `Sign in before testing ${notificationName.toLowerCase()}.`,
+      );
       return;
     }
     try {
       if (!(await ensureNotificationPermission())) {
-        setReminderTestMessage(
-          "Allow notifications in iPhone Settings, then try the stop reminder test again.",
+        setActivityNotificationTestMessage(
+          "Allow notifications in your device settings, then try again.",
         );
         return;
       }
-      await LocalNotifications.schedule({
-        notifications: [
+      await LocalNotifications.registerActionTypes({
+        types: [
           {
-            id: INACTIVITY_TEST_NOTIFICATION_ID,
-            title: "Still recording your discovery?",
-            body: "This is a test stop reminder. Your recording will keep running.",
-            schedule: { at: new Date(Date.now() + 5_000) },
+            id: MORNING_INVITE_ACTION_TYPE_ID,
+            actions: [
+              {
+                id: START_WALK_ACTION_ID,
+                title: "Start walk",
+                foreground: true,
+              },
+            ],
           },
         ],
       });
-      setReminderTestMessage(
-        "A test stop reminder will appear in 5 seconds. Lock your phone to check it.",
+      await LocalNotifications.schedule({ notifications: [notification] });
+      setActivityNotificationTestMessage(
+        `${notificationName} will appear in 5 seconds.`,
       );
-    } catch {
-      setReminderTestMessage("Could not schedule the test stop reminder.");
+    } catch (error) {
+      console.warn("Could not schedule activity notification test", {
+        notificationName,
+        error,
+      });
+      setActivityNotificationTestMessage(
+        `Could not schedule ${notificationName.toLowerCase()}.`,
+      );
     }
+  };
+
+  const testMorningInviteNotification = async (): Promise<void> => {
+    await scheduleActivityNotificationTest(
+      {
+        id: MORNING_INVITE_TEST_NOTIFICATION_ID,
+        title: "Heading out today?",
+        body: morningInviteMessage(discoveryProgress.discoveryDistance),
+        schedule: { at: new Date(Date.now() + 5_000) },
+        actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
+        extra: { kind: "morning-invite", userId: accountUserId },
+      },
+      "Daily walking reminder",
+    );
+  };
+
+  const testUnmappedAreaNotification = async (): Promise<void> => {
+    await scheduleActivityNotificationTest(
+      {
+        id: REMINDER_TEST_NOTIFICATION_ID,
+        title: "Discovering somewhere new?",
+        body: reminderMessage(),
+        schedule: { at: new Date(Date.now() + 5_000) },
+        extra: { kind: "test-unmapped", userId: accountUserId },
+      },
+      "Unmapped area reminder",
+    );
+  };
+
+  const testWeeklyRecapNotification = async (): Promise<void> => {
+    await scheduleActivityNotificationTest(
+      {
+        id: WEEKLY_RECAP_TEST_NOTIFICATION_ID,
+        title: "Your weekly walking summary",
+        body: weeklyRecapMessage(
+          discoveryProgress.weekDiscoveryDistance,
+          discoveryProgress.todayTravelledDistance,
+          discoveryProgress.walkingStats.currentStreakDays,
+          null,
+        ),
+        schedule: { at: new Date(Date.now() + 5_000) },
+        extra: { kind: "weekly-recap-test", userId: accountUserId },
+      },
+      "Weekly progress summary",
+    );
+  };
+
+  const testStreakReminderNotification = async (): Promise<void> => {
+    await scheduleActivityNotificationTest(
+      {
+        id: STREAK_REMINDER_TEST_NOTIFICATION_ID,
+        title: "Your walking streak is at risk",
+        body: streakReminderMessage(
+          Math.max(1, discoveryProgress.walkingStats.currentStreakDays),
+        ),
+        schedule: { at: new Date(Date.now() + 5_000) },
+        extra: { kind: "streak-reminder-test", userId: accountUserId },
+      },
+      "Streak reminder",
+    );
   };
 
   const simulateAchievementUnlock = async () => {
@@ -3069,7 +3110,6 @@ export default function App() {
       return;
     }
     if (discoveryLoading) return;
-    setJourneyMetricsPreviewActive(false);
     reminderRef.current.reset();
     resetInactivityReminder();
     setReminderPrompt(null);
@@ -3143,6 +3183,31 @@ export default function App() {
       setTracking("unavailable");
     }
   };
+
+  useEffect(() => {
+    const requestedUserId = pendingMorningWalkStartUserIdRef.current;
+    if (
+      !requestedUserId ||
+      requestedUserId !== accountUserId ||
+      !authReady ||
+      discoveryLoading ||
+      walkFinalizing
+    )
+      return;
+    if (tracking !== "idle") {
+      pendingMorningWalkStartUserIdRef.current = null;
+      return;
+    }
+    pendingMorningWalkStartUserIdRef.current = null;
+    void toggleTracking();
+  }, [
+    accountUserId,
+    authReady,
+    discoveryLoading,
+    morningWalkStartRequest,
+    tracking,
+    walkFinalizing,
+  ]);
 
   useEffect(() => {
     if (
@@ -3926,11 +3991,11 @@ export default function App() {
       />
       {devToolsEnabled && devToolsVisible && (
         <aside
-          className="test-route-controls"
+          className="dev-tools"
           aria-label="Development test tools"
         >
-          <div className="test-route-controls__heading">
-            <strong>Test routes</strong>
+          <div className="dev-tools__heading">
+            <strong>Dev tools</strong>
             <button
               type="button"
               onClick={() => setDevToolsOpen(false)}
@@ -3940,87 +4005,38 @@ export default function App() {
               <XIcon size={14} />
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void runTestRoute("barcelona-exploration.gpx")}
-            disabled={testRouteRunning}
-          >
-            Barcelona
-          </button>
-          <button
-            type="button"
-            onClick={() => void runTestRoute("fells_loop.gpx")}
-            disabled={testRouteRunning}
-          >
-            Test
-          </button>
-          <button
-            type="button"
-            onClick={() => void runTestRoute("barcelona-repeat.gpx")}
-            disabled={testRouteRunning}
-          >
-            Repeat Barcelona
-          </button>
-          <button
-            type="button"
-            onClick={() => void runTestRoute("san-francisco-exploration.gpx")}
-            disabled={testRouteRunning}
-          >
-            San Francisco
-          </button>
-          <strong>Journey counters</strong>
+          <strong>Notifications</strong>
           <small>
-            Animates distance, new area, and time without saving journey data.
+            Schedules each notification in 5 seconds using your current
+            progress. These tests work even when the notification category is
+            switched off.
           </small>
           <button
             type="button"
-            onClick={() =>
-              setJourneyMetricsPreviewActive((current) => !current)
-            }
+            onClick={() => void testUnmappedAreaNotification()}
           >
-            {journeyMetricsPreviewActive
-              ? "Stop counter preview"
-              : "Test counter animation"}
+            Test unmapped area reminder
           </button>
-          <strong>Discovery reminder</strong>
-          <small>
-            {reminderEnabled
-              ? reminderDebug.status
-              : "Enable Discovery reminders in Account & sync"}
-          </small>
-          {reminderEnabled && (
-            <small>
-              {(
-                Math.min(reminderDebug.elapsedMs, REMINDER_MINUTES * 60_000) /
-                60_000
-              ).toFixed(1)}{" "}
-              / {REMINDER_MINUTES} min in new areas
-              <br />
-              {Math.min(
-                Math.round(reminderDebug.distanceM),
-                REMINDER_DISTANCE_M,
-              )}{" "}
-              / {REMINDER_DISTANCE_M} m
-            </small>
-          )}
           <button
             type="button"
-            onClick={() => void simulateReminder()}
-            disabled={
-              testRouteRunning ||
-              tracking === "tracking" ||
-              tracking === "requesting"
-            }
+            onClick={() => void testMorningInviteNotification()}
           >
-            Simulate 5-min discovery
+            Test daily reminder
           </button>
-          {tracking === "tracking" && (
-            <button
-              type="button"
-              onClick={() => void simulateInactivityNotification()}
-            >
-              Test stop reminder
-            </button>
+          <button
+            type="button"
+            onClick={() => void testWeeklyRecapNotification()}
+          >
+            Test weekly summary
+          </button>
+          <button
+            type="button"
+            onClick={() => void testStreakReminderNotification()}
+          >
+            Test streak reminder
+          </button>
+          {activityNotificationTestMessage && (
+            <small role="status">{activityNotificationTestMessage}</small>
           )}
           <strong>Achievements</strong>
           <small>
@@ -4036,14 +4052,11 @@ export default function App() {
           {achievementTestMessage && (
             <small role="status">{achievementTestMessage}</small>
           )}
-          {reminderTestMessage && (
-            <small role="status">{reminderTestMessage}</small>
-          )}
         </aside>
       )}
       {devToolsEnabled && !devToolsVisible && (
         <button
-          className="test-route-controls__restore"
+          className="dev-tools__restore"
           type="button"
           onClick={() => setDevToolsOpen(true)}
         >
@@ -4292,7 +4305,7 @@ export default function App() {
       )}
 
 
-      {(isCityScale || journeyMetricsPreviewActive) && (
+      {isCityScale && (
         <section
           ref={journeyCardRef}
           className="journey-card"
@@ -4507,7 +4520,6 @@ export default function App() {
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
           reminderEnabled={reminderEnabled}
-          nativeApp={nativeApp}
           keyboardInset={keyboardInset}
           travelledDistance={discoveryProgress.travelledDistance}
           discoveredCityCount={cityProgresses.length}
@@ -4515,6 +4527,9 @@ export default function App() {
           achievementCount={achievementEvaluations.length}
           favoritePlaces={favoritePlaces}
           onReminderChange={updateReminderEnabled}
+          activityNotificationPreferences={activityNotificationPreferences}
+          onActivityNotificationChange={updateActivityNotificationPreference}
+          onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
           onShowGpxImport={showImportedRoute}
           onShowGpxImportRoute={showImportedRouteById}

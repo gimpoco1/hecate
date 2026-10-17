@@ -381,7 +381,7 @@ button {
   gap: 8px;
   transform: translateY(-50%);
 }
-.test-route-controls {
+.dev-tools {
   position: absolute;
   z-index: 8;
   top: 76px;
@@ -399,13 +399,13 @@ button {
   color: var(--forest);
   font-size: 10px;
 }
-.test-route-controls__heading {
+.dev-tools__heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
-.test-route-controls .test-route-controls__heading button {
+.dev-tools .dev-tools__heading button {
   width: 25px;
   height: 25px;
   display: grid;
@@ -415,10 +415,10 @@ button {
   padding: 0;
   background: transparent;
 }
-.test-route-controls .test-route-controls__heading button:hover {
+.dev-tools .dev-tools__heading button:hover {
   background: #e9ede7;
 }
-.test-route-controls__restore {
+.dev-tools__restore {
   position: absolute;
   z-index: 8;
   top: 76px;
@@ -434,15 +434,15 @@ button {
   cursor: pointer;
   backdrop-filter: blur(12px);
 }
-.test-route-controls strong:not(:first-child) {
+.dev-tools strong:not(:first-child) {
   margin-top: 7px;
 }
-.test-route-controls small {
+.dev-tools small {
   color: #5f6e65;
   font-size: 10px;
   line-height: 1.35;
 }
-.test-route-controls button {
+.dev-tools button {
   border: 0;
   border-radius: 7px;
   padding: 6px 7px;
@@ -452,7 +452,7 @@ button {
   text-align: left;
   cursor: pointer;
 }
-.test-route-controls button:disabled {
+.dev-tools button:disabled {
   cursor: wait;
   opacity: 0.55;
 }
@@ -2898,6 +2898,9 @@ button {
 .sheet.gpx-import-sheet {
   min-height: calc(100dvh - env(safe-area-inset-top) - 12px);
 }
+.sheet.notification-settings-sheet {
+  min-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+}
 .account-toast {
   position: fixed;
   z-index: 12;
@@ -3261,6 +3264,11 @@ button {
 .account-navigation__heading--community {
   margin-top: 17px;
 }
+.account-navigation__heading--settings {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(24, 60, 47, 0.1);
+}
 .account-community-link {
   width: 100%;
   display: grid;
@@ -3279,6 +3287,17 @@ button {
 .account-community-link:focus-visible {
   border-color: rgba(24, 60, 47, 0.24);
   background: #eef1e8;
+}
+.account-community-card {
+  overflow: hidden;
+  border: 1px solid rgba(29, 61, 49, 0.11);
+  border-radius: 17px;
+  background: #f7f8f3;
+}
+.account-community-link--grouped {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .account-community-link > span:nth-child(2) {
   min-width: 0;
@@ -3308,6 +3327,10 @@ button {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+.account-community-settings {
+  border-top: 1px solid rgba(24, 60, 47, 0.1);
+  padding: 0 13px;
 }
 .account-quick-link {
   width: 100%;
@@ -3632,6 +3655,11 @@ button {
   border-top: 1px solid rgba(24, 60, 47, 0.1);
   background: transparent;
 }
+.account-settings-panel--links {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .account-settings-panel__header {
   color: #607068;
   font-size: 10px;
@@ -3641,13 +3669,19 @@ button {
 }
 .account-setting {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   margin-top: 0;
   padding: 12px 0;
   border-bottom: 1px solid rgba(24, 60, 47, 0.08);
   background: transparent;
+}
+.account-setting--all {
+  padding-top: 4px;
+}
+.account-setting--all button {
+  min-width: 92px;
 }
 .account-setting:last-child {
   border-bottom: 0;
@@ -3748,6 +3782,15 @@ button {
   display: flex;
   flex-direction: column;
   margin-top: 16px;
+}
+.notification-settings-sheet__content {
+  margin-top: 16px;
+}
+.notification-settings-sheet__content > p {
+  margin: 0 0 12px;
+  color: #65736d;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .gpx-import-sheet__file-description {
   margin: 0 0 12px;

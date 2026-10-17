@@ -22,6 +22,7 @@ import { WorldMilestoneIcon } from "./WorldMilestones";
 import {
   AchievementsIcon,
   ArrowLeftIcon,
+  BellIcon,
   CitiesIcon,
   ChevronIcon,
   InfoIcon,
@@ -31,13 +32,16 @@ import {
   XIcon,
 } from "./Icons";
 import type { Coordinate } from "../types";
+import type {
+  ActivityNotificationCategory,
+  ActivityNotificationPreferences,
+} from "../activityNotifications";
 
 type Props = {
   open: boolean;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   reminderEnabled: boolean;
-  nativeApp: boolean;
   keyboardInset: number;
   travelledDistance: number;
   discoveredCityCount: number;
@@ -45,6 +49,12 @@ type Props = {
   achievementCount: number;
   favoritePlaces: FavoritePlace[];
   onReminderChange: (enabled: boolean) => Promise<string | null>;
+  activityNotificationPreferences: ActivityNotificationPreferences;
+  onActivityNotificationChange: (
+    category: ActivityNotificationCategory,
+    enabled: boolean,
+  ) => Promise<string | null>;
+  onAllNotificationsChange: (enabled: boolean) => Promise<string | null>;
   onGpxImport: (file: File) => Promise<GpxImportResult>;
   onShowGpxImport: (points: Coordinate[]) => void;
   onShowGpxImportRoute: (routeId: string) => void;
@@ -130,7 +140,6 @@ export function SyncSheet({
   initialAuthIntent = "signin",
   onClose,
   reminderEnabled,
-  nativeApp,
   keyboardInset,
   travelledDistance,
   discoveredCityCount,
@@ -138,6 +147,9 @@ export function SyncSheet({
   achievementCount,
   favoritePlaces,
   onReminderChange,
+  activityNotificationPreferences,
+  onActivityNotificationChange,
+  onAllNotificationsChange,
   onGpxImport,
   onShowGpxImport,
   onShowGpxImportRoute,
@@ -162,6 +174,15 @@ export function SyncSheet({
   const [reminderError, setReminderError] = useState("");
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
+  const [notificationSettingsSheetOpen, setNotificationSettingsSheetOpen] =
+    useState(false);
+  const [notificationPending, setNotificationPending] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
+  const allNotificationsEnabled =
+    reminderEnabled &&
+    activityNotificationPreferences.morningInvite &&
+    activityNotificationPreferences.weeklyRecap &&
+    activityNotificationPreferences.streakReminder;
   const [gpxImportedRoutes, setGpxImportedRoutes] = useState<
     GpxImportedRoute[]
   >([]);
@@ -220,6 +241,7 @@ export function SyncSheet({
   useEffect(() => {
     if (!open) {
       setConfirmingDelete(false);
+      setNotificationSettingsSheetOpen(false);
       return;
     }
     if (!supabase) {
@@ -640,93 +662,96 @@ export function SyncSheet({
                 </div>
                 <div className="account-navigation__heading account-navigation__heading--community">
                   <strong>Community</strong>
+                  <small>
+                    Compare your progress and keep your public snapshot current
+                  </small>
                 </div>
-                <button
-                  type="button"
-                  className="account-community-link"
-                  aria-label="Open the public leaderboard"
-                  onClick={() => {
-                    void openLeaderboard();
-                  }}
+                <section
+                  className="account-community-card"
+                  aria-label="Community"
                 >
-                  <span
-                    className="account-community-link__mark"
-                    aria-hidden="true"
+                  <button
+                    type="button"
+                    className="account-community-link account-community-link--grouped"
+                    aria-label="Open the public leaderboard"
+                    onClick={() => {
+                      void openLeaderboard();
+                    }}
                   >
-                    <LeaderboardIcon size={18} />
-                  </span>
-                  <span>
-                    <strong>Leaderboard</strong>
-                    <small>Compare your city and worldwide ranking</small>
-                  </span>
-                  <span
-                    className="account-community-link__action"
-                    aria-hidden="true"
+                    <span
+                      className="account-community-link__mark"
+                      aria-hidden="true"
+                    >
+                      <LeaderboardIcon size={18} />
+                    </span>
+                    <span>
+                      <strong>Leaderboard</strong>
+                      <small>Compare your city and worldwide ranking</small>
+                    </span>
+                    <span
+                      className="account-community-link__action"
+                      aria-hidden="true"
+                    >
+                      <small>Open</small>
+                      <ChevronIcon size={16} strokeWidth={2.3} />
+                    </span>
+                  </button>
+                  <section
+                    className="account-community-settings"
+                    aria-label="Community settings"
                   >
-                    <small>Open</small>
-                    <ChevronIcon size={16} strokeWidth={2.3} />
-                  </span>
-                </button>
+                    <div className="account-setting">
+                      <div>
+                        <strong>Live data</strong>
+                        <p>
+                          Refresh your leaderboard, badges, and public snapshot
+                          after each completed tracking session unless you
+                          switch this off.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={autoUpdatesEnabled}
+                        aria-label="Automatic updates"
+                        onClick={() => {
+                          const next = !autoUpdatesEnabled;
+                          setAutoUpdatesEnabled(next);
+                          setAutomaticUpdatesEnabled(next);
+                        }}
+                      >
+                        {autoUpdatesEnabled ? "On" : "Off"}
+                      </button>
+                    </div>
+                  </section>
+                </section>
               </nav>
-              {reminderError && (
-                <div className="form-message form-message--error" role="alert">
-                  {reminderError}
-                </div>
-              )}
+              <div className="account-navigation__heading account-navigation__heading--settings">
+                <strong>Settings</strong>
+                <small>Manage your alerts, imports, and app preferences</small>
+              </div>
               <section
-                className="account-settings-panel"
+                className="account-settings-panel account-settings-panel--links"
                 aria-label="Account settings"
               >
-                <div className="account-settings-panel__header">Settings</div>
-                <div className="account-setting">
-                  <div>
-                    <strong>Live data</strong>
-                    <p>
-                      Refresh your leaderboard, badges, and public snapshot
-                      after each completed tracking session unless you switch
-                      this off.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={autoUpdatesEnabled}
-                    aria-label="Automatic updates"
-                    onClick={() => {
-                      const next = !autoUpdatesEnabled;
-                      setAutoUpdatesEnabled(next);
-                      setAutomaticUpdatesEnabled(next);
-                    }}
+                <button
+                  type="button"
+                  className="account-settings-link"
+                  aria-label="Open notification settings"
+                  onClick={() => setNotificationSettingsSheetOpen(true)}
+                >
+                  <span
+                    className="account-settings-link__mark"
+                    aria-hidden="true"
                   >
-                    {autoUpdatesEnabled ? "On" : "Off"}
-                  </button>
-                </div>
-                <div className="account-setting">
-                  <div>
-                    <strong>Discovery reminders</strong>
-                    <p>
-                      {nativeApp
-                        ? "Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced."
-                        : "Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background."}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={reminderEnabled}
-                    aria-label="Discovery reminders"
-                    disabled={reminderPending}
-                    onClick={() => {
-                      setReminderPending(true);
-                      setReminderError("");
-                      void onReminderChange(!reminderEnabled)
-                        .then((error) => setReminderError(error ?? ""))
-                        .finally(() => setReminderPending(false));
-                    }}
-                  >
-                    {reminderEnabled ? "On" : "Off"}
-                  </button>
-                </div>
+                    <BellIcon size={18} />
+                  </span>
+                  <span>
+                    <strong>Notifications</strong>
+                    <small>Choose the walking nudges you want to receive</small>
+                  </span>
+                  <ChevronIcon size={16} strokeWidth={2.3} />
+                </button>
                 <button
                   type="button"
                   className="account-settings-link"
@@ -1007,6 +1032,182 @@ export function SyncSheet({
                           ))}
                         </ul>
                       )}
+                    </section>
+                  </div>
+                </section>
+              </div>
+            )}
+            {notificationSettingsSheetOpen && (
+              <div
+                className="sheet-backdrop gpx-import-backdrop"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setNotificationSettingsSheetOpen(false);
+                }}
+              >
+                <section
+                  className="sheet profile-collection-sheet notification-settings-sheet"
+                  onClick={(event) => event.stopPropagation()}
+                  aria-modal="true"
+                  role="dialog"
+                  aria-labelledby="notification-settings-sheet-title"
+                >
+                  <button
+                    className="icon-button walking-stats-back"
+                    type="button"
+                    onClick={() => setNotificationSettingsSheetOpen(false)}
+                    aria-label="Back to profile"
+                  >
+                    <ArrowLeftIcon />
+                  </button>
+                  <button
+                    className="icon-button sheet__close"
+                    type="button"
+                    onClick={() => {
+                      setNotificationSettingsSheetOpen(false);
+                      onClose();
+                    }}
+                    aria-label="Close notification settings"
+                  >
+                    <XIcon />
+                  </button>
+                  <div className="eyebrow">Your activity</div>
+                  <h2 id="notification-settings-sheet-title">Notifications</h2>
+                  <div className="notification-settings-sheet__content">
+                    <p>
+                      Choose the walking nudges you want to receive. You can
+                      change these at any time.
+                    </p>
+                    {notificationError && (
+                      <div
+                        className="form-message form-message--error"
+                        role="alert"
+                      >
+                        {notificationError}
+                      </div>
+                    )}
+                    <section
+                      className="account-settings-panel"
+                      aria-label="Notification settings"
+                    >
+                      <div className="account-setting account-setting--all">
+                        <div>
+                          <strong>All notifications</strong>
+                          <p>Turn every walking notification on or off at once.</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={allNotificationsEnabled}
+                          aria-label={
+                            allNotificationsEnabled
+                              ? "Turn all notifications off"
+                              : "Turn all notifications on"
+                          }
+                          disabled={reminderPending || notificationPending}
+                          onClick={() => {
+                            setNotificationPending(true);
+                            setNotificationError("");
+                            setReminderError("");
+                            void onAllNotificationsChange(
+                              !allNotificationsEnabled,
+                            )
+                              .then((error) =>
+                                setNotificationError(error ?? ""),
+                              )
+                              .finally(() => setNotificationPending(false));
+                          }}
+                        >
+                          {allNotificationsEnabled
+                            ? "Turn all off"
+                            : "Turn all on"}
+                        </button>
+                      </div>
+                      <div className="account-setting">
+                        <div>
+                          <strong>Walking reminders</strong>
+                          <p>
+                            Get notified after five minutes of walking through
+                            an unmapped area. While tracking, Hecate also
+                            suggests stopping after{" "}
+                            {INACTIVITY_REMINDER_MINUTES} minutes in one place.
+                            Reminder locations are never saved or synced.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={reminderEnabled}
+                          aria-label="Walking reminders"
+                          disabled={reminderPending}
+                          onClick={() => {
+                            setReminderPending(true);
+                            setReminderError("");
+                            void onReminderChange(!reminderEnabled)
+                              .then((error) => setReminderError(error ?? ""))
+                              .finally(() => setReminderPending(false));
+                          }}
+                        >
+                          {reminderEnabled ? "On" : "Off"}
+                        </button>
+                      </div>
+                      {reminderError && (
+                        <div
+                          className="form-message form-message--error"
+                          role="alert"
+                        >
+                          {reminderError}
+                        </div>
+                      )}
+                      {[
+                        [
+                          "morningInvite",
+                          "Daily walking reminder",
+                          "Receive a friendly morning reminder to get outside and add distance to your map.",
+                        ] as const,
+                        [
+                          "weeklyRecap",
+                          "Weekly progress summary",
+                          "Receive a Sunday evening summary of your new ground, distance walked, current streak, and next milestone.",
+                        ] as const,
+                        [
+                          "streakReminder",
+                          "Streak reminder",
+                          "Receive a 6 PM reminder when you have not walked that day and your current streak is at risk.",
+                        ] as const,
+                      ].map(([category, title, description]) => (
+                        <div className="account-setting" key={category}>
+                          <div>
+                            <strong>{title}</strong>
+                            <p>{description}</p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={
+                              activityNotificationPreferences[category]
+                            }
+                            aria-label={title}
+                            disabled={notificationPending}
+                            onClick={() => {
+                              setNotificationPending(true);
+                              setNotificationError("");
+                              void onActivityNotificationChange(
+                                category,
+                                !activityNotificationPreferences[category],
+                              )
+                                .then((error) =>
+                                  setNotificationError(error ?? ""),
+                                )
+                                .finally(() => setNotificationPending(false));
+                            }}
+                          >
+                            {activityNotificationPreferences[category]
+                              ? "On"
+                              : "Off"}
+                          </button>
+                        </div>
+                      ))}
                     </section>
                   </div>
                 </section>
