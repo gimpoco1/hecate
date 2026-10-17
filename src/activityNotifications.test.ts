@@ -3,6 +3,8 @@ import {
   enabledActivityNotificationPreferences,
   hasSavedActivityNotificationPreferences,
   morningInviteMessage,
+  nextWeeklyRecapDate,
+  weeklyRecapFromPoints,
   saveActivityNotificationPreferences,
   streakReminderDate,
   weeklyRecapMessage,
@@ -23,15 +25,42 @@ describe("activity notifications", () => {
     expect(streakReminderDate(new Date(2026, 9, 17, 9).getTime(), 0)).toEqual(
       new Date(2026, 9, 17, 18),
     );
-    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 0)).toEqual(
+    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 0)).toBeNull();
+    expect(streakReminderDate(new Date(2026, 9, 17, 18).getTime(), 0)).toBeNull();
+    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 1)).toEqual(
       new Date(2026, 9, 18, 18),
     );
   });
 
   it("keeps the weekly recap concise and motivational", () => {
-    expect(weeklyRecapMessage(1.25, 4.5, 3, "Marathon")).toBe(
-      "1.3 km of new ground, 4.5 km travelled, and a 3-day streak. Next: Marathon.",
+    expect(weeklyRecapMessage(1.25, 4.5, 3)).toBe(
+      "1.3 km of new ground, 4.5 km travelled, and a 3-day streak.",
     );
+  });
+
+  it("schedules Sunday evening across week and year boundaries", () => {
+    expect(nextWeeklyRecapDate(new Date(2026, 9, 18, 17).getTime())).toEqual(
+      new Date(2026, 9, 18, 18),
+    );
+    expect(nextWeeklyRecapDate(new Date(2026, 9, 18, 18).getTime())).toEqual(
+      new Date(2026, 9, 25, 18),
+    );
+    expect(nextWeeklyRecapDate(new Date(2026, 11, 31, 12).getTime())).toEqual(
+      new Date(2027, 0, 3, 18),
+    );
+  });
+
+  it("uses weekly distance without milestones or dates", () => {
+    const now = new Date(2026, 9, 18, 12).getTime();
+    const finishedAt = new Date(2026, 9, 13, 12).getTime();
+    const points = [
+      { lat: 41, lng: 2, accuracy: 5, recordedAt: finishedAt - 60_000, walkId: "walk" },
+      { lat: 41.01, lng: 2, accuracy: 5, recordedAt: finishedAt, walkId: "walk" },
+    ];
+    const recap = weeklyRecapFromPoints(points, now);
+    expect(recap).toContain("1.1 km travelled");
+    expect(recap).not.toContain("Next:");
+    expect(recap).not.toContain("Progress as of");
   });
 
   it("distinguishes a new account from saved notification choices", () => {

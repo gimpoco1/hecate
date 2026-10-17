@@ -93,6 +93,17 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
 
 interface HecateBackgroundGeolocationPlugin extends BackgroundGeolocationPlugin {
   removeAllWatchers(): Promise<void>;
+  getAuthorizationStatus(): Promise<{ status: string }>;
+}
+
+export type LocationAuthorization = "always" | "whenInUse" | "denied" | "notDetermined";
+
+export async function readIosLocationAuthorization(): Promise<LocationAuthorization> {
+  const { status } = await HecateBackgroundGeolocation.getAuthorizationStatus();
+  if (status !== "always" && status !== "whenInUse" &&
+      status !== "denied" && status !== "notDetermined")
+    throw new Error("Unrecognized iOS location authorization status: " + status);
+  return status;
 }
 
 const HecateBackgroundGeolocation =

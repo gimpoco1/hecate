@@ -1,12 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
 import { Keyboard } from "@capacitor/keyboard";
 import {
   LocalNotifications,
-  Weekday,
   type LocalNotificationSchema,
 } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -75,6 +75,7 @@ import {
 } from "./components/Icons";
 import {
   discoveredDistanceKm,
+  discoveryJourneyMetrics,
   discoveryCellCenter,
   discoveryCellKey,
   discoveryCellsFromPoints,
@@ -86,7 +87,7 @@ import {
   routeDistanceKm,
   shouldRecordPoint,
 } from "./geo";
-import { emptyWalkingStats, type WalkingStats } from "./walkingStats";
+import { emptyWalkingStats, walkingStatsFromJourneys, type WalkingStats } from "./walkingStats";
 import {
   ExplorationReminder,
   isUnmappedArea,
@@ -116,16 +117,18 @@ import {
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
+import { replaceNotificationSchedules } from "./notificationScheduling";
 import {
   defaultActivityNotificationPreferences,
   enabledActivityNotificationPreferences,
   hasSavedActivityNotificationPreferences,
   loadActivityNotificationPreferences,
   morningInviteMessage,
+  nextWeeklyRecapDate,
   saveActivityNotificationPreferences,
   streakReminderDate,
   streakReminderMessage,
-  weeklyRecapMessage,
+  weeklyRecapFromPoints,
   type ActivityNotificationCategory,
   type ActivityNotificationPreferences,
 } from "./activityNotifications";
@@ -143,6 +146,7 @@ import {
   createReminderLocationTracker,
   isNativeApp,
   openLocationSettings,
+  readIosLocationAuthorization,
   passiveLocationMode,
   type LocationTracker,
 } from "./location";
@@ -224,6 +228,7 @@ async function sendReminderNotification(
         id: REMINDER_NOTIFICATION_ID,
         title: "Discovering somewhere new?",
         body: reminderMessage(),
+        isExactNotification: false,
         schedule: { at: new Date(Date.now() + 1_000) },
         extra: { kind: "unmapped", userId },
       },
@@ -250,6 +255,7 @@ async function sendAchievementNotification(
           : ACHIEVEMENT_NOTIFICATION_ID_START + notificationIndex,
         title: `Achievement unlocked: ${achievement.title}`,
         body: achievement.description,
+        isExactNotification: false,
         sound: "default",
         schedule: { at: new Date(Date.now() + 500) },
         extra: {
@@ -730,6 +736,15 @@ export default function App() {
     setPassiveLocationRefreshGeneration,
   ] = useState(0);
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [discoveryLocationAllowed, setDiscoveryLocationAllowed] = useState(
+    () => !isNativeApp() || Capacitor.getPlatform() !== "ios",
+  );
+  const reminderEnabledRef = useRef(reminderEnabled);
+  reminderEnabledRef.current = reminderEnabled;
+  const activityNotificationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activityNotificationGenerationRef = useRef(0);
+  const scheduledNotificationUserRef = useRef<string | null>(null);
+  const [notificationClock, setNotificationClock] = useState(Date.now);
   const [activityNotificationPreferences, setActivityNotificationPreferences] =
     useState<ActivityNotificationPreferences>(
       defaultActivityNotificationPreferences,
@@ -755,6 +770,13 @@ export default function App() {
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   const [tracking, setTracking] = useState<TrackingState>("idle");
+  const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
+    useState(false);
+  const [locationSettingsError, setLocationSettingsError] = useState("");
+  useEffect(() => {
+    setLocationPermissionToastVisible(tracking === "denied");
+    setLocationSettingsError("");
+  }, [tracking]);
   const [elapsedNow, setElapsedNow] = useState(0);
   const [documentVisible, setDocumentVisible] = useState(
     () => document.visibilityState === "visible",
@@ -1143,6 +1165,7 @@ export default function App() {
                 {
                   id: INACTIVITY_NOTIFICATION_ID,
                   title: "Still recording your discovery?",
+                  isExactNotification: false,
                   body: "If you have finished exploring near one spot, you can stop recording. Your recording will continue until you stop it.",
                   schedule: {
                     at: new Date(Math.max(dueAt, Date.now() + 1_000)),
@@ -1494,8 +1517,33 @@ export default function App() {
       .catch(() => {
         if (active) setNotificationPermissionReady(false);
       });
+    const refreshPermission = (): void => {
+      if (document.visibilityState !== "visible") return;
+      if (Capacitor.getPlatform() === "ios") {
+        void readIosLocationAuthorization().then((status) => {
+          if (active) setDiscoveryLocationAllowed(status === "always");
+        }).catch((error) => {
+          if (active) setDiscoveryLocationAllowed(false);
+          console.warn("Could not refresh background location permission", { error });
+        });
+      }
+      setNotificationClock(Date.now());
+      void LocalNotifications.checkPermissions().then((permission) => {
+        if (active)
+          setNotificationPermissionReady(permission.display === "granted");
+      }).catch((error) => console.warn("Could not refresh notification permission", { error }));
+    };
+    refreshPermission();
+    document.addEventListener("visibilitychange", refreshPermission);
+    const appListener = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) refreshPermission();
+    });
+    const clockTimer = window.setInterval(refreshPermission, 60_000);
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", refreshPermission);
+      window.clearInterval(clockTimer);
+      void appListener.then((handle) => handle.remove());
     };
   }, [nativeApp]);
 
@@ -1507,18 +1555,13 @@ export default function App() {
       preference.promptedAt,
       preference.pausedUntil,
     );
-    const enabled = preference.enabled && notificationPermissionReady !== false;
+    const enabled = preference.enabled &&
+      notificationPermissionReady === true && discoveryLocationAllowed;
     setReminderEnabled(enabled);
-    if (accountUserId && preference.enabled && !enabled) {
-      saveReminderPreference(
-        accountUserId,
-        false,
-        preference.promptedAt,
-        preference.pausedUntil,
-      );
-    }
+    reminderEnabledRef.current = enabled;
+    if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
-  }, [accountUserId, notificationPermissionReady]);
+  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder]);
 
   useEffect(() => {
     if (!accountUserId) {
@@ -1544,17 +1587,26 @@ export default function App() {
   }, [accountUserId, nativeApp, notificationPermissionReady]);
 
   useEffect(() => {
-    if (!nativeApp || !accountUserId || notificationPermissionReady !== true)
-      return;
-    const preferences = activityNotificationPreferences;
+    if (!nativeApp) return;
+    const generation = ++activityNotificationGenerationRef.current;
+    const preferences = accountUserId && notificationPermissionReady === true
+      ? loadActivityNotificationPreferences(accountUserId)
+      : defaultActivityNotificationPreferences();
+    const journeys = discoveryJourneyMetrics(points);
+    const now = Date.now();
+    const stats = walkingStatsFromJourneys(journeys, now);
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const todayDistance = journeys.filter((journey) => journey.finishedAt >= today.getTime())
+      .reduce((total, journey) => total + journey.travelledKm, 0);
     const notifications: LocalNotificationSchema[] = [];
     if (preferences.morningInvite) {
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
         title: "Heading out today?",
-        body: morningInviteMessage(discoveryProgress.discoveryDistance),
+        body: "A new day, a new path. Where will you discover today?",
         schedule: {
-          on: { hour: 10, minute: 0 },
+          on: { hour: 10, minute: 0, second: 0 },
           allowWhileIdle: false,
         },
         isExactNotification: false,
@@ -1562,80 +1614,93 @@ export default function App() {
         extra: { kind: "morning-invite", userId: accountUserId },
       });
     }
-    if (preferences.weeklyRecap) {
+    if (preferences.weeklyRecap && citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current) {
       notifications.push({
         id: WEEKLY_RECAP_NOTIFICATION_ID,
         title: "Your weekly walking summary",
-        body: weeklyRecapMessage(
-          discoveryProgress.weekDiscoveryDistance,
-          discoveryProgress.todayTravelledDistance,
-          discoveryProgress.walkingStats.currentStreakDays,
-          null,
-        ),
+        body: weeklyRecapFromPoints(points, now),
         schedule: {
-          on: { weekday: Weekday.Sunday, hour: 18, minute: 0 },
+          at: nextWeeklyRecapDate(now),
           allowWhileIdle: false,
         },
         isExactNotification: false,
         extra: { kind: "weekly-recap", userId: accountUserId },
       });
     }
+    const streakDate = streakReminderDate(now, todayDistance);
     if (
       preferences.streakReminder &&
-      discoveryProgress.walkingStats.currentStreakDays > 0
+      citiesLoadedUserId === accountUserId &&
+      discoveryHistoryReadyRef.current &&
+      stats.currentStreakDays > 0 &&
+      streakDate
     ) {
       notifications.push({
         id: STREAK_REMINDER_NOTIFICATION_ID,
         title: "Your walking streak is at risk",
         body: streakReminderMessage(
-          discoveryProgress.walkingStats.currentStreakDays,
+          stats.currentStreakDays,
         ),
         schedule: {
-          at: streakReminderDate(
-            Date.now(),
-            discoveryProgress.todayTravelledDistance,
-          ),
+          at: streakDate,
           allowWhileIdle: false,
         },
         isExactNotification: false,
         extra: { kind: "streak-reminder", userId: accountUserId },
       });
     }
-    void LocalNotifications.registerActionTypes({
-      types: [
-        {
+    const update = async (): Promise<void> => {
+      if (generation !== activityNotificationGenerationRef.current) return;
+      const accountChanged =
+        scheduledNotificationUserRef.current !== accountUserId;
+      await LocalNotifications.registerActionTypes({
+        types: [{
           id: MORNING_INVITE_ACTION_TYPE_ID,
-          actions: [
-            {
-              id: START_WALK_ACTION_ID,
-              title: "Start walk",
-              foreground: true,
-            },
-          ],
-        },
-      ],
-    })
-      .then(() =>
-        LocalNotifications.cancel({
-          notifications: [
-            { id: MORNING_INVITE_NOTIFICATION_ID },
-            { id: WEEKLY_RECAP_NOTIFICATION_ID },
-            { id: STREAK_REMINDER_NOTIFICATION_ID },
-          ],
-        }),
-      )
-      .then(() =>
-        notifications.length
-          ? LocalNotifications.schedule({ notifications })
-          : undefined,
-      )
+          actions: [{
+            id: START_WALK_ACTION_ID,
+            title: "Start walk",
+            foreground: true,
+          }],
+        }],
+      });
+      const ids = [
+        MORNING_INVITE_NOTIFICATION_ID,
+        WEEKLY_RECAP_NOTIFICATION_ID,
+        STREAK_REMINDER_NOTIFICATION_ID,
+        ...(!accountUserId || accountChanged || notificationPermissionReady === false ? [
+          REMINDER_NOTIFICATION_ID,
+          REMINDER_TEST_NOTIFICATION_ID,
+          MORNING_INVITE_TEST_NOTIFICATION_ID,
+          WEEKLY_RECAP_TEST_NOTIFICATION_ID,
+          STREAK_REMINDER_TEST_NOTIFICATION_ID,
+          ...Array.from(
+            { length: PERSONAL_ACHIEVEMENTS.length + 1 },
+            (_, index) => ACHIEVEMENT_NOTIFICATION_ID_START + index,
+          ),
+        ] : []),
+      ];
+      await replaceNotificationSchedules(
+        LocalNotifications,
+        ids,
+        notifications,
+        () => generation === activityNotificationGenerationRef.current,
+      );
+      scheduledNotificationUserRef.current = accountUserId;
+    };
+    activityNotificationQueueRef.current = activityNotificationQueueRef.current
+      .catch((error) => console.warn("Previous notification update failed", { error }))
+      .then(update)
       .catch((error) => console.warn("Could not update activity notifications", { error }));
+    return () => { activityNotificationGenerationRef.current += 1; };
   }, [
     accountUserId,
     activityNotificationPreferences,
     discoveryProgress,
     nativeApp,
     notificationPermissionReady,
+    notificationClock,
+    points,
+    citiesLoadedUserId,
   ]);
 
   useEffect(() => {
@@ -2569,7 +2634,7 @@ export default function App() {
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) {
       if (
-        reminderEnabled &&
+        reminderEnabledRef.current &&
         trackingUserRef.current &&
         activeWalkRef.current
       ) {
@@ -2586,7 +2651,7 @@ export default function App() {
     }
     const considerStopReminder = () => {
       if (
-        !reminderEnabled ||
+        !reminderEnabledRef.current ||
         !trackingUserRef.current ||
         !activeWalkRef.current
       )
@@ -2865,17 +2930,22 @@ export default function App() {
     enabled: boolean,
   ): Promise<string | null> => {
     if (!accountUserId) return "Sign in before enabling discovery reminders.";
+    if (enabled && !discoveryLocationAllowed)
+      return "Set Hecate's location access to Always in device Settings to enable discovery reminders.";
     if (enabled && nativeApp) {
       try {
         const notificationAllowed = await ensureNotificationPermission();
         setNotificationPermissionReady(notificationAllowed);
         if (!notificationAllowed)
-          return "Allow notifications in iPhone Settings to enable discovery reminders.";
+          return "Allow notifications in your device settings to enable discovery reminders.";
       } catch {
         return "Notifications are unavailable right now. Try again later.";
       }
     }
+    if (accountUserIdRef.current !== accountUserId)
+      return "Your account changed. Reopen notification settings and try again.";
     setReminderEnabled(enabled);
+    reminderEnabledRef.current = enabled;
     reminderRef.current.reset();
     if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
@@ -2901,6 +2971,8 @@ export default function App() {
       if (!notificationAllowed)
         return "Allow notifications in your device settings to enable this.";
     }
+    if (accountUserIdRef.current !== accountUserId)
+      return "Your account changed. Reopen notification settings and try again.";
     if (enabled && !preferencesHaveBeenSaved) {
       const initialPreferences = enabledActivityNotificationPreferences();
       setActivityNotificationPreferences(initialPreferences);
@@ -2927,10 +2999,14 @@ export default function App() {
         return "Notifications are unavailable right now. Try again later.";
       }
     }
+    if (accountUserIdRef.current !== accountUserId)
+      return "Your account changed. Reopen notification settings and try again.";
     const nextActivityPreferences = enabled
       ? enabledActivityNotificationPreferences()
       : defaultActivityNotificationPreferences();
-    setReminderEnabled(enabled);
+    const remindersActive = enabled && discoveryLocationAllowed;
+    setReminderEnabled(remindersActive);
+    reminderEnabledRef.current = remindersActive;
     reminderRef.current.reset();
     if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
@@ -2985,7 +3061,13 @@ export default function App() {
           },
         ],
       });
-      await LocalNotifications.schedule({ notifications: [notification] });
+      await LocalNotifications.schedule({
+        notifications: [{
+          ...notification,
+          isExactNotification: false,
+          schedule: { at: new Date(Date.now() + 5_000) },
+        }],
+      });
       setActivityNotificationTestMessage(
         `${notificationName} will appear in 5 seconds.`,
       );
@@ -3032,12 +3114,7 @@ export default function App() {
       {
         id: WEEKLY_RECAP_TEST_NOTIFICATION_ID,
         title: "Your weekly walking summary",
-        body: weeklyRecapMessage(
-          discoveryProgress.weekDiscoveryDistance,
-          discoveryProgress.todayTravelledDistance,
-          discoveryProgress.walkingStats.currentStreakDays,
-          null,
-        ),
+        body: weeklyRecapFromPoints(points, Date.now()),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "weekly-recap-test", userId: accountUserId },
       },
@@ -3186,6 +3263,10 @@ export default function App() {
 
   useEffect(() => {
     const requestedUserId = pendingMorningWalkStartUserIdRef.current;
+    if (authReady && requestedUserId && requestedUserId !== accountUserId) {
+      pendingMorningWalkStartUserIdRef.current = null;
+      return;
+    }
     if (
       !requestedUserId ||
       requestedUserId !== accountUserId ||
@@ -3692,7 +3773,9 @@ export default function App() {
   };
 
   const locationIsCurrent =
-    tracking === "tracking" || passiveLocationStatus === "located";
+    tracking !== "denied" &&
+    passiveLocationStatus !== "denied" &&
+    (tracking === "tracking" || passiveLocationStatus === "located");
   const locationDisplayStatus: PassiveLocationStatus =
     tracking === "denied" ? "denied" : passiveLocationStatus;
   const locationStatusText =
@@ -3969,7 +4052,7 @@ export default function App() {
         points={points}
         cells={cells}
         highlightedPoints={highlightedImportPoints}
-        currentPoint={currentPoint}
+        currentPoint={locationIsCurrent ? currentPoint : undefined}
         locationState={
           tracking === "tracking"
             ? "tracking"
@@ -4181,6 +4264,43 @@ export default function App() {
         </aside>
       )}
 
+      {locationPermissionToastVisible && (
+        <aside className="account-toast location-permission-toast" role="alert">
+          <span className="account-toast__mark" aria-hidden="true">
+            <InfoIcon size={18} strokeWidth={2} />
+          </span>
+          <span className="account-toast__message">
+            {locationSettingsError ||
+              "Allow location access in Settings to start your journey."}
+          </span>
+          <div className="location-permission-toast__actions">
+            <button
+              type="button"
+              onClick={() => {
+                void openLocationSettings()
+                  .then(() => setLocationPermissionToastVisible(false))
+                  .catch((error: Error) => {
+                    console.warn("Could not open location settings", { error });
+                    setLocationSettingsError(
+                      "Could not open Settings. Enable location for Hecate in your device Settings.",
+                    );
+                  });
+              }}
+            >
+              Open device settings
+            </button>
+            <button
+              type="button"
+              className="location-permission-toast__dismiss"
+              aria-label="Dismiss location permission message"
+              onClick={() => setLocationPermissionToastVisible(false)}
+            >
+              <XIcon size={16} strokeWidth={2} />
+            </button>
+          </div>
+        </aside>
+      )}
+
       {tracking !== "tracking" &&
         tracking !== "requesting" &&
         (locationDisplayStatus === "denied" ||
@@ -4188,8 +4308,14 @@ export default function App() {
           <button
             type="button"
             className={`location-status location-status--${locationDisplayStatus}`}
-            onClick={() => void openLocationSettings().catch(() => undefined)}
-            disabled={locationDisplayStatus !== "denied" || !nativeApp}
+            disabled={locationDisplayStatus !== "denied"}
+            onClick={() => {
+              void openLocationSettings().catch((error: Error) => {
+                console.warn("Could not open location settings", { error });
+                setLocationSettingsError("Could not open Settings. Enable location for Hecate in device Settings.");
+                setLocationPermissionToastVisible(true);
+              });
+            }}
             aria-live="polite"
             aria-label={locationStatusText}
           >
@@ -4434,13 +4560,6 @@ export default function App() {
                 : "Keep this page open and your screen on"}
             </div>
           )}
-          {tracking === "denied" && (
-            <p className="location-error">
-              {nativeApp
-                ? "Location access is disabled. Open Settings above to allow Hecate to use your location."
-                : "Location access is disabled. Allow Hecate to use your location in the browser settings."}
-            </p>
-          )}
           {tracking === "unavailable" && (
             <p className="location-error">
               Location is temporarily unavailable. Try again, or preview the
@@ -4520,6 +4639,7 @@ export default function App() {
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
           reminderEnabled={reminderEnabled}
+          notificationPermissionReady={notificationPermissionReady}
           keyboardInset={keyboardInset}
           travelledDistance={discoveryProgress.travelledDistance}
           discoveredCityCount={cityProgresses.length}

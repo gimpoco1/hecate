@@ -5,6 +5,7 @@ const native = vi.hoisted(() => ({
   removeWatcher: vi.fn(),
   removeAllWatchers: vi.fn(),
   openSettings: vi.fn(),
+  getAuthorizationStatus: vi.fn(),
 }))
 
 vi.mock('@capacitor/core', () => ({
@@ -14,10 +15,24 @@ vi.mock('@capacitor/core', () => ({
     removeWatcher: native.removeWatcher,
     removeAllWatchers: native.removeAllWatchers,
     openSettings: native.openSettings,
+    getAuthorizationStatus: native.getAuthorizationStatus,
   }),
 }))
 
 import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from './location'
+import { readIosLocationAuthorization } from './location'
+
+describe('iOS location authorization', () => {
+  it.each(['always', 'whenInUse', 'denied', 'notDetermined'])('reads %s without requesting location', async status => {
+    native.getAuthorizationStatus.mockResolvedValue({ status })
+    expect(await readIosLocationAuthorization()).toBe(status)
+  })
+
+  it('rejects an unrecognized native permission value', async () => {
+    native.getAuthorizationStatus.mockResolvedValue({ status: 'invalid' })
+    await expect(readIosLocationAuthorization()).rejects.toThrow('Unrecognized iOS location')
+  })
+})
 
 describe('native location lifecycle', () => {
   beforeEach(() => {

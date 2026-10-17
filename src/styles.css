@@ -2940,6 +2940,29 @@ button {
 .account-toast__message {
   min-width: 0;
 }
+.location-permission-toast {
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 6px 10px;
+  top: max(124px, calc(env(safe-area-inset-top) + 100px));
+  border-color: #dec58e;
+  border-radius: 14px;
+  background: #fbf2df;
+  color: #705221;
+  padding: 12px 42px 12px 14px;
+  font-weight: 500;
+}
+.location-permission-toast .account-toast__mark {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: inherit;
+}
+.location-permission-toast__actions {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .account-toast button {
   border: 0;
   border-radius: 999px;
@@ -2949,6 +2972,30 @@ button {
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
+}
+.location-permission-toast button {
+  padding: 4px 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.location-permission-toast .location-permission-toast__dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  text-decoration: none;
+}
+.location-permission-toast button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 .account-toast--success {
   border-color: rgba(97, 115, 45, 0.25);
@@ -3784,6 +3831,50 @@ button {
 .notification-settings-sheet__content {
   margin-top: 16px;
 }
+.notification-permission-notice {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #dec58e;
+  border-radius: 18px;
+  background: #fbf2df;
+  color: #705221;
+}
+.notification-permission-notice strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.notification-permission-notice p {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.notification-permission-notice__icon {
+  display: flex;
+  padding-top: 1px;
+}
+.notification-permission-notice__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dec58e;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fffaf0;
+  color: inherit;
+  font: 700 12px "Manrope", sans-serif;
+  cursor: pointer;
+}
+.notification-permission-notice__action:focus-visible {
+  outline: 2px solid #705221;
+  outline-offset: 3px;
+}
+.notification-permission-notice__action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 .notification-settings-sheet__content > p {
   margin: 0 0 12px;
   color: #65736d;
@@ -4096,92 +4187,6 @@ button {
 }
 .account-milestone--locked .city-level-stars__earned {
   color: #aeb8b2;
-}
-.tracking-help {
-  margin: 0;
-  padding: 12px 0;
-  color: #65736d;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.tracking-help summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--forest);
-  font-weight: 700;
-  cursor: pointer;
-  list-style: none;
-}
-.tracking-help summary > span {
-  display: grid;
-  gap: 4px;
-}
-.tracking-help summary > span strong {
-  color: var(--forest);
-  font-size: 13px;
-}
-.tracking-help summary > span small {
-  color: #65736d;
-  font-size: 10px;
-  font-weight: 500;
-}
-.tracking-help summary::-webkit-details-marker {
-  display: none;
-}
-.tracking-help summary svg {
-  flex: 0 0 auto;
-  margin-left: 12px;
-  transform: rotate(90deg);
-  transition: transform 0.16s ease;
-}
-.tracking-help[open] summary svg {
-  transform: rotate(-90deg);
-}
-.tracking-help__content {
-  padding-top: 4px;
-}
-.tracking-help__example {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 10px 0 12px;
-  padding: 10px;
-  border-radius: 12px;
-  background: #f5f7f1;
-}
-.tracking-help__example img {
-  display: block;
-  flex: 0 0 auto;
-  width: 122px;
-  height: 42px;
-}
-.tracking-help__example figcaption {
-  color: #65736d;
-  font-size: 11px;
-  line-height: 1.35;
-}
-.tracking-help__content p {
-  margin: 9px 0;
-}
-.tracking-help__content strong {
-  color: var(--forest);
-}
-.tracking-help__content button {
-  border: 0;
-  padding: 0;
-  background: none;
-  color: var(--forest);
-  font: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.tracking-help__content small {
-  display: block;
-  margin-top: 3px;
-  font-size: inherit;
 }
 .sign-out-button {
   display: inline-flex;

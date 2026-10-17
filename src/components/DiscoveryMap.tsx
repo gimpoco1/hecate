@@ -397,7 +397,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !currentPoint) return;
+    if (!currentPoint) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      compassHeadingRef.current = undefined;
+      return;
+    }
+    if (!map) return;
     if (!markerRef.current) {
       const element = createUserMarkerElement(locationStateRef.current);
       updateUserMarkerHeading(

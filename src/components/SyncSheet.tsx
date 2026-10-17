@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Browser } from "@capacitor/browser";
+import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import type { User } from "@supabase/supabase-js";
 import { authRedirectUrl } from "../auth";
@@ -9,10 +10,9 @@ import {
 } from "../automaticUpdates";
 import { clearReminderPreference } from "../explorationReminder";
 import {
-  INACTIVITY_RADIUS_M,
   INACTIVITY_REMINDER_MINUTES,
 } from "../inactivityReminder";
-import { openLocationSettings } from "../location";
+import { openLocationSettings, readIosLocationAuthorization, type LocationAuthorization } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { currentWorldMilestone } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
@@ -44,6 +44,7 @@ type Props = {
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   reminderEnabled: boolean;
+  notificationPermissionReady: boolean | null;
   keyboardInset: number;
   travelledDistance: number;
   discoveredCityCount: number;
@@ -142,6 +143,7 @@ export function SyncSheet({
   initialAuthIntent = "signin",
   onClose,
   reminderEnabled,
+  notificationPermissionReady,
   keyboardInset,
   travelledDistance,
   discoveredCityCount,
@@ -180,8 +182,40 @@ export function SyncSheet({
     useState(false);
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [locationAuthorization, setLocationAuthorization] =
+    useState<LocationAuthorization | null>(null);
+  const [locationAuthorizationError, setLocationAuthorizationError] = useState("");
+  useEffect(() => {
+    if (!notificationSettingsSheetOpen || Capacitor.getPlatform() !== "ios") return;
+    let active = true;
+    const refresh = (): void => {
+      void readIosLocationAuthorization().then((status) => {
+        if (active) {
+          setLocationAuthorization(status);
+          setLocationAuthorizationError("");
+        }
+      }).catch((error: Error) => {
+        if (active) setLocationAuthorizationError(
+          "Could not check location access. Check Location in device Settings.",
+        );
+        console.warn("Could not read iOS location authorization", { error });
+      });
+    };
+    refresh();
+    const listener = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) refresh();
+    });
+    return () => {
+      active = false;
+      void listener.then((handle) => handle.remove());
+    };
+  }, [notificationSettingsSheetOpen]);
+  const discoveryLocationAllowed =
+    Capacitor.getPlatform() !== "ios" ||
+    (locationAuthorization === "always" && !locationAuthorizationError);
   const allNotificationsEnabled =
-    reminderEnabled &&
+    notificationPermissionReady === true &&
+    (!discoveryLocationAllowed || reminderEnabled) &&
     activityNotificationPreferences.morningInvite &&
     activityNotificationPreferences.weeklyRecap &&
     activityNotificationPreferences.streakReminder;
@@ -789,68 +823,6 @@ export function SyncSheet({
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
-                {Capacitor.getPlatform() === "ios" && (
-                  <details className="tracking-help">
-                    <summary>
-                      <span>
-                        <strong>Location & tracking</strong>
-                        <small>
-                          Permissions, background use, and the blue clock
-                        </small>
-                      </span>
-                      <ChevronIcon size={18} strokeWidth={2.4} />
-                    </summary>
-                    <div className="tracking-help__content">
-                      <p>
-                        <strong>While Using:</strong> Hecate can check for new
-                        areas in the background, but iPhone may show a blue
-                        clock for Hecate.
-                      </p>
-                      <p>
-                        <strong>Always:</strong> Hecate can send background
-                        reminders without showing the blue clock. Recording a
-                        walk may still show it.
-                      </p>
-                      <p>
-                        <strong>Never:</strong> Location features and discovery
-                        reminders cannot work.
-                      </p>
-                      <p>
-                        Only walks you start recording are saved to your map.
-                        Reminder locations are not saved.
-                      </p>
-                      <p>
-                        While recording, Hecate can suggest stopping after{" "}
-                        {INACTIVITY_REMINDER_MINUTES} minutes within{" "}
-                        {INACTIVITY_RADIUS_M} m of one spot already on your map.
-                        Areas revealed during the current recording count too.
-                        The reminder is a suggestion; recording never stops
-                        automatically.
-                      </p>
-                      <figure className="tracking-help__example">
-                        <img
-                          src="/blue-location-clock.svg"
-                          alt="Example of the blue clock on an iPhone"
-                          width="122"
-                          height="42"
-                        />
-                        <figcaption>
-                          A blue clock means an app is using location in the
-                          background. It may be Hecate or another app.
-                        </figcaption>
-                      </figure>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void openLocationSettings().catch(() => undefined)
-                        }
-                      >
-                        Open iPhone Settings
-                      </button>
-                      <small>Then tap Location → Always.</small>
-                    </div>
-                  </details>
-                )}
               </section>
               <button
                 className="sign-out-button"
@@ -1098,6 +1070,46 @@ export function SyncSheet({
                       Choose the discovery nudges you want to receive. You can
                       change these at any time.
                     </p>
+                    {notificationPermissionReady === false && (
+                      <div className="notification-permission-notice" role="status">
+                        <span className="notification-permission-notice__icon" aria-hidden="true">
+                          <InfoIcon size={22} strokeWidth={2} />
+                        </span>
+                        <div>
+                          <strong>System notifications are off</strong>
+                          <p>
+                            Enable notifications for Hecate in device Settings
+                            to receive reminders and weekly recaps. Your saved
+                            preferences will be restored when you return.
+                          </p>
+                          <button
+                            type="button"
+                            className="notification-permission-notice__action"
+                            disabled={notificationPending}
+                            onClick={() => {
+                              setNotificationPending(true);
+                              setNotificationError("");
+                              void openLocationSettings()
+                                .catch((error: Error) => {
+                                  console.warn("Could not open device settings", { error });
+                                  setNotificationError(
+                                    "Could not open Settings. Open your device Settings and enable notifications for Hecate.",
+                                  );
+                                })
+                                .finally(() => setNotificationPending(false));
+                            }}
+                          >
+                            Open device settings
+                            <ChevronIcon size={14} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {notificationPermissionReady === null && (
+                      <div className="form-message" role="status">
+                        Checking system notification permission…
+                      </div>
+                    )}
                     {notificationError && (
                       <div
                         className="form-message form-message--error"
@@ -1124,7 +1136,10 @@ export function SyncSheet({
                               ? "Turn all notifications off"
                               : "Turn all notifications on"
                           }
-                          disabled={reminderPending || notificationPending}
+                          disabled={
+                            notificationPermissionReady !== true ||
+                            reminderPending || notificationPending
+                          }
                           onClick={() => {
                             setNotificationPending(true);
                             setNotificationError("");
@@ -1157,9 +1172,9 @@ export function SyncSheet({
                         <button
                           type="button"
                           role="switch"
-                          aria-checked={reminderEnabled}
+                          aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
                           aria-label="Walking reminders"
-                          disabled={reminderPending}
+                          disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
                           onClick={() => {
                             setReminderPending(true);
                             setReminderError("");
@@ -1168,9 +1183,45 @@ export function SyncSheet({
                               .finally(() => setReminderPending(false));
                           }}
                         >
-                          {reminderEnabled ? "On" : "Off"}
+                          {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
                         </button>
                       </div>
+                      {notificationPermissionReady === true && (locationAuthorization === "whenInUse" ||
+                        locationAuthorization === "denied" ||
+                        locationAuthorization === "notDetermined" ||
+                        locationAuthorizationError) && (
+                        <div className="notification-permission-notice" role="status">
+                          <span className="notification-permission-notice__icon" aria-hidden="true">
+                            <InfoIcon size={22} strokeWidth={2} />
+                          </span>
+                          <div>
+                            <strong>
+                              {locationAuthorization === "whenInUse"
+                                ? "Location is set to While Using the App"
+                                : "Background location access is off"}
+                            </strong>
+                            <p>
+                              {locationAuthorizationError ||
+                                "To receive discovery reminders while Hecate is in the background, open Settings and choose Location → Always."}
+                            </p>
+                            <button
+                              type="button"
+                              className="notification-permission-notice__action"
+                              onClick={() => {
+                                void openLocationSettings().catch((error: Error) => {
+                                  console.warn("Could not open location settings", { error });
+                                  setLocationAuthorizationError(
+                                    "Could not open Settings. Open device Settings, then Hecate → Location → Always.",
+                                  );
+                                });
+                              }}
+                            >
+                              Open device settings
+                              <ChevronIcon size={14} strokeWidth={2} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       {reminderError && (
                         <div
                           className="form-message form-message--error"
@@ -1188,7 +1239,7 @@ export function SyncSheet({
                         [
                           "weeklyRecap",
                           "Weekly progress summary",
-                          "Receive a Sunday evening summary of your new ground, distance walked, current streak, and next milestone.",
+                          "Receive a Sunday evening recap of your new ground, distance walked, and current streak.",
                         ] as const,
                         [
                           "streakReminder",
@@ -1205,10 +1256,11 @@ export function SyncSheet({
                             type="button"
                             role="switch"
                             aria-checked={
+                              notificationPermissionReady === true &&
                               activityNotificationPreferences[category]
                             }
                             aria-label={title}
-                            disabled={notificationPending}
+                            disabled={notificationPermissionReady !== true || notificationPending || reminderPending}
                             onClick={() => {
                               setNotificationPending(true);
                               setNotificationError("");
@@ -1222,7 +1274,7 @@ export function SyncSheet({
                                 .finally(() => setNotificationPending(false));
                             }}
                           >
-                            {activityNotificationPreferences[category]
+                            {notificationPermissionReady === true && activityNotificationPreferences[category]
                               ? "On"
                               : "Off"}
                           </button>
