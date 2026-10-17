@@ -9,7 +9,7 @@ npm run dev
 
 In production, every browser redirects from `/` to the public leaderboard at `/leaderboard`. During `npm run dev`, `/` intentionally renders the private app experience in the browser so its map, tracking, journey drawer, and achievements can be tested locally; `/leaderboard` remains available for the public experience. The installed Capacitor app always opens the private app. The native map uses MapLibre GL JS with OpenFreeMap's OpenStreetMap-derived vector tiles; no map API key is required.
 
-The development test-routes panel can be hidden with its close button. That preference is stored locally under `hecate:dev-tools-visible`; the small **Dev tools** control restores the panel. Neither control is rendered in production.
+The development tools panel contains notification and achievement tests. It can be hidden with its close button, and that preference is stored locally under `hecate:dev-tools-visible`. The small **Dev tools** control restores the panel. Neither control is rendered in production.
 
 ## Cross-device sync
 

@@ -3,6 +3,33 @@ import { fileURLToPath } from 'node:url'
 
 const pluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Swift/Plugin.swift', import.meta.url))
 const registrationPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Plugin.m', import.meta.url))
+const androidPluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/android/src/main/java/com/equimaps/capacitor_background_geolocation/BackgroundGeolocation.java', import.meta.url))
+let androidSource = readFileSync(androidPluginPath, 'utf8')
+if (!androidSource.includes('public void getAuthorizationStatus(')) {
+  const anchor = '    @PluginMethod()\n    public void openSettings(PluginCall call) {'
+  if (!androidSource.includes(anchor))
+    throw new Error('Background geolocation plugin changed; review Android location authorization check.')
+  androidSource = androidSource.replace(anchor, `
+    @PluginMethod
+    public void getAuthorizationStatus(PluginCall call) {
+        boolean foreground = androidx.core.content.ContextCompat.checkSelfPermission(
+            getContext(), Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                getContext(), Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+        boolean background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                getContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+        JSObject result = new JSObject();
+        result.put("status", !foreground ? "denied" : background ? "always" : "whenInUse");
+        call.resolve(result);
+    }
+
+` + anchor)
+  writeFileSync(androidPluginPath, androidSource)
+}
 const indicatorOriginal = 'manager.showsBackgroundLocationIndicator = background'
 const indicatorReplacement = 'manager.showsBackgroundLocationIndicator = call.getBool("showsBackgroundLocationIndicator") ?? background'
 const methodsOriginal = 'CAPPluginMethod(name: "removeWatcher", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)'
@@ -37,7 +64,7 @@ if (!source.includes(indicatorReplacement)) {
   }
   source = source.replace(indicatorOriginal, indicatorReplacement)
 }
-if (!source.includes(methodsReplacement)) {
+if (!source.includes('CAPPluginMethod(name: "removeAllWatchers",')) {
   if (!source.includes(methodsOriginal)) {
     throw new Error('Background geolocation plugin changed; review the iOS method registration before building.')
   }
@@ -52,10 +79,45 @@ if (!source.includes('@objc func removeAllWatchers')) {
 writeFileSync(pluginPath, source)
 
 let registration = readFileSync(registrationPath, 'utf8')
-if (!registration.includes(registrationReplacement)) {
+if (!registration.includes('CAP_PLUGIN_METHOD(removeAllWatchers,')) {
   if (!registration.includes(registrationOriginal)) {
     throw new Error('Background geolocation plugin changed; review the Objective-C registration patch before building.')
   }
   registration = registration.replace(registrationOriginal, registrationReplacement)
+  writeFileSync(registrationPath, registration)
+}
+
+const permissionMethod = 'CAPPluginMethod(name: "getAuthorizationStatus", returnType: CAPPluginReturnPromise),'
+source = readFileSync(pluginPath, 'utf8')
+if (!source.includes(permissionMethod)) {
+  source = source.replace(
+    'CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)',
+    permissionMethod + '\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)',
+  )
+  source = source.replace(implementationAnchor, `
+    @objc func getAuthorizationStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let status: String
+            switch CLLocationManager.authorizationStatus() {
+            case .authorizedAlways: status = "always"
+            case .authorizedWhenInUse: status = "whenInUse"
+            case .denied, .restricted: status = "denied"
+            case .notDetermined: status = "notDetermined"
+            @unknown default:
+                return call.reject("Unrecognized iOS location authorization status")
+            }
+            call.resolve(["status": status])
+        }
+    }
+
+` + implementationAnchor)
+  writeFileSync(pluginPath, source)
+}
+registration = readFileSync(registrationPath, 'utf8')
+if (!registration.includes('CAP_PLUGIN_METHOD(getAuthorizationStatus,')) {
+  registration = registration.replace(
+    '    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);',
+    '    CAP_PLUGIN_METHOD(getAuthorizationStatus, CAPPluginReturnPromise);\n    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);',
+  )
   writeFileSync(registrationPath, registration)
 }
