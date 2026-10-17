@@ -1675,6 +1675,32 @@ export default function App() {
     let active = true;
     let retryTimer: number | null = null;
     let finishFrame: number | null = null;
+    const activeWalkOwner = trackingUserRef.current;
+    const activeWalk = activeWalkRef.current;
+    if (activeWalkOwner && activeWalkOwner !== accountUserId) {
+      const tracker = trackerRef.current;
+      trackerRef.current = null;
+      if (activeWalk && !activeWalk.isTest) {
+        saveWalkJournal(activeWalkOwner, pendingWalksRef.current, {
+          ...activeWalk,
+          finishedAt: Math.max(
+            activeWalk.startedAt,
+            activeWalk.points.at(-1)?.recordedAt ?? activeWalk.startedAt,
+          ),
+        });
+      }
+      activeWalkRef.current = null;
+      trackingUserRef.current = null;
+      focusFirstTrackingPointRef.current = false;
+      resetInactivityReminder();
+      setTracking("idle");
+      setPassiveLocationStatus("idle");
+      void Promise.resolve(tracker?.stop()).catch((error) => {
+        console.error("Could not stop location tracking after account change", {
+          error,
+        });
+      });
+    }
     setPoints([]);
     setCells([]);
     setDiscoveredCities([]);
@@ -1813,7 +1839,7 @@ export default function App() {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
-  }, [accountUserId]);
+  }, [accountUserId, resetInactivityReminder]);
 
   const flushPendingWalks = async (userId: string) => {
     if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current;
