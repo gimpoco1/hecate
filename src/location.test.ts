@@ -20,17 +20,17 @@ vi.mock('@capacitor/core', () => ({
 }))
 
 import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from './location'
-import { readIosLocationAuthorization } from './location'
+import { readLocationAuthorization } from './location'
 
 describe('iOS location authorization', () => {
   it.each(['always', 'whenInUse', 'denied', 'notDetermined'])('reads %s without requesting location', async status => {
     native.getAuthorizationStatus.mockResolvedValue({ status })
-    expect(await readIosLocationAuthorization()).toBe(status)
+    expect(await readLocationAuthorization()).toBe(status)
   })
 
   it('rejects an unrecognized native permission value', async () => {
     native.getAuthorizationStatus.mockResolvedValue({ status: 'invalid' })
-    await expect(readIosLocationAuthorization()).rejects.toThrow('Unrecognized iOS location')
+    await expect(readLocationAuthorization()).rejects.toThrow('Unrecognized location')
   })
 })
 

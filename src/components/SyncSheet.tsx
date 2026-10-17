@@ -12,7 +12,7 @@ import { clearReminderPreference } from "../explorationReminder";
 import {
   INACTIVITY_REMINDER_MINUTES,
 } from "../inactivityReminder";
-import { openLocationSettings, readIosLocationAuthorization, type LocationAuthorization } from "../location";
+import { openLocationSettings, readLocationAuthorization, type LocationAuthorization } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { currentWorldMilestone } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
@@ -186,10 +186,10 @@ export function SyncSheet({
     useState<LocationAuthorization | null>(null);
   const [locationAuthorizationError, setLocationAuthorizationError] = useState("");
   useEffect(() => {
-    if (!notificationSettingsSheetOpen || Capacitor.getPlatform() !== "ios") return;
+    if (!notificationSettingsSheetOpen || !Capacitor.isNativePlatform()) return;
     let active = true;
     const refresh = (): void => {
-      void readIosLocationAuthorization().then((status) => {
+      void readLocationAuthorization().then((status) => {
         if (active) {
           setLocationAuthorization(status);
           setLocationAuthorizationError("");
@@ -198,7 +198,7 @@ export function SyncSheet({
         if (active) setLocationAuthorizationError(
           "Could not check location access. Check Location in device Settings.",
         );
-        console.warn("Could not read iOS location authorization", { error });
+        console.warn("Could not read location authorization", { error });
       });
     };
     refresh();
@@ -211,7 +211,7 @@ export function SyncSheet({
     };
   }, [notificationSettingsSheetOpen]);
   const discoveryLocationAllowed =
-    Capacitor.getPlatform() !== "ios" ||
+    !Capacitor.isNativePlatform() ||
     (locationAuthorization === "always" && !locationAuthorizationError);
   const allNotificationsEnabled =
     notificationPermissionReady === true &&
@@ -1197,12 +1197,14 @@ export function SyncSheet({
                           <div>
                             <strong>
                               {locationAuthorization === "whenInUse"
-                                ? "Location is set to While Using the App"
+                                ? "Location is allowed only while using the app"
                                 : "Background location access is off"}
                             </strong>
                             <p>
                               {locationAuthorizationError ||
-                                "To receive discovery reminders while Hecate is in the background, open Settings and choose Location → Always."}
+                                (Capacitor.getPlatform() === "android"
+                                  ? "To receive discovery reminders in the background, open Settings → Permissions → Location and choose Allow all the time."
+                                  : "To receive discovery reminders while Hecate is in the background, open Settings and choose Location → Always.")}
                             </p>
                             <button
                               type="button"
@@ -1211,7 +1213,7 @@ export function SyncSheet({
                                 void openLocationSettings().catch((error: Error) => {
                                   console.warn("Could not open location settings", { error });
                                   setLocationAuthorizationError(
-                                    "Could not open Settings. Open device Settings, then Hecate → Location → Always.",
+                                    "Could not open Settings. Open Hecate's app settings and allow background location.",
                                   );
                                 });
                               }}

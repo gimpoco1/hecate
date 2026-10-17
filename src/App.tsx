@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
@@ -146,7 +145,7 @@ import {
   createReminderLocationTracker,
   isNativeApp,
   openLocationSettings,
-  readIosLocationAuthorization,
+  readLocationAuthorization,
   passiveLocationMode,
   type LocationTracker,
 } from "./location";
@@ -737,7 +736,7 @@ export default function App() {
   ] = useState(0);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [discoveryLocationAllowed, setDiscoveryLocationAllowed] = useState(
-    () => !isNativeApp() || Capacitor.getPlatform() !== "ios",
+    () => !isNativeApp(),
   );
   const reminderEnabledRef = useRef(reminderEnabled);
   reminderEnabledRef.current = reminderEnabled;
@@ -1519,8 +1518,8 @@ export default function App() {
       });
     const refreshPermission = (): void => {
       if (document.visibilityState !== "visible") return;
-      if (Capacitor.getPlatform() === "ios") {
-        void readIosLocationAuthorization().then((status) => {
+      if (nativeApp) {
+        void readLocationAuthorization().then((status) => {
           if (active) setDiscoveryLocationAllowed(status === "always");
         }).catch((error) => {
           if (active) setDiscoveryLocationAllowed(false);
@@ -2931,7 +2930,7 @@ export default function App() {
   ): Promise<string | null> => {
     if (!accountUserId) return "Sign in before enabling discovery reminders.";
     if (enabled && !discoveryLocationAllowed)
-      return "Set Hecate's location access to Always in device Settings to enable discovery reminders.";
+      return "Allow background location for Hecate in device Settings to enable discovery reminders.";
     if (enabled && nativeApp) {
       try {
         const notificationAllowed = await ensureNotificationPermission();

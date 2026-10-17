@@ -3,6 +3,33 @@ import { fileURLToPath } from 'node:url'
 
 const pluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Swift/Plugin.swift', import.meta.url))
 const registrationPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Plugin.m', import.meta.url))
+const androidPluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/android/src/main/java/com/equimaps/capacitor_background_geolocation/BackgroundGeolocation.java', import.meta.url))
+let androidSource = readFileSync(androidPluginPath, 'utf8')
+if (!androidSource.includes('public void getAuthorizationStatus(')) {
+  const anchor = '    @PluginMethod()\n    public void openSettings(PluginCall call) {'
+  if (!androidSource.includes(anchor))
+    throw new Error('Background geolocation plugin changed; review Android location authorization check.')
+  androidSource = androidSource.replace(anchor, `
+    @PluginMethod
+    public void getAuthorizationStatus(PluginCall call) {
+        boolean foreground = androidx.core.content.ContextCompat.checkSelfPermission(
+            getContext(), Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                getContext(), Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+        boolean background = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                getContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED;
+        JSObject result = new JSObject();
+        result.put("status", !foreground ? "denied" : background ? "always" : "whenInUse");
+        call.resolve(result);
+    }
+
+` + anchor)
+  writeFileSync(androidPluginPath, androidSource)
+}
 const indicatorOriginal = 'manager.showsBackgroundLocationIndicator = background'
 const indicatorReplacement = 'manager.showsBackgroundLocationIndicator = call.getBool("showsBackgroundLocationIndicator") ?? background'
 const methodsOriginal = 'CAPPluginMethod(name: "removeWatcher", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)'

@@ -98,11 +98,11 @@ interface HecateBackgroundGeolocationPlugin extends BackgroundGeolocationPlugin 
 
 export type LocationAuthorization = "always" | "whenInUse" | "denied" | "notDetermined";
 
-export async function readIosLocationAuthorization(): Promise<LocationAuthorization> {
+export async function readLocationAuthorization(): Promise<LocationAuthorization> {
   const { status } = await HecateBackgroundGeolocation.getAuthorizationStatus();
   if (status !== "always" && status !== "whenInUse" &&
       status !== "denied" && status !== "notDetermined")
-    throw new Error("Unrecognized iOS location authorization status: " + status);
+    throw new Error("Unrecognized location authorization status: " + status);
   return status;
 }
 
