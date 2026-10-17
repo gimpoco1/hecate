@@ -451,6 +451,21 @@ export function SyncSheet({
     window.open(leaderboardUrl, "_blank", "noopener,noreferrer");
   };
 
+  const openCoffeeSupport = async () => {
+    const coffeeUrl = "https://buymeacoffee.com/devgiaco";
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Browser.open({ url: coffeeUrl });
+        return;
+      } catch {
+        // Fall back to a browser tab if the native browser plugin is unavailable.
+      }
+    }
+
+    window.open(coffeeUrl, "_blank", "noopener,noreferrer");
+  };
+
   const keepAuthFieldVisible = (event: React.FocusEvent<HTMLInputElement>) => {
     const field = event.currentTarget;
     window.setTimeout(() => {
@@ -1389,6 +1404,14 @@ export function SyncSheet({
           <a href="/privacy-policy.html">Privacy Policy</a>
           <span aria-hidden="true">·</span>
           <a href="/support.html">Support</a>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            className="account-legal-link"
+            onClick={() => void openCoffeeSupport()}
+          >
+            Buy me a coffee
+          </button>
         </nav>
       </section>
     </div>

@@ -4194,6 +4194,31 @@ button {
   font-weight: 650;
   cursor: pointer;
 }
+.account-support-button {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid rgba(146, 94, 26, 0.22);
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: linear-gradient(180deg, #f0d28b 0%, #d89c44 100%);
+  color: #2d1f0d;
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(176, 117, 34, 0.18);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease;
+}
+.account-support-button:hover,
+.account-support-button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(176, 117, 34, 0.2);
+  filter: saturate(1.05);
+}
+.account-support-button:active {
+  transform: translateY(0);
+}
 .delete-account-button {
   width: 100%;
   margin-top: 8px;
@@ -4285,17 +4310,35 @@ button {
 .account-legal-links {
   display: flex;
   justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 12px;
   color: #748078;
   font-size: 11px;
 }
-.account-legal-links a {
+.account-legal-links a,
+.account-legal-links button {
   color: inherit;
   text-underline-offset: 2px;
 }
-.account-legal-links a:hover {
+.account-legal-links a:hover,
+.account-legal-links button:hover {
   color: var(--forest);
+}
+.account-legal-links button {
+  border: 1px solid rgba(145, 112, 53, 0.18);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(201, 164, 98, 0.08);
+  color: #7a5f2d;
+  font: inherit;
+  cursor: pointer;
+}
+.account-legal-links button:hover,
+.account-legal-links button:focus-visible {
+  background: rgba(201, 164, 98, 0.13);
+  border-color: rgba(145, 112, 53, 0.24);
 }
 
 .maplibregl-ctrl-attrib {
