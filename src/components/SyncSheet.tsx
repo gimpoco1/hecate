@@ -748,7 +748,7 @@ export function SyncSheet({
                   </span>
                   <span>
                     <strong>Notifications</strong>
-                    <small>Choose the walking nudges you want to receive</small>
+                    <small>Choose the discovery nudges you want to receive</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
@@ -767,7 +767,7 @@ export function SyncSheet({
                   <span>
                     <strong>Import GPX</strong>
                     <small>
-                      Add past activities from Strava or other services
+                      Add past routes from Strava or other services
                     </small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
@@ -1071,11 +1071,13 @@ export function SyncSheet({
                   >
                     <XIcon />
                   </button>
-                  <div className="eyebrow">Your activity</div>
+                    <div className="eyebrow">
+                      Your reminders
+                  </div>
                   <h2 id="notification-settings-sheet-title">Notifications</h2>
                   <div className="notification-settings-sheet__content">
                     <p>
-                      Choose the walking nudges you want to receive. You can
+                      Choose the discovery nudges you want to receive. You can
                       change these at any time.
                     </p>
                     {notificationError && (
@@ -1093,7 +1095,7 @@ export function SyncSheet({
                       <div className="account-setting account-setting--all">
                         <div>
                           <strong>All notifications</strong>
-                          <p>Turn every walking notification on or off at once.</p>
+                          <p>Turn all notifications on or off at once.</p>
                         </div>
                         <button
                           type="button"
@@ -1125,9 +1127,9 @@ export function SyncSheet({
                       </div>
                       <div className="account-setting">
                         <div>
-                          <strong>Walking reminders</strong>
+                          <strong>Discovery reminders</strong>
                           <p>
-                            Get notified after five minutes of walking through
+                            Get notified after five minutes of exploring through
                             an unmapped area. While tracking, Hecate also
                             suggests stopping after{" "}
                             {INACTIVITY_REMINDER_MINUTES} minutes in one place.
@@ -1162,7 +1164,7 @@ export function SyncSheet({
                       {[
                         [
                           "morningInvite",
-                          "Daily walking reminder",
+                          "Daily discovery reminder",
                           "Receive a friendly morning reminder to get outside and add distance to your map.",
                         ] as const,
                         [
