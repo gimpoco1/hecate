@@ -4184,6 +4184,10 @@ button {
   font-size: inherit;
 }
 .sign-out-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   margin-top: 14px;
   border: 1px solid #d7ddd7;
@@ -4307,6 +4311,23 @@ button {
   background: var(--lime);
   border: 2px solid #71862d;
 }
+.account-project-support {
+  margin-top: 24px;
+  padding: 20px 16px;
+  border-top: 1px solid rgba(24, 60, 47, 0.1);
+  text-align: center;
+}
+.account-project-support strong {
+  color: var(--forest);
+  font-size: 14px;
+}
+.account-project-support p {
+  max-width: 320px;
+  margin: 8px auto 14px;
+  color: #748078;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .account-legal-links {
   display: flex;
   justify-content: center;
@@ -4317,26 +4338,28 @@ button {
   color: #748078;
   font-size: 11px;
 }
-.account-legal-links a,
-.account-legal-links button {
+.account-legal-links a {
   color: inherit;
   text-underline-offset: 2px;
 }
-.account-legal-links a:hover,
-.account-legal-links button:hover {
+.account-legal-links a:hover {
   color: var(--forest);
 }
-.account-legal-links button {
+.account-project-support button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border: 1px solid rgba(145, 112, 53, 0.18);
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 9px 16px;
   background: rgba(201, 164, 98, 0.08);
   color: #7a5f2d;
-  font: inherit;
+  font: 600 12px "Manrope", sans-serif;
   cursor: pointer;
 }
-.account-legal-links button:hover,
-.account-legal-links button:focus-visible {
+.account-project-support button:hover,
+.account-project-support button:focus-visible {
   background: rgba(201, 164, 98, 0.13);
   border-color: rgba(145, 112, 53, 0.24);
 }

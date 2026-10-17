@@ -23,12 +23,14 @@ import {
   AchievementsIcon,
   ArrowLeftIcon,
   BellIcon,
+  CoffeeIcon,
   CitiesIcon,
   ChevronIcon,
   InfoIcon,
   LeaderboardIcon,
   RouteIcon,
   SaveIcon,
+  SignOutIcon,
   XIcon,
 } from "./Icons";
 import type { Coordinate } from "../types";
@@ -856,6 +858,7 @@ export function SyncSheet({
                 onClick={signOut}
                 disabled={authPending}
               >
+                <SignOutIcon size={18} />
                 Sign out
               </button>
               {!confirmingDelete ? (
@@ -1400,18 +1403,24 @@ export function SyncSheet({
             account sync.
           </div>
         )}
+        <section className="account-project-support" aria-label="Support Hecate">
+          <strong>Enjoying Hecate?</strong>
+          <p>
+            If Hecate adds a little discovery to your day, consider buying me a
+            coffee to support its development.
+          </p>
+          <button
+            type="button"
+            onClick={() => void openCoffeeSupport()}
+          >
+            <CoffeeIcon size={18} />
+            Buy me a coffee
+          </button>
+        </section>
         <nav className="account-legal-links" aria-label="Legal and support">
           <a href="/privacy-policy.html">Privacy Policy</a>
           <span aria-hidden="true">·</span>
           <a href="/support.html">Support</a>
-          <span aria-hidden="true">·</span>
-          <button
-            type="button"
-            className="account-legal-link"
-            onClick={() => void openCoffeeSupport()}
-          >
-            Buy me a coffee
-          </button>
         </nav>
       </section>
     </div>
