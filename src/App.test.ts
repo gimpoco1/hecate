@@ -6,6 +6,7 @@ import {
   loadCachedDiscoveryProgress,
   saveCachedDiscoveryProgress,
 } from "./App";
+import { emptyWalkingStats } from "./walkingStats";
 
 describe("journey counters", () => {
   it("shows completed elapsed minutes from the original walk start", () => {
@@ -28,6 +29,30 @@ describe("journey counters", () => {
 });
 
 describe("discovery progress cache", () => {
+  const baseWalkingStats = {
+    walkCount: 4,
+    longestWalkKm: 20,
+    longestWalkFinishedAt: 2,
+    averageWalkKm: 15,
+    currentStreakDays: 1,
+    bestStreakDays: 3,
+    firstWalkAt: 1,
+  } as const;
+
+  const baseDiscoveryProgress = {
+    discoveryDistance: 42,
+    travelledDistance: 60,
+    walkingStats: baseWalkingStats,
+    todayDiscoveryDistance: 1.2,
+    todayTravelledDistance: 4.8,
+    todayActiveTimeMs: 3_600_000,
+    weekDiscoveryDistance: 7.3,
+    weekActiveTimeMs: 10_800_000,
+    weekDiscoveryDeltaDistance: -2.9,
+    weekActiveDeltaTimeMs: -7_200_000,
+    cityMetrics: [] as Array<{ cityId: string; percentage: number; distance: number }>,
+  };
+
   beforeEach(() => {
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {
@@ -46,10 +71,10 @@ describe("discovery progress cache", () => {
     localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 5,
         userId: "user-42",
+        ...baseDiscoveryProgress,
         discoveryDistance: "not-a-number",
-        cityMetrics: [],
       }),
     );
     expect(loadCachedDiscoveryProgress("user-42")).toBeNull();
@@ -57,14 +82,28 @@ describe("discovery progress cache", () => {
     localStorage.setItem(
       key,
       JSON.stringify({
-        version: 1,
+        version: 5,
         userId: "user-42",
-        discoveryDistance: 42,
+        ...baseDiscoveryProgress,
+        walkingStats: {
+          ...emptyWalkingStats(),
+          averageWalkKm: "not-a-number",
+        },
+      }),
+    );
+    expect(loadCachedDiscoveryProgress("user-42")).toBeNull();
+
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 5,
+        userId: "user-42",
+        ...baseDiscoveryProgress,
         cityMetrics: [{ cityId: "some-city", percentage: 42, distance: 10 }],
       }),
     );
     expect(loadCachedDiscoveryProgress("user-42")).toEqual({
-      discoveryDistance: 42,
+      ...baseDiscoveryProgress,
       cityMetrics: [{ cityId: "some-city", percentage: 42, distance: 10 }],
     });
   });
@@ -81,8 +120,8 @@ describe("discovery progress cache", () => {
 
     expect(() =>
       saveCachedDiscoveryProgress("user-42", {
-        discoveryDistance: 42,
-        cityMetrics: [],
+        ...baseDiscoveryProgress,
+        walkingStats: emptyWalkingStats(),
       }),
     ).not.toThrow();
     expect(warning).toHaveBeenCalledWith("Could not cache discovery progress", {

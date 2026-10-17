@@ -1,34 +1,59 @@
 import type { Coordinate, PendingWalk } from './types'
 
-type WalkJournal = { active: PendingWalk | null; pending: PendingWalk[] }
+export type WalkJournal = { active: PendingWalk | null; pending: PendingWalk[] }
 
 const keyForUser = (userId: string) => `hecate:walk-journal:v1:${userId}`
 
-function validPoint(point: Coordinate) {
-  return Number.isFinite(point.lng) && point.lng >= -180 && point.lng <= 180
-    && Number.isFinite(point.lat) && point.lat >= -90 && point.lat <= 90
-    && Number.isFinite(point.recordedAt)
+function validPoint(point: unknown): point is Coordinate {
+  if (!point || typeof point !== 'object') return false
+  const candidate = point as Partial<Coordinate>
+  return typeof candidate.lng === 'number' && Number.isFinite(candidate.lng)
+    && candidate.lng >= -180 && candidate.lng <= 180
+    && typeof candidate.lat === 'number' && Number.isFinite(candidate.lat)
+    && candidate.lat >= -90 && candidate.lat <= 90
+    && typeof candidate.recordedAt === 'number'
+    && Number.isFinite(candidate.recordedAt)
 }
 
-function validWalk(walk: PendingWalk) {
-  return typeof walk.id === 'string' && Number.isFinite(walk.startedAt)
-    && Number.isFinite(walk.finishedAt) && Array.isArray(walk.points)
-    && walk.points.length >= 2 && walk.points.every(validPoint)
+function validWalkShape(walk: unknown): walk is PendingWalk {
+  if (!walk || typeof walk !== 'object') return false
+  const candidate = walk as Partial<PendingWalk>
+  return typeof candidate.id === 'string' && Number.isFinite(candidate.startedAt)
+    && Number.isFinite(candidate.finishedAt) && Array.isArray(candidate.points)
+    && candidate.points.every(validPoint)
 }
 
-export function loadWalkJournal(userId: string): PendingWalk[] {
+function validCompletedWalk(walk: unknown): walk is PendingWalk {
+  return validWalkShape(walk) && walk.points.length >= 2
+}
+
+export function loadWalkJournalState(userId: string): WalkJournal {
   try {
     const raw = localStorage.getItem(keyForUser(userId))
-    if (!raw) return []
-    const journal = JSON.parse(raw) as WalkJournal
-    const walks = [...(Array.isArray(journal.pending) ? journal.pending : []), journal.active]
-    return walks.filter((walk): walk is PendingWalk => Boolean(walk && validWalk(walk)))
+    if (!raw) return { active: null, pending: [] }
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return { active: null, pending: [] }
+    const candidate = parsed as { active?: unknown; pending?: unknown }
+    const pending = Array.isArray(candidate.pending)
+      ? candidate.pending.filter(validCompletedWalk)
+      : []
+    const active = validWalkShape(candidate.active)
+      ? candidate.active
+      : null
+    return { active, pending }
   } catch {
-    return []
+    return { active: null, pending: [] }
   }
 }
 
-export function saveWalkJournal(userId: string, pending: PendingWalk[], active: PendingWalk | null = null) {
+export function loadWalkJournal(userId: string): PendingWalk[] {
+  const journal = loadWalkJournalState(userId)
+  return journal.active && validCompletedWalk(journal.active)
+    ? [...journal.pending, journal.active]
+    : journal.pending
+}
+
+export function saveWalkJournal(userId: string, pending: PendingWalk[], active: PendingWalk | null) {
   try {
     if (!pending.length && !active) localStorage.removeItem(keyForUser(userId))
     else localStorage.setItem(keyForUser(userId), JSON.stringify({ pending, active }))

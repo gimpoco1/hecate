@@ -8,7 +8,6 @@ import { LocalNotifications } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
 import type {
-  DiscoveryAchievementsResponse,
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
   DiscoveryProgressResponse,
@@ -17,6 +16,7 @@ import {
   isPersonalAchievementId,
   PERSONAL_ACHIEVEMENTS,
   personalAchievementDefinition,
+  type AchievementEvaluation,
   type PersonalAchievementId,
 } from "./achievements";
 import {
@@ -28,7 +28,7 @@ import {
   reconcileAchievementUnlocks,
   syncAchievementUnlocks,
 } from "./achievementUnlocks";
-import { cityMilestoneProgress, earnedCityMilestones } from "./badges";
+import { cityMilestoneProgress } from "./badges";
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
@@ -41,14 +41,25 @@ import {
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
 import { requestDeviceHeadingPermission } from "./deviceHeading";
-import { AchievementCard } from "./components/AchievementCard";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
 import { FavoritePlaceEditor } from "./components/FavoritePlaceEditor";
 import { CityLevelStars } from "./components/CityLevelStars";
+import {
+  CityMilestones,
+  JOURNEY_CITY_MILESTONES_TITLE_ID,
+  type CityMilestoneProgress,
+} from "./components/CityMilestones";
+import { GlobalMilestonesSheet } from "./components/WorldMilestones";
+import { SavedPlacesSheet } from "./components/SavedPlaces";
+import {
+  AchievementsSheet,
+  CitiesSheet,
+} from "./components/ProfileCollections";
 import { Counter, type CounterPlace } from "./components/Counter";
 import { SyncSheet, type GpxImportResult } from "./components/SyncSheet";
 import {
+  ChevronIcon,
   HecateMark,
   InfoIcon,
   LocateIcon,
@@ -71,6 +82,7 @@ import {
   routeDistanceKm,
   shouldRecordPoint,
 } from "./geo";
+import { emptyWalkingStats, type WalkingStats } from "./walkingStats";
 import {
   ExplorationReminder,
   isUnmappedArea,
@@ -139,7 +151,7 @@ import type {
   PendingWalk,
   TrackingState,
 } from "./types";
-import { loadWalkJournal, saveWalkJournal } from "./walkJournal";
+import { loadWalkJournalState, saveWalkJournal } from "./walkJournal";
 import {
   compactImportedRoute,
   parseGpx,
@@ -261,24 +273,41 @@ function formatDiscoveryPercentage(
   return `${Math.round(percentage)}%`;
 }
 
-type CityProgress = {
-  city: CityBoundary;
-  percentage: number;
-  distance: number;
-};
-
-type AchievementEvaluation =
-  DiscoveryAchievementsResponse["achievementEvaluations"][number];
-
 type CachedDiscoveryProgress = Omit<
   DiscoveryProgressResponse,
   "kind" | "generation"
 > & {
-  version: 1;
+  version: 5;
   userId: string;
 };
 
-const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v1";
+const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v5";
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isWalkingStats(value: unknown): value is WalkingStats {
+  if (!value || typeof value !== "object") return false;
+  const stats = value as Partial<WalkingStats>;
+  return (
+    typeof stats.walkCount === "number" &&
+    Number.isInteger(stats.walkCount) &&
+    stats.walkCount >= 0 &&
+    typeof stats.longestWalkKm === "number" &&
+    Number.isFinite(stats.longestWalkKm) &&
+    isNullableFiniteNumber(stats.longestWalkFinishedAt) &&
+    typeof stats.averageWalkKm === "number" &&
+    Number.isFinite(stats.averageWalkKm) &&
+    typeof stats.currentStreakDays === "number" &&
+    Number.isInteger(stats.currentStreakDays) &&
+    stats.currentStreakDays >= 0 &&
+    typeof stats.bestStreakDays === "number" &&
+    Number.isInteger(stats.bestStreakDays) &&
+    stats.bestStreakDays >= 0 &&
+    isNullableFiniteNumber(stats.firstWalkAt)
+  );
+}
 
 export function discoveryProgressCacheKey(userId: string): string {
   return `${DISCOVERY_PROGRESS_CACHE_PREFIX}:${userId}`;
@@ -294,10 +323,27 @@ export function loadCachedDiscoveryProgress(
     if (!value || typeof value !== "object") return null;
     const cached = value as Partial<CachedDiscoveryProgress>;
     if (
-      cached.version !== 1 ||
+      cached.version !== 5 ||
       cached.userId !== userId ||
       typeof cached.discoveryDistance !== "number" ||
       !Number.isFinite(cached.discoveryDistance) ||
+      typeof cached.travelledDistance !== "number" ||
+      !Number.isFinite(cached.travelledDistance) ||
+      typeof cached.todayDiscoveryDistance !== "number" ||
+      !Number.isFinite(cached.todayDiscoveryDistance) ||
+      typeof cached.todayTravelledDistance !== "number" ||
+      !Number.isFinite(cached.todayTravelledDistance) ||
+      typeof cached.todayActiveTimeMs !== "number" ||
+      !Number.isFinite(cached.todayActiveTimeMs) ||
+      typeof cached.weekDiscoveryDistance !== "number" ||
+      !Number.isFinite(cached.weekDiscoveryDistance) ||
+      typeof cached.weekActiveTimeMs !== "number" ||
+      !Number.isFinite(cached.weekActiveTimeMs) ||
+      typeof cached.weekDiscoveryDeltaDistance !== "number" ||
+      !Number.isFinite(cached.weekDiscoveryDeltaDistance) ||
+      typeof cached.weekActiveDeltaTimeMs !== "number" ||
+      !Number.isFinite(cached.weekActiveDeltaTimeMs) ||
+      !isWalkingStats(cached.walkingStats) ||
       !Array.isArray(cached.cityMetrics) ||
       !cached.cityMetrics.every(
         (metric) =>
@@ -312,6 +358,15 @@ export function loadCachedDiscoveryProgress(
       return null;
     return {
       discoveryDistance: cached.discoveryDistance,
+      travelledDistance: cached.travelledDistance,
+      walkingStats: cached.walkingStats,
+      todayDiscoveryDistance: cached.todayDiscoveryDistance,
+      todayTravelledDistance: cached.todayTravelledDistance,
+      todayActiveTimeMs: cached.todayActiveTimeMs,
+      weekDiscoveryDistance: cached.weekDiscoveryDistance,
+      weekActiveTimeMs: cached.weekActiveTimeMs,
+      weekDiscoveryDeltaDistance: cached.weekDiscoveryDeltaDistance,
+      weekActiveDeltaTimeMs: cached.weekActiveDeltaTimeMs,
       cityMetrics: cached.cityMetrics,
     };
   } catch {
@@ -324,7 +379,7 @@ export function saveCachedDiscoveryProgress(
   progress: Omit<DiscoveryProgressResponse, "kind" | "generation">,
 ): void {
   const cached: CachedDiscoveryProgress = {
-    version: 1,
+    version: 5,
     userId,
     ...progress,
   };
@@ -347,104 +402,100 @@ export function saveCachedDiscoveryProgress(
 type JourneyDetailsProps = {
   accountUserId: string | null;
   expanded: boolean;
-  loading: boolean;
-  cityProgresses: CityProgress[];
-  totalCityDistance: number;
-  achievementEvaluations: AchievementEvaluation[];
-  onCitySelect: (city: CityBoundary) => void;
+  todayDiscoveryDistance: number;
+  todayTravelledDistance: number;
+  todayActiveTimeMs: number;
+  currentStreakDays: number;
+  weekDiscoveryDistance: number;
+  weekActiveTimeMs: number;
+  weekDiscoveryDeltaDistance: number;
+  weekActiveDeltaTimeMs: number;
+  cityProgress: CityMilestoneProgress | null;
+  onWalkingStatsOpen: () => void;
 };
 
 const JourneyDetails = memo(function JourneyDetails({
   accountUserId,
   expanded,
-  loading,
-  cityProgresses,
-  totalCityDistance,
-  achievementEvaluations,
-  onCitySelect,
+  todayDiscoveryDistance,
+  todayTravelledDistance,
+  todayActiveTimeMs,
+  currentStreakDays,
+  weekDiscoveryDistance,
+  weekActiveTimeMs,
+  weekDiscoveryDeltaDistance,
+  weekActiveDeltaTimeMs,
+  cityProgress,
+  onWalkingStatsOpen,
 }: JourneyDetailsProps) {
-  const earnedAchievementCount = achievementEvaluations.filter(
-    ({ earned }) => earned,
-  ).length;
-
   return (
     <div
-      className="discovered-cities"
-      aria-label="Discovered cities"
+      className="journey-overview"
+      aria-label="Walking overview"
       aria-hidden={!expanded}
     >
-      <div className="discovered-cities__heading">
-        <span>Your cities</span>
-        <small>
-          {loading
-            ? "Finding past cities…"
-            : `${cityProgresses.length} ${cityProgresses.length === 1 ? "city" : "cities"} · ${formatDistance(totalCityDistance)} new ground`}
-        </small>
-      </div>
       {accountUserId ? (
-        cityProgresses.length ? (
-          <ul>
-            {cityProgresses.map(({ city, percentage, distance }) => {
-              const earned = earnedCityMilestones(city.id, city.name, distance);
-              const next = cityMilestoneProgress(distance).next;
-              return (
-                <li key={city.id}>
-                  <button type="button" onClick={() => onCitySelect(city)}>
-                    <span className="discovered-cities__identity">
-                      <span>{city.name}</span>
-                      <small>
-                        {next
-                          ? `${formatDistance(distance)} / ${formatDistance(next.thresholdKm)} · ${next.title}`
-                          : `${earned.at(-1)?.title} · all 3 stars earned`}
-                      </small>
-                    </span>
-                    <span className="discovered-cities__metrics">
-                      <CityLevelStars level={earned.length} />
-                      <strong>
-                        {formatDiscoveryPercentage(percentage, false)}
-                      </strong>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p>Start a walk to add your first city.</p>
-        )
+        <>
+          <section
+            className="journey-global-stats"
+            aria-labelledby="journey-global-stats-title"
+          >
+            <div className="journey-global-stats__heading">
+              <h3 id="journey-global-stats-title">Journey stats</h3>
+              <button
+                type="button"
+                aria-label="Open full walking stats"
+                onClick={onWalkingStatsOpen}
+              >
+                View all
+                <ChevronIcon size={14} strokeWidth={2.3} />
+              </button>
+            </div>
+            <dl>
+              <div>
+                <dt>New ground today</dt>
+                <dd>{formatDistance(todayDiscoveryDistance)}</dd>
+              </div>
+              <div>
+                <dt>Travelled today</dt>
+                <dd>{formatDistance(todayTravelledDistance)}</dd>
+              </div>
+              <div>
+                <dt>Time active today</dt>
+                <dd>{formatElapsedDuration(todayActiveTimeMs)}</dd>
+              </div>
+              <div>
+                <dt>Current streak</dt>
+                <dd>{formatStreakDays(currentStreakDays)}</dd>
+              </div>
+              <div>
+                <dt>New ground this week</dt>
+                <dd>
+                  <span>{formatDistance(weekDiscoveryDistance)}</span>
+                  <small
+                    className={weekDeltaClassName(weekDiscoveryDeltaDistance)}
+                  >
+                    {formatWeekDistanceDelta(weekDiscoveryDeltaDistance)}
+                  </small>
+                </dd>
+              </div>
+              <div>
+                <dt>Time active this week</dt>
+                <dd>
+                  <span>{formatElapsedDuration(weekActiveTimeMs)}</span>
+                  <small
+                    className={weekDeltaClassName(weekActiveDeltaTimeMs, 30_000)}
+                  >
+                    {formatWeekTimeDelta(weekActiveDeltaTimeMs)}
+                  </small>
+                </dd>
+              </div>
+            </dl>
+          </section>
+          {cityProgress && <CityMilestones progress={cityProgress} />}
+        </>
       ) : (
-        <p>Sign in to see your cities and keep them in sync.</p>
-      )}
-      {accountUserId && (
-        <section
-          className="personal-achievements"
-          aria-labelledby="personal-achievements-title"
-        >
-          <div className="personal-achievements__heading">
-            <span id="personal-achievements-title">Achievements</span>
-            <small>
-              {earnedAchievementCount} / {achievementEvaluations.length} earned
-            </small>
-          </div>
-          <ul>
-            {achievementEvaluations.map(
-              ({ definition, earned, progress, progressLabel }) => (
-                <li
-                  key={definition.id}
-                  className={earned ? "personal-achievements__earned" : ""}
-                >
-                  <AchievementCard
-                    achievement={definition}
-                    earned={earned}
-                    progress={progress}
-                    progressLabel={progressLabel}
-                    compact
-                  />
-                </li>
-              ),
-            )}
-          </ul>
-        </section>
+        <p>Sign in to see your walking stats and keep them in sync.</p>
       )}
     </div>
   );
@@ -462,6 +513,36 @@ function formatDuration(startedAt: number, finishedAt: number) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+}
+
+function formatElapsedDuration(durationMs: number) {
+  const minutes = Math.max(0, Math.round(durationMs / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+}
+
+function formatStreakDays(days: number) {
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
+function formatWeekDistanceDelta(deltaKm: number) {
+  if (Math.abs(deltaKm) < 0.0005) return "No change vs last week";
+  const sign = deltaKm > 0 ? "+" : "-";
+  return `${sign}${formatDistance(Math.abs(deltaKm))} vs last week`;
+}
+
+function formatWeekTimeDelta(deltaMs: number) {
+  if (Math.abs(deltaMs) < 30_000) return "No change vs last week";
+  const sign = deltaMs > 0 ? "+" : "-";
+  return `${sign}${formatElapsedDuration(Math.abs(deltaMs))} vs last week`;
+}
+
+function weekDeltaClassName(delta: number, deadZone = 0.0005) {
+  if (Math.abs(delta) < deadZone) return "journey-global-stats__delta";
+  return delta > 0
+    ? "journey-global-stats__delta journey-global-stats__delta--up"
+    : "journey-global-stats__delta journey-global-stats__delta--down";
 }
 
 type JourneyCounterDisplay = {
@@ -678,6 +759,10 @@ export default function App() {
   trackingStateRef.current = tracking;
   const [zoom, setZoom] = useState(1.35);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
+  const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
+  const [citiesOpen, setCitiesOpen] = useState(false);
+  const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
   >("signin");
@@ -707,11 +792,19 @@ export default function App() {
     null,
   );
   const [citiesExpanded, setCitiesExpanded] = useState(false);
-  const [cityBackfillLoading, setCityBackfillLoading] = useState(false);
   const [discoveryProgress, setDiscoveryProgress] = useState<
     Omit<DiscoveryProgressResponse, "kind" | "generation">
   >({
     discoveryDistance: 0,
+    travelledDistance: 0,
+    walkingStats: emptyWalkingStats(),
+    todayDiscoveryDistance: 0,
+    todayTravelledDistance: 0,
+    todayActiveTimeMs: 0,
+    weekDiscoveryDistance: 0,
+    weekActiveTimeMs: 0,
+    weekDiscoveryDeltaDistance: 0,
+    weekActiveDeltaTimeMs: 0,
     cityMetrics: [],
   });
   const [discoveryProgressReady, setDiscoveryProgressReady] = useState(false);
@@ -778,6 +871,8 @@ export default function App() {
   const discoveryUiRefreshTimerRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
+  const journeyMilestonesScrollFrameRef = useRef<number | null>(null);
+  const pendingMilestonesScrollRef = useRef(false);
   const initialMapFocusUserRef = useRef<string | null>(null);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
@@ -1142,6 +1237,8 @@ export default function App() {
         cancelAnimationFrame(journeyDragFrameRef.current);
       if (journeySettleFrameRef.current !== null)
         cancelAnimationFrame(journeySettleFrameRef.current);
+      if (journeyMilestonesScrollFrameRef.current !== null)
+        cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
       if (resumeCenterFrameRef.current !== null)
         cancelAnimationFrame(resumeCenterFrameRef.current);
       stopFollowCameraAnimation();
@@ -1165,7 +1262,19 @@ export default function App() {
   useEffect(() => {
     setDiscoveryProgressReady(false);
     if (!accountUserId) {
-      setDiscoveryProgress({ discoveryDistance: 0, cityMetrics: [] });
+      setDiscoveryProgress({
+        discoveryDistance: 0,
+        travelledDistance: 0,
+        walkingStats: emptyWalkingStats(),
+        todayDiscoveryDistance: 0,
+        todayTravelledDistance: 0,
+        todayActiveTimeMs: 0,
+        weekDiscoveryDistance: 0,
+        weekActiveTimeMs: 0,
+        weekDiscoveryDeltaDistance: 0,
+        weekActiveDeltaTimeMs: 0,
+        cityMetrics: [],
+      });
       return;
     }
     const cached = loadCachedDiscoveryProgress(accountUserId);
@@ -1191,6 +1300,15 @@ export default function App() {
         if (event.data.kind === "progress") {
           const progress = {
             discoveryDistance: event.data.discoveryDistance,
+            travelledDistance: event.data.travelledDistance,
+            walkingStats: event.data.walkingStats,
+            todayDiscoveryDistance: event.data.todayDiscoveryDistance,
+            todayTravelledDistance: event.data.todayTravelledDistance,
+            todayActiveTimeMs: event.data.todayActiveTimeMs,
+            weekDiscoveryDistance: event.data.weekDiscoveryDistance,
+            weekActiveTimeMs: event.data.weekActiveTimeMs,
+            weekDiscoveryDeltaDistance: event.data.weekDiscoveryDeltaDistance,
+            weekActiveDeltaTimeMs: event.data.weekActiveDeltaTimeMs,
             cityMetrics: event.data.cityMetrics,
           };
           setDiscoveryProgress(progress);
@@ -1236,11 +1354,6 @@ export default function App() {
           b.percentage - a.percentage || a.city.name.localeCompare(b.city.name),
       );
   }, [discoveryProgress.cityMetrics, progressCities]);
-  const totalCityDistance = useMemo(
-    () =>
-      cityProgresses.reduce((total, progress) => total + progress.distance, 0),
-    [cityProgresses],
-  );
   const activeCityProgress = activeCity
     ? cityProgresses.find(({ city }) => city.id === activeCity.id)
     : null;
@@ -1562,12 +1675,37 @@ export default function App() {
     let active = true;
     let retryTimer: number | null = null;
     let finishFrame: number | null = null;
+    const activeWalkOwner = trackingUserRef.current;
+    const activeWalk = activeWalkRef.current;
+    if (activeWalkOwner && activeWalkOwner !== accountUserId) {
+      const tracker = trackerRef.current;
+      trackerRef.current = null;
+      if (activeWalk && !activeWalk.isTest) {
+        saveWalkJournal(activeWalkOwner, pendingWalksRef.current, {
+          ...activeWalk,
+          finishedAt: Math.max(
+            activeWalk.startedAt,
+            activeWalk.points.at(-1)?.recordedAt ?? activeWalk.startedAt,
+          ),
+        });
+      }
+      activeWalkRef.current = null;
+      trackingUserRef.current = null;
+      focusFirstTrackingPointRef.current = false;
+      resetInactivityReminder();
+      setTracking("idle");
+      setPassiveLocationStatus("idle");
+      void Promise.resolve(tracker?.stop()).catch((error) => {
+        console.error("Could not stop location tracking after account change", {
+          error,
+        });
+      });
+    }
     setPoints([]);
     setCells([]);
     setDiscoveredCities([]);
     setCitiesLoadedUserId(null);
     setCitiesExpanded(false);
-    setCityBackfillLoading(false);
     setCoverageInfoOpen(false);
     setExplorationSummary(null);
     initialMapFocusUserRef.current = null;
@@ -1580,18 +1718,41 @@ export default function App() {
     cellKeysRef.current = new Set();
     discoveryHistoryReadyRef.current = false;
     pointsRef.current = [];
-    pendingWalksRef.current = accountUserId
-      ? loadWalkJournal(accountUserId)
-      : [];
+    const journal = accountUserId
+      ? loadWalkJournalState(accountUserId)
+      : { active: null, pending: [] };
+    pendingWalksRef.current = journal.pending;
     deferredLocationUiRef.current = false;
     if (!accountUserId) return;
 
-    // An interrupted active recording is a completed route up to its last
-    // accepted sample. Keep it locally until the database accepts it.
-    saveWalkJournal(accountUserId, pendingWalksRef.current);
-    const recoveredPoints = pendingWalksRef.current.flatMap(
+    if (journal.active) {
+      activeWalkRef.current = {
+        id: journal.active.id,
+        startedAt: journal.active.startedAt,
+        points: [...journal.active.points],
+        achievementEligible: journal.active.achievementEligible,
+      };
+      trackingUserRef.current = accountUserId;
+      lastPointRef.current = journal.active.points.at(-1);
+      focusFirstTrackingPointRef.current = journal.active.points.length === 0;
+      setElapsedNow(Date.now());
+      setTracking("requesting");
+    }
+    const recoveredWalks = journal.active
+      ? [...journal.pending, journal.active]
+      : journal.pending;
+    const recoveredPoints = recoveredWalks.flatMap(
       (walk) => walk.points,
     );
+    const baselinePoints = journal.pending.flatMap((walk) => walk.points);
+    const baselineCells = discoveryCellsFromPoints(baselinePoints);
+    explorationStartRef.current = journal.active
+      ? {
+          cells: new Set(baselineCells.map(discoveryCellKey)),
+          points: baselinePoints,
+          discoveryDistance: discoveredDistanceKm(baselinePoints),
+        }
+      : null;
     pointsRef.current = mergeRoutePoints(recoveredPoints);
     cellsRef.current = discoveryCellsFromPoints(recoveredPoints);
     cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey));
@@ -1639,6 +1800,20 @@ export default function App() {
           setPoints(mergedPoints);
           setCells(mergedCells);
           cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
+          if (
+            activeWalkRef.current &&
+            trackingUserRef.current === accountUserId
+          ) {
+            const baseline = mergedPoints.filter(
+              (point) => point.walkId !== activeWalkRef.current?.id,
+            );
+            const baselineDiscoveryCells = discoveryCellsFromPoints(baseline);
+            explorationStartRef.current = {
+              cells: new Set(baselineDiscoveryCells.map(discoveryCellKey)),
+              points: baseline,
+              discoveryDistance: discoveredDistanceKm(baseline),
+            };
+          }
           discoveryHistoryReadyRef.current = true;
           if (!activeWalkRef.current)
             lastPointRef.current = mergedPoints.at(-1);
@@ -1664,7 +1839,7 @@ export default function App() {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
-  }, [accountUserId]);
+  }, [accountUserId, resetInactivityReminder]);
 
   const flushPendingWalks = async (userId: string) => {
     if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current;
@@ -2280,7 +2455,6 @@ export default function App() {
     if (!candidates.length) return;
 
     void (async () => {
-      setCityBackfillLoading(true);
       for (const point of candidates) {
         if (cancelled) break;
         try {
@@ -2306,7 +2480,6 @@ export default function App() {
         // Respect Nominatim's public-service rate limit while backfilling.
         await new Promise((resolve) => window.setTimeout(resolve, 1_100));
       }
-      if (!cancelled) setCityBackfillLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -2341,40 +2514,24 @@ export default function App() {
   };
 
   useEffect(() => {
+    const focusIdentity = accountUserId ?? "__anonymous__";
     if (
-      !accountUserId ||
-      !discoveryHistoryReadyRef.current ||
-      initialMapFocusUserRef.current === accountUserId
+      initialMapFocusUserRef.current === focusIdentity ||
+      !currentPoint
     )
       return;
-    const latestPoint = points.at(-1);
-    const latestCell = cells.reduce<DiscoveryCell | undefined>(
-      (latest, cell) =>
-        !latest || cell.discoveredAt > latest.discoveredAt ? cell : latest,
-      undefined,
-    );
-    const latestDiscovery =
-      latestPoint ??
-      (latestCell
-        ? (() => {
-            const [lng, lat] = discoveryCellCenter(latestCell);
-            return { lng, lat, recordedAt: latestCell.discoveredAt };
-          })()
-        : undefined);
-    const focus = latestDiscovery ?? currentPoint;
-    if (!focus) return;
-    initialMapFocusUserRef.current = accountUserId;
-    const targetZoom = latestDiscovery ? 14.3 : 15;
-    setViewCenter({ lng: focus.lng, lat: focus.lat });
+    initialMapFocusUserRef.current = focusIdentity;
+    const targetZoom = 14;
+    setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
     setZoom(targetZoom);
     setViewedCity(null);
     mapRef.current?.jumpTo({
-      center: [focus.lng, focus.lat],
+      center: [currentPoint.lng, currentPoint.lat],
       zoom: targetZoom,
       pitch: 0,
       bearing: 0,
     });
-  }, [accountUserId, cells, currentPoint, discoveryLoading, points]);
+  }, [accountUserId, currentPoint]);
 
   const addPoint = (point: Coordinate) => {
     if (!isUsableGpsPoint(point)) {
@@ -2493,7 +2650,7 @@ export default function App() {
           setAutomaticUpdatePending(walkOwner, true);
         }
         pendingWalksRef.current.push(completed);
-        saveWalkJournal(walkOwner, pendingWalksRef.current);
+        saveWalkJournal(walkOwner, pendingWalksRef.current, null);
         await flushPendingWalks(walkOwner);
         // The recap and the next app launch must be based on the same completed
         // discovery. Do not rely only on the debounced background cell sync.
@@ -2586,7 +2743,7 @@ export default function App() {
         }
       }
     } else if (active && walkOwner && !active.isTest) {
-      saveWalkJournal(walkOwner, pendingWalksRef.current);
+      saveWalkJournal(walkOwner, pendingWalksRef.current, null);
     }
     explorationStartRef.current = null;
   };
@@ -2745,10 +2902,22 @@ export default function App() {
       0,
       discoveredDistanceKm(mergedPoints) - previousDistance,
     );
+    const importedAt = Date.now();
+    const baseTitle = file.name.replace(/\.gpx$/i, "").trim() || "GPX route";
+    const importedRoutes = newWalks.map((walk, index) => ({
+      id: walk.id,
+      title:
+        newWalks.length === 1
+          ? baseTitle
+          : `${baseTitle} · Segment ${index + 1}`,
+      addedAt: importedAt,
+      addedKm: routeDistanceKm(walk.points),
+    }));
     return {
       tone: "success",
-      message: `Route imported · ${formatDistance(addedKm)} added to your map.`,
+      message: `${newWalks.length === 1 ? "Route" : `${newWalks.length} routes`} imported · ${formatDistance(addedKm)} added.`,
       points: importedPoints,
+      importedRoutes,
     };
   };
 
@@ -2969,11 +3138,64 @@ export default function App() {
       void Promise.resolve(tracker.stop()).catch(() => undefined);
       activeWalkRef.current = null;
       trackingUserRef.current = null;
-      saveWalkJournal(accountUserId, pendingWalksRef.current);
+      saveWalkJournal(accountUserId, pendingWalksRef.current, null);
       setPassiveLocationStatus("idle");
       setTracking("unavailable");
     }
   };
+
+  useEffect(() => {
+    if (
+      tracking !== "requesting" ||
+      !accountUserId ||
+      trackingUserRef.current !== accountUserId ||
+      !activeWalkRef.current ||
+      trackerRef.current
+    )
+      return;
+    const tracker = createLocationTracker();
+    trackerRef.current = tracker;
+    let trackerFailed = false;
+    void tracker
+      .start(addPoint, (error) => {
+        if (trackerRef.current !== tracker) return;
+        trackerFailed = true;
+        focusFirstTrackingPointRef.current = false;
+        resetInactivityReminder();
+        trackerRef.current = null;
+        void Promise.resolve(tracker.stop()).catch((stopError) => {
+          console.error("Could not stop restored location tracking", {
+            error: stopError,
+          });
+        });
+        finalizeRecordedWalk();
+        setPassiveLocationStatus(
+          error.code === "permission-denied" ? "denied" : "idle",
+        );
+        setTracking(
+          error.code === "permission-denied" ? "denied" : "unavailable",
+        );
+      })
+      .then(() => {
+        if (trackerFailed || trackerRef.current !== tracker) return;
+        setTracking("tracking");
+      })
+      .catch((error) => {
+        if (trackerRef.current !== tracker) return;
+        focusFirstTrackingPointRef.current = false;
+        resetInactivityReminder();
+        trackerRef.current = null;
+        void Promise.resolve(tracker.stop()).catch((stopError) => {
+          console.error("Could not stop failed restored location tracking", {
+            error: stopError,
+          });
+        });
+        finalizeRecordedWalk();
+        setPassiveLocationStatus("idle");
+        setTracking("unavailable");
+        console.error("Could not restore active location tracking", { error });
+      });
+  }, [accountUserId, resetInactivityReminder, tracking]);
 
   const locate = () => {
     void requestDeviceHeadingPermission();
@@ -2998,8 +3220,7 @@ export default function App() {
   const journeyBounds = (card: HTMLElement) => {
     const collapsed =
       Number.parseFloat(window.getComputedStyle(card).minHeight) || 88;
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    return { collapsed, expanded: viewportHeight * 0.7 };
+    return { collapsed, expanded: card.getBoundingClientRect().height };
   };
 
   const journeyVisibleHeight = (card: HTMLElement) => {
@@ -3092,6 +3313,53 @@ export default function App() {
       };
     });
   }, []);
+
+  const scrollToCityMilestones = useCallback((behavior: ScrollBehavior) => {
+    const title = document.getElementById(JOURNEY_CITY_MILESTONES_TITLE_ID);
+    const section = title?.closest("section");
+    if (!section) return false;
+    section.scrollIntoView({
+      behavior,
+      block: "start",
+      inline: "nearest",
+    });
+    return true;
+  }, []);
+
+  const openJourneyAtCityMilestones = useCallback(() => {
+    const scrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches
+      ? "auto"
+      : "smooth";
+    pendingMilestonesScrollRef.current = true;
+    settleJourneySheet(true);
+    if (!journeyExpandedRef.current) return;
+    if (journeyMilestonesScrollFrameRef.current !== null)
+      cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
+    journeyMilestonesScrollFrameRef.current = requestAnimationFrame(() => {
+      journeyMilestonesScrollFrameRef.current = null;
+      if (scrollToCityMilestones(scrollBehavior)) {
+        pendingMilestonesScrollRef.current = false;
+      }
+    });
+  }, [scrollToCityMilestones, settleJourneySheet]);
+
+  useEffect(() => {
+    if (!citiesExpanded || !pendingMilestonesScrollRef.current) return;
+    const scrollBehavior = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches
+      ? "auto"
+      : "smooth";
+    if (journeyMilestonesScrollFrameRef.current !== null)
+      cancelAnimationFrame(journeyMilestonesScrollFrameRef.current);
+    journeyMilestonesScrollFrameRef.current = requestAnimationFrame(() => {
+      journeyMilestonesScrollFrameRef.current = null;
+      scrollToCityMilestones(scrollBehavior);
+      pendingMilestonesScrollRef.current = false;
+    });
+  }, [citiesExpanded, scrollToCityMilestones]);
 
   const beginJourneyDrag = (event: React.PointerEvent<HTMLElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -3539,6 +3807,14 @@ export default function App() {
     }
   };
 
+  const closeProfileDialog = () => {
+    setGlobalMilestonesOpen(false);
+    setSavedPlacesOpen(false);
+    setCitiesOpen(false);
+    setAchievementsOpen(false);
+    setSyncOpen(false);
+  };
+
   const openFavoritePlace = useCallback((favorite: FavoritePlace) => {
     setSyncOpen(false);
     setFavoritePlacementActive(false);
@@ -3583,6 +3859,17 @@ export default function App() {
       );
     },
     [settleJourneySheet],
+  );
+
+  const showImportedRouteById = useCallback(
+    (routeId: string) => {
+      const routePoints = pointsRef.current
+        .filter((point) => point.walkId === routeId)
+        .sort((first, second) => first.recordedAt - second.recordedAt);
+      if (routePoints.length === 0) return;
+      showImportedRoute(routePoints);
+    },
+    [showImportedRoute],
   );
 
   const handleMapClick = useCallback(() => {
@@ -3777,7 +4064,9 @@ export default function App() {
         </button>
         <button
           className="avatar-button"
+          type="button"
           onClick={() => {
+            setGlobalMilestonesOpen(false);
             setSyncInitialIntent("signin");
             setSyncOpen(true);
           }}
@@ -3901,7 +4190,7 @@ export default function App() {
           <button
             className="map-milestone"
             type="button"
-            onClick={() => settleJourneySheet(true)}
+            onClick={openJourneyAtCityMilestones}
             aria-label={
               currentCityMilestone.next
                 ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
@@ -4148,13 +4437,16 @@ export default function App() {
           <JourneyDetails
             accountUserId={accountUserId}
             expanded={citiesExpanded}
-            loading={
-              citiesLoadedUserId !== accountUserId || cityBackfillLoading
-            }
-            cityProgresses={cityProgresses}
-            totalCityDistance={totalCityDistance}
-            achievementEvaluations={achievementEvaluations}
-            onCitySelect={focusDiscoveredCity}
+            todayDiscoveryDistance={discoveryProgress.todayDiscoveryDistance}
+            todayTravelledDistance={discoveryProgress.todayTravelledDistance}
+            todayActiveTimeMs={discoveryProgress.todayActiveTimeMs}
+            currentStreakDays={discoveryProgress.walkingStats.currentStreakDays}
+            weekDiscoveryDistance={discoveryProgress.weekDiscoveryDistance}
+            weekActiveTimeMs={discoveryProgress.weekActiveTimeMs}
+            weekDiscoveryDeltaDistance={discoveryProgress.weekDiscoveryDeltaDistance}
+            weekActiveDeltaTimeMs={discoveryProgress.weekActiveDeltaTimeMs}
+            cityProgress={accountCityProgress}
+            onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
           />
         </section>
       )}
@@ -4194,19 +4486,92 @@ export default function App() {
           </section>
         </div>
       )}
-      <SyncSheet
-        open={syncOpen}
-        initialAuthIntent={syncInitialIntent}
-        onClose={() => setSyncOpen(false)}
-        reminderEnabled={reminderEnabled}
-        nativeApp={nativeApp}
-        keyboardInset={keyboardInset}
-        cityProgress={accountCityProgress}
+      <div
+        aria-hidden={
+          globalMilestonesOpen ||
+          savedPlacesOpen ||
+          citiesOpen ||
+          achievementsOpen ||
+          undefined
+        }
+        inert={
+          globalMilestonesOpen ||
+          savedPlacesOpen ||
+          citiesOpen ||
+          achievementsOpen ||
+          undefined
+        }
+      >
+        <SyncSheet
+          open={syncOpen}
+          initialAuthIntent={syncInitialIntent}
+          onClose={closeProfileDialog}
+          reminderEnabled={reminderEnabled}
+          nativeApp={nativeApp}
+          keyboardInset={keyboardInset}
+          travelledDistance={discoveryProgress.travelledDistance}
+          discoveredCityCount={cityProgresses.length}
+          earnedAchievementCount={earnedAchievementIds.length}
+          achievementCount={achievementEvaluations.length}
+          favoritePlaces={favoritePlaces}
+          onReminderChange={updateReminderEnabled}
+          onGpxImport={importGpxFile}
+          onShowGpxImport={showImportedRoute}
+          onShowGpxImportRoute={showImportedRouteById}
+          onWalkingStatsOpen={() => {
+            setGlobalMilestonesOpen(true);
+          }}
+          onCitiesOpen={() => {
+            setCitiesOpen(true);
+          }}
+          onAchievementsOpen={() => {
+            setAchievementsOpen(true);
+          }}
+          onSavedPlacesOpen={() => {
+            setSavedPlacesOpen(true);
+          }}
+        />
+      </div>
+      <GlobalMilestonesSheet
+        open={Boolean(accountUserId && globalMilestonesOpen)}
+        discoveryDistance={discoveryProgress.discoveryDistance}
+        travelledKm={discoveryProgress.travelledDistance}
+        walkingStats={discoveryProgress.walkingStats}
+        discoveredCityCount={cityProgresses.length}
+        backLabel={syncOpen ? "Back to profile" : "Back to journey"}
+        onBack={() => {
+          setGlobalMilestonesOpen(false);
+        }}
+        onClose={closeProfileDialog}
+      />
+      <SavedPlacesSheet
+        open={Boolean(accountUserId && savedPlacesOpen)}
         favoritePlaces={favoritePlaces}
-        onFavoriteSelect={openFavoritePlace}
-        onReminderChange={updateReminderEnabled}
-        onGpxImport={importGpxFile}
-        onShowGpxImport={showImportedRoute}
+        onFavoriteSelect={(favorite) => {
+          setSavedPlacesOpen(false);
+          openFavoritePlace(favorite);
+        }}
+        onFavoriteDelete={deleteFavoriteDraft}
+        onBack={() => setSavedPlacesOpen(false)}
+        onClose={closeProfileDialog}
+      />
+      <CitiesSheet
+        open={Boolean(accountUserId && citiesOpen)}
+        loading={citiesLoadedUserId !== accountUserId}
+        cityProgresses={cityProgresses}
+        onCitySelect={(city) => {
+          setCitiesOpen(false);
+          setSyncOpen(false);
+          focusDiscoveredCity(city);
+        }}
+        onBack={() => setCitiesOpen(false)}
+        onClose={closeProfileDialog}
+      />
+      <AchievementsSheet
+        open={Boolean(accountUserId && achievementsOpen)}
+        achievementEvaluations={achievementEvaluations}
+        onBack={() => setAchievementsOpen(false)}
+        onClose={closeProfileDialog}
       />
       {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">

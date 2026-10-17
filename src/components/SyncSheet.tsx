@@ -14,18 +14,22 @@ import {
 } from "../inactivityReminder";
 import { openLocationSettings } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
-import { CITY_MILESTONE_TIERS } from "../badges";
+import { currentWorldMilestone } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
-import {
-  FAVORITE_PLACE_ICONS,
-  favoritePlaceIconVector,
-  type FavoritePlace,
-  type FavoritePlaceIcon,
-} from "../favoritePlaces";
+import type { FavoritePlace } from "../favoritePlaces";
 import { hostedLeaderboardUrl, publicLeaderboardUrl } from "../routes";
-import { AchievementArtwork } from "./AchievementArtwork";
-import { CityLevelStars } from "./CityLevelStars";
-import { ChevronIcon, InfoIcon, SaveIcon, XIcon } from "./Icons";
+import { WorldMilestoneIcon } from "./WorldMilestones";
+import {
+  AchievementsIcon,
+  ArrowLeftIcon,
+  CitiesIcon,
+  ChevronIcon,
+  InfoIcon,
+  LeaderboardIcon,
+  RouteIcon,
+  SaveIcon,
+  XIcon,
+} from "./Icons";
 import type { Coordinate } from "../types";
 
 type Props = {
@@ -35,38 +39,90 @@ type Props = {
   reminderEnabled: boolean;
   nativeApp: boolean;
   keyboardInset: number;
-  cityProgress: {
-    cityId: string;
-    cityName: string;
-    discoveredKm: number;
-  } | null;
+  travelledDistance: number;
+  discoveredCityCount: number;
+  earnedAchievementCount: number;
+  achievementCount: number;
   favoritePlaces: FavoritePlace[];
-  onFavoriteSelect: (favorite: FavoritePlace) => void;
   onReminderChange: (enabled: boolean) => Promise<string | null>;
   onGpxImport: (file: File) => Promise<GpxImportResult>;
   onShowGpxImport: (points: Coordinate[]) => void;
+  onShowGpxImportRoute: (routeId: string) => void;
+  onWalkingStatsOpen: () => void;
+  onCitiesOpen: () => void;
+  onAchievementsOpen: () => void;
+  onSavedPlacesOpen: () => void;
 };
 type SignInMethod = "password" | "link";
 type PasswordIntent = "signin" | "signup";
 type MessageTone = "success" | "error";
 type ToastTone = MessageTone | "info";
+export type GpxImportedRoute = {
+  id: string;
+  title: string;
+  addedAt: number;
+  addedKm: number;
+};
 export type GpxImportResult = {
   message: string;
   tone: Exclude<ToastTone, "error">;
   points?: Coordinate[];
+  importedRoutes?: GpxImportedRoute[];
 };
 
-function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
-  const vector = favoritePlaceIconVector(icon);
-  return (
-    <svg
-      className={vector.filled ? "favorite-icon--filled" : undefined}
-      viewBox={vector.viewBox}
-      preserveAspectRatio="xMidYMid meet"
-      aria-hidden="true"
-      dangerouslySetInnerHTML={{ __html: vector.markup }}
-    />
-  );
+function gpxImportHistoryKey(userId: string) {
+  return `hecate.gpx-import-history.v1.${userId}`;
+}
+
+function readGpxImportHistory(userId: string): GpxImportedRoute[] {
+  try {
+    const raw = localStorage.getItem(gpxImportHistoryKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .flatMap((item) => {
+        if (
+          !item ||
+          typeof item.id !== "string" ||
+          typeof item.title !== "string" ||
+          !Number.isFinite(item.addedAt)
+        ) {
+          return [];
+        }
+        return [
+          {
+            id: item.id,
+            title: item.title,
+            addedAt: item.addedAt,
+            addedKm:
+              Number.isFinite(item.addedKm) && item.addedKm > 0
+                ? item.addedKm
+                : 0,
+          },
+        ];
+      })
+      .slice(0, 20);
+  } catch {
+    return [];
+  }
+}
+
+function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
+  try {
+    localStorage.setItem(
+      gpxImportHistoryKey(userId),
+      JSON.stringify(routes.slice(0, 20)),
+    );
+  } catch (error) {
+    console.warn("Could not persist GPX import history", {
+      userId,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Web Storage failed with an unknown error.",
+    });
+  }
 }
 
 export function SyncSheet({
@@ -76,12 +132,19 @@ export function SyncSheet({
   reminderEnabled,
   nativeApp,
   keyboardInset,
-  cityProgress,
+  travelledDistance,
+  discoveredCityCount,
+  earnedAchievementCount,
+  achievementCount,
   favoritePlaces,
-  onFavoriteSelect,
   onReminderChange,
   onGpxImport,
   onShowGpxImport,
+  onShowGpxImportRoute,
+  onWalkingStatsOpen,
+  onCitiesOpen,
+  onAchievementsOpen,
+  onSavedPlacesOpen,
 }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,6 +161,10 @@ export function SyncSheet({
   const [reminderPending, setReminderPending] = useState(false);
   const [reminderError, setReminderError] = useState("");
   const [gpxImportPending, setGpxImportPending] = useState(false);
+  const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
+  const [gpxImportedRoutes, setGpxImportedRoutes] = useState<
+    GpxImportedRoute[]
+  >([]);
   const [gpxToast, setGpxToast] = useState<{
     message: string;
     tone: ToastTone;
@@ -109,9 +176,6 @@ export function SyncSheet({
   const [publishedDisplayName, setPublishedDisplayName] = useState<
     string | null
   >(null);
-  const [cityMilestoneInfoOpen, setCityMilestoneInfoOpen] = useState(false);
-  const [favoriteCategoryId, setFavoriteCategoryId] =
-    useState<FavoritePlaceIcon | null>(null);
 
   useEffect(() => {
     if (!keyboardInset) return;
@@ -133,6 +197,21 @@ export function SyncSheet({
   }, [initialAuthIntent, open]);
 
   useEffect(() => {
+    const userId = user?.id;
+    if (!userId) {
+      setGpxImportedRoutes([]);
+      return;
+    }
+    setGpxImportedRoutes(readGpxImportHistory(userId));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+    writeGpxImportHistory(userId, gpxImportedRoutes);
+  }, [gpxImportedRoutes, user?.id]);
+
+  useEffect(() => {
     if (!gpxToast) return;
     const timer = window.setTimeout(() => setGpxToast(null), 4_500);
     return () => window.clearTimeout(timer);
@@ -141,7 +220,6 @@ export function SyncSheet({
   useEffect(() => {
     if (!open) {
       setConfirmingDelete(false);
-      setCityMilestoneInfoOpen(false);
       return;
     }
     if (!supabase) {
@@ -321,17 +399,9 @@ export function SyncSheet({
     .trim()
     .charAt(0)
     .toUpperCase();
-  const cityMilestoneCount = cityProgress
-    ? CITY_MILESTONE_TIERS.filter(
-        (tier) => cityProgress.discoveredKm >= tier.thresholdKm,
-      ).length
-    : 0;
-  const favoriteGroups = FAVORITE_PLACE_ICONS.flatMap((category) => {
-    const places = favoritePlaces
-      .filter((place) => place.icon === category.id)
-      .sort((first, second) => first.name.localeCompare(second.name));
-    return places.length ? [{ ...category, places }] : [];
-  });
+  const favoriteCollectionCount = new Set(
+    favoritePlaces.map((place) => place.icon),
+  ).size;
   const beginAccountCreation = () => {
     setSignInMethod("password");
     setPasswordIntent("signup");
@@ -339,6 +409,7 @@ export function SyncSheet({
     setConfirmPassword("");
     setMessage("");
   };
+  const currentWorldRank = currentWorldMilestone(travelledDistance);
 
   const openLeaderboard = async () => {
     const nativePlatform = Capacitor.isNativePlatform();
@@ -365,6 +436,47 @@ export function SyncSheet({
     }, 80);
   };
 
+  const formatGpxImportDate = (addedAt: number) =>
+    new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(addedAt);
+  const formatGpxImportDistance = (distanceKm: number) =>
+    `${distanceKm < 10 ? distanceKm.toFixed(2) : distanceKm.toFixed(1)} km`;
+
+  const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    setGpxImportPending(true);
+    setGpxToast(null);
+    void onGpxImport(file)
+      .then((result) => {
+        setGpxToast(result);
+        const importedRoutes = result.importedRoutes;
+        if (importedRoutes && importedRoutes.length > 0) {
+          setGpxImportedRoutes((current) => {
+            const existing = new Set(importedRoutes.map((route) => route.id));
+            const merged = [
+              ...importedRoutes,
+              ...current.filter((route) => !existing.has(route.id)),
+            ];
+            return merged.slice(0, 20);
+          });
+        }
+      })
+      .catch((error) => {
+        setGpxToast({
+          tone: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The GPX import failed for an unknown reason.",
+        });
+      })
+      .finally(() => setGpxImportPending(false));
+  };
+
   return (
     <div
       className={`sheet-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
@@ -386,16 +498,18 @@ export function SyncSheet({
                 : "i"}
           </span>
           <span className="account-toast__message">{gpxToast.message}</span>
-          {gpxToast.points && (
+          {gpxToast.points && gpxToast.points.length > 0 && (
             <button
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                onShowGpxImport(gpxToast.points!);
+                const points = gpxToast.points;
+                if (!points || points.length === 0) return;
+                onShowGpxImport(points);
                 setGpxToast(null);
               }}
             >
-              Show me in the map
+              Show on map
             </button>
           )}
         </div>
@@ -423,11 +537,11 @@ export function SyncSheet({
           </div>
         )}
         <h2 id="sync-title">
-          {user ? "Your map is with you." : "Carry your map everywhere."}
+          {user ? "Profile" : "Carry your map everywhere."}
         </h2>
         <p>
           {user
-            ? "Your discoveries are connected to your private Hecate account and available across your signed-in devices."
+            ? "Your private discoveries, progress, and account settings in one place."
             : "Sign in to start discovering. Your paths belong to your account and stay in sync across your devices."}
         </p>
         {authLoading ? (
@@ -435,433 +549,470 @@ export function SyncSheet({
             Checking your account…
           </div>
         ) : user ? (
-          <div className="account-card">
-            <div className="account-card__identity">
-              <span className="account-card__avatar" aria-hidden="true">
-                {accountInitial}
-              </span>
-              <span>
-                <strong>{accountDisplayName}</strong>
-                <small>{accountEmail}</small>
-              </span>
-            </div>
-            <div className="account-card__status">
-              <span /> Signed in and syncing
-            </div>
-            <button
-              type="button"
-              className="account-quick-link"
-              aria-label="Open the public leaderboard"
-              onClick={() => {
-                void openLeaderboard();
-              }}
-            >
-              <span>
-                <strong>Go to Leaderboard</strong>
-                <small>See your city and overall ranking</small>
-              </span>
-              <span aria-hidden="true">Open</span>
-            </button>
-            <details className="account-favorites">
-              <summary className="account-favorites__heading">
-                <span className="account-favorites__identity">
-                  <span className="account-favorites__mark" aria-hidden="true">
-                    <SaveIcon size={17} strokeWidth={2} />
+          <>
+            <div className="account-card">
+              <div className="account-profile-card">
+                <div className="account-card__identity">
+                  <span className="account-card__avatar" aria-hidden="true">
+                    {accountInitial}
                   </span>
                   <span>
-                    <strong id="account-favorites-title">Saved places</strong>
+                    <strong>{accountDisplayName}</strong>
+                    <small>{accountEmail}</small>
+                  </span>
+                </div>
+              </div>
+              <nav className="account-navigation" aria-label="Profile features">
+                <div className="account-navigation__heading">
+                  <strong>Your activity</strong>
+                  <small>Progress, discoveries, and collections</small>
+                </div>
+                <div className="account-activity-grid">
+                  <button
+                    type="button"
+                    className="account-feature-tile"
+                    aria-label={`Open walking stats. Current global rank: ${currentWorldRank.title}.`}
+                    onClick={onWalkingStatsOpen}
+                  >
+                    <span
+                      className="account-feature-tile__mark"
+                      aria-hidden="true"
+                    >
+                      <WorldMilestoneIcon icon={currentWorldRank.icon} />
+                    </span>
+                    <strong>Walking stats</strong>
+                    <small>Stats and milestones</small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                  <button
+                    type="button"
+                    className="account-feature-tile"
+                    aria-label={`Open cities explored. ${discoveredCityCount} ${discoveredCityCount === 1 ? "city" : "cities"}.`}
+                    onClick={onCitiesOpen}
+                  >
+                    <span
+                      className="account-feature-tile__mark"
+                      aria-hidden="true"
+                    >
+                      <CitiesIcon size={18} />
+                    </span>
+                    <strong>Cities</strong>
+                    <small>{discoveredCityCount} explored</small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                  <button
+                    type="button"
+                    className="account-feature-tile"
+                    aria-label={`Open achievements. ${earnedAchievementCount} of ${achievementCount} earned.`}
+                    onClick={onAchievementsOpen}
+                  >
+                    <span
+                      className="account-feature-tile__mark"
+                      aria-hidden="true"
+                    >
+                      <AchievementsIcon size={18} />
+                    </span>
+                    <strong>Achievements</strong>
                     <small>
-                      {favoriteGroups.length
-                        ? `${favoriteGroups.length} ${favoriteGroups.length === 1 ? "collection" : "collections"}`
-                        : "Your saved map collection"}
+                      {earnedAchievementCount} of {achievementCount} earned
+                    </small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                  <button
+                    type="button"
+                    className="account-feature-tile"
+                    onClick={onSavedPlacesOpen}
+                    aria-label={`Open saved places. ${favoritePlaces.length} saved across ${favoriteCollectionCount} collections.`}
+                  >
+                    <span
+                      className="account-feature-tile__mark"
+                      aria-hidden="true"
+                    >
+                      <SaveIcon size={18} strokeWidth={2} />
+                    </span>
+                    <strong>Saved places</strong>
+                    <small>
+                      {favoritePlaces.length}{" "}
+                      {favoritePlaces.length === 1 ? "place" : "places"}
+                    </small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                </div>
+                <div className="account-navigation__heading account-navigation__heading--community">
+                  <strong>Community</strong>
+                </div>
+                <button
+                  type="button"
+                  className="account-community-link"
+                  aria-label="Open the public leaderboard"
+                  onClick={() => {
+                    void openLeaderboard();
+                  }}
+                >
+                  <span
+                    className="account-community-link__mark"
+                    aria-hidden="true"
+                  >
+                    <LeaderboardIcon size={18} />
+                  </span>
+                  <span>
+                    <strong>Leaderboard</strong>
+                    <small>Compare your city and worldwide ranking</small>
+                  </span>
+                  <span
+                    className="account-community-link__action"
+                    aria-hidden="true"
+                  >
+                    <small>Open</small>
+                    <ChevronIcon size={16} strokeWidth={2.3} />
+                  </span>
+                </button>
+              </nav>
+              {reminderError && (
+                <div className="form-message form-message--error" role="alert">
+                  {reminderError}
+                </div>
+              )}
+              <section
+                className="account-settings-panel"
+                aria-label="Account settings"
+              >
+                <div className="account-settings-panel__header">Settings</div>
+                <div className="account-setting">
+                  <div>
+                    <strong>Live data</strong>
+                    <p>
+                      Refresh your leaderboard, badges, and public snapshot
+                      after each completed tracking session unless you switch
+                      this off.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoUpdatesEnabled}
+                    aria-label="Automatic updates"
+                    onClick={() => {
+                      const next = !autoUpdatesEnabled;
+                      setAutoUpdatesEnabled(next);
+                      setAutomaticUpdatesEnabled(next);
+                    }}
+                  >
+                    {autoUpdatesEnabled ? "On" : "Off"}
+                  </button>
+                </div>
+                <div className="account-setting">
+                  <div>
+                    <strong>Discovery reminders</strong>
+                    <p>
+                      {nativeApp
+                        ? "Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced."
+                        : "Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={reminderEnabled}
+                    aria-label="Discovery reminders"
+                    disabled={reminderPending}
+                    onClick={() => {
+                      setReminderPending(true);
+                      setReminderError("");
+                      void onReminderChange(!reminderEnabled)
+                        .then((error) => setReminderError(error ?? ""))
+                        .finally(() => setReminderPending(false));
+                    }}
+                  >
+                    {reminderEnabled ? "On" : "Off"}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="account-settings-link"
+                  aria-label="Open GPX import"
+                  onClick={() => setGpxImportSheetOpen(true)}
+                >
+                  <span
+                    className="account-settings-link__mark"
+                    aria-hidden="true"
+                  >
+                    <RouteIcon size={18} strokeWidth={2} />
+                  </span>
+                  <span>
+                    <strong>Import GPX</strong>
+                    <small>
+                      Add past activities from Strava or other services
                     </small>
                   </span>
-                </span>
-                <span className="account-favorites__summary-meta">
-                  <small>{favoritePlaces.length}</small>
                   <ChevronIcon size={16} strokeWidth={2.3} />
-                </span>
-              </summary>
-              <div className="account-favorites__groups">
-                {favoriteGroups.length === 0 && (
-                  <p className="account-favorites__empty">
-                    Places you save from the map will appear here.
-                  </p>
-                )}
-                <div className="account-favorites__categories">
-                  {favoriteGroups.map((group) => (
-                    <button
-                      key={group.id}
-                      type="button"
-                      className={
-                        favoriteCategoryId === group.id ? "active" : ""
-                      }
-                      aria-expanded={favoriteCategoryId === group.id}
-                      onClick={() =>
-                        setFavoriteCategoryId((current) =>
-                          current === group.id ? null : group.id,
-                        )
-                      }
-                    >
-                      <span className="account-favorites__category-icon">
-                        <FavoriteGlyph icon={group.id} />
+                </button>
+                {Capacitor.getPlatform() === "ios" && (
+                  <details className="tracking-help">
+                    <summary>
+                      <span>
+                        <strong>Location & tracking</strong>
+                        <small>
+                          Permissions, background use, and the blue clock
+                        </small>
                       </span>
-                      <strong>{group.label}</strong>
-                      <small>{group.places.length}</small>
-                    </button>
-                  ))}
-                </div>
-                {favoriteGroups
-                  .filter((group) => group.id === favoriteCategoryId)
-                  .map((group) => (
-                    <div className="account-favorites__places" key={group.id}>
-                      {group.places.map((place) => (
-                        <button
-                          key={place.id}
-                          type="button"
-                          onClick={() => onFavoriteSelect(place)}
-                        >
-                          <span>
-                            <strong>{place.name}</strong>
-                            <small>{place.comment}</small>
-                          </span>
-                          <ChevronIcon size={16} strokeWidth={2.3} />
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-              </div>
-            </details>
-            {reminderError && (
-              <div className="form-message form-message--error" role="alert">
-                {reminderError}
-              </div>
-            )}
-            {cityProgress && (
-              <section
-                className="account-milestones"
-                aria-labelledby="account-milestones-title"
-              >
-                <div className="account-milestones__heading">
-                  <span>
-                    <span className="account-milestones__title-row">
-                      <strong id="account-milestones-title">
-                        City milestones
-                      </strong>
+                      <ChevronIcon size={18} strokeWidth={2.4} />
+                    </summary>
+                    <div className="tracking-help__content">
+                      <p>
+                        <strong>While Using:</strong> Hecate can check for new
+                        areas in the background, but iPhone may show a blue
+                        clock for Hecate.
+                      </p>
+                      <p>
+                        <strong>Always:</strong> Hecate can send background
+                        reminders without showing the blue clock. Recording a
+                        walk may still show it.
+                      </p>
+                      <p>
+                        <strong>Never:</strong> Location features and discovery
+                        reminders cannot work.
+                      </p>
+                      <p>
+                        Only walks you start recording are saved to your map.
+                        Reminder locations are not saved.
+                      </p>
+                      <p>
+                        While recording, Hecate can suggest stopping after{" "}
+                        {INACTIVITY_REMINDER_MINUTES} minutes within{" "}
+                        {INACTIVITY_RADIUS_M} m of one spot already on your map.
+                        Areas revealed during the current recording count too.
+                        The reminder is a suggestion; recording never stops
+                        automatically.
+                      </p>
+                      <figure className="tracking-help__example">
+                        <img
+                          src="/blue-location-clock.svg"
+                          alt="Example of the blue clock on an iPhone"
+                          width="122"
+                          height="42"
+                        />
+                        <figcaption>
+                          A blue clock means an app is using location in the
+                          background. It may be Hecate or another app.
+                        </figcaption>
+                      </figure>
                       <button
                         type="button"
-                        className="account-milestones__info-button"
-                        aria-label="Why these city milestones are shown"
-                        aria-expanded={cityMilestoneInfoOpen}
-                        aria-controls="account-milestones-explanation"
                         onClick={() =>
-                          setCityMilestoneInfoOpen((current) => !current)
+                          void openLocationSettings().catch(() => undefined)
                         }
                       >
-                        <InfoIcon size={15} strokeWidth={1.9} />
+                        Open iPhone Settings
                       </button>
-                    </span>
-                    <small>Your progress in {cityProgress.cityName}</small>
-                  </span>
-                  <small>
-                    {cityMilestoneCount} / {CITY_MILESTONE_TIERS.length} earned
-                  </small>
-                </div>
-                {cityMilestoneInfoOpen && (
-                  <p
-                    className="account-milestones__explanation"
-                    id="account-milestones-explanation"
-                    role="note"
-                  >
-                    This is the city you are currently in. Hecate shows one
-                    city’s milestones at a time and updates this section when
-                    your current city changes.
-                  </p>
+                      <small>Then tap Location → Always.</small>
+                    </div>
+                  </details>
                 )}
-                <div className="account-milestones__list">
-                  {CITY_MILESTONE_TIERS.map((milestone) => {
-                    const earned =
-                      cityProgress.discoveredKm >= milestone.thresholdKm;
-                    const remainingKm = Math.max(
-                      0,
-                      milestone.thresholdKm - cityProgress.discoveredKm,
-                    );
-                    return (
-                      <article
-                        className={`account-milestone${earned ? "" : " account-milestone--locked"}`}
-                        key={milestone.id}
-                        aria-label={
-                          earned
-                            ? `${milestone.title} earned in ${cityProgress.cityName}`
-                            : `${milestone.title} requires ${milestone.thresholdKm} kilometers in ${cityProgress.cityName}. ${remainingKm.toFixed(1)} kilometers remaining.`
-                        }
-                      >
-                        <AchievementArtwork
-                          image={milestone.image}
-                          title={milestone.title}
-                          size={48}
-                        />
-                        <strong>{milestone.title}</strong>
-                        {earned ? (
-                          <span className="account-milestone__goal">
-                            Earned at {milestone.thresholdKm} km
-                          </span>
-                        ) : (
-                          <span className="account-milestone__goal">
-                            <strong>
-                              {cityProgress.discoveredKm.toFixed(1)} /{" "}
-                              {milestone.thresholdKm} km
-                            </strong>
-                            <small>{remainingKm.toFixed(1)} km left</small>
-                          </span>
-                        )}
-                        <CityLevelStars level={milestone.level} decorative />
-                      </article>
-                    );
-                  })}
-                </div>
               </section>
-            )}
-            <section
-              className="account-settings-panel"
-              aria-label="Account settings"
-            >
-              <div className="account-settings-panel__header">Settings</div>
-              <div className="account-setting">
-                <div>
-                  <strong>Live data</strong>
-                  <p>
-                    Refresh your leaderboard, badges, and public snapshot after
-                    each completed tracking session unless you switch this off.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={autoUpdatesEnabled}
-                  aria-label="Automatic updates"
-                  onClick={() => {
-                    const next = !autoUpdatesEnabled;
-                    setAutoUpdatesEnabled(next);
-                    setAutomaticUpdatesEnabled(next);
-                  }}
-                >
-                  {autoUpdatesEnabled ? "On" : "Off"}
-                </button>
-              </div>
-              <div className="account-setting">
-                <div>
-                  <strong>Discovery reminders</strong>
-                  <p>
-                    {nativeApp
-                      ? "Get a reminder after five minutes moving through new areas. Opening it pauses reminders for 30 minutes. Reminder locations are not saved or synced."
-                      : "Check for five minutes in unmapped areas while this page is open. Browsers cannot reliably monitor walks in the background."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={reminderEnabled}
-                  aria-label="Discovery reminders"
-                  disabled={reminderPending}
-                  onClick={() => {
-                    setReminderPending(true);
-                    setReminderError("");
-                    void onReminderChange(!reminderEnabled)
-                      .then((error) => setReminderError(error ?? ""))
-                      .finally(() => setReminderPending(false));
-                  }}
-                >
-                  {reminderEnabled ? "On" : "Off"}
-                </button>
-              </div>
-              <section
-                className="account-import-panel"
-                aria-labelledby="account-import-title"
-              >
-                <div className="account-import-panel__row">
-                  <div>
-                  <strong id="account-import-title">Import GPX</strong>
-                  <p>Add a past activity from Strava or another service.</p>
-                  </div>
-                  <label
-                    className={
-                      gpxImportPending
-                        ? "account-import account-import--pending"
-                        : "account-import"
-                    }
-                    htmlFor="gpx-file-input"
-                  >
-                    {gpxImportPending ? "Importing…" : "Choose file"}
-                    <input
-                      id="gpx-file-input"
-                      className="account-import-input"
-                      type="file"
-                      accept=".gpx,application/gpx+xml,application/xml,text/xml"
-                      disabled={gpxImportPending}
-                      onChange={(event) => {
-                        const file = event.currentTarget.files?.[0];
-                        event.currentTarget.value = "";
-                        if (!file) return;
-                        setGpxImportPending(true);
-                        setGpxToast(null);
-                        void onGpxImport(file)
-                          .then((result) => {
-                            setGpxToast(result);
-                          })
-                          .catch((error) => {
-                            setGpxToast({
-                              tone: "error",
-                              message:
-                                error instanceof Error
-                                  ? error.message
-                                  : "The GPX import failed for an unknown reason.",
-                            });
-                          })
-                          .finally(() => setGpxImportPending(false));
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="account-import-panel__note">
-                  Imported routes don’t unlock achievements. Progress from
-                  imports in other cities is not added to the leaderboard
-                  automatically; add those cities manually from your public
-                  snapshot.
-                </p>
-                <a
-                  className="account-import-help"
-                  href="https://www.youtube.com/watch?v=zpBD1PVCqhY"
-                target="_blank"
-                rel="noreferrer"
-              >
-                  <InfoIcon size={13} strokeWidth={2} />
-                  Exporting from Strava
-                </a>
-              </section>
-              {Capacitor.getPlatform() === "ios" && (
-                <details className="tracking-help">
-                  <summary>
-                    <span>
-                      <strong>Location & tracking</strong>
-                      <small>
-                        Permissions, background use, and the blue clock
-                      </small>
-                    </span>
-                    <ChevronIcon size={18} strokeWidth={2.4} />
-                  </summary>
-                  <div className="tracking-help__content">
-                    <p>
-                      <strong>While Using:</strong> Hecate can check for new
-                      areas in the background, but iPhone may show a blue clock
-                      for Hecate.
-                    </p>
-                    <p>
-                      <strong>Always:</strong> Hecate can send background
-                      reminders without showing the blue clock. Recording a walk
-                      may still show it.
-                    </p>
-                    <p>
-                      <strong>Never:</strong> Location features and discovery
-                      reminders cannot work.
-                    </p>
-                    <p>
-                      Only walks you start recording are saved to your map.
-                      Reminder locations are not saved.
-                    </p>
-                    <p>
-                      While recording, Hecate can suggest stopping after{" "}
-                      {INACTIVITY_REMINDER_MINUTES} minutes within{" "}
-                      {INACTIVITY_RADIUS_M} m of one spot already on your map.
-                      Areas revealed during the current recording count too. The
-                      reminder is a suggestion; recording never stops
-                      automatically.
-                    </p>
-                    <figure className="tracking-help__example">
-                      <img
-                        src="/blue-location-clock.svg"
-                        alt="Example of the blue clock on an iPhone"
-                        width="122"
-                        height="42"
-                      />
-                      <figcaption>
-                        A blue clock means an app is using location in the
-                        background. It may be Hecate or another app.
-                      </figcaption>
-                    </figure>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void openLocationSettings().catch(() => undefined)
-                      }
-                    >
-                      Open iPhone Settings
-                    </button>
-                    <small>Then tap Location → Always.</small>
-                  </div>
-                </details>
-              )}
-            </section>
-            <button
-              className="sign-out-button"
-              type="button"
-              onClick={signOut}
-              disabled={authPending}
-            >
-              Sign out
-            </button>
-            {!confirmingDelete ? (
               <button
-                className="delete-account-button"
+                className="sign-out-button"
                 type="button"
-                onClick={() => {
-                  setConfirmingDelete(true);
-                  setMessage("");
-                }}
+                onClick={signOut}
                 disabled={authPending}
               >
-                Delete account
+                Sign out
               </button>
-            ) : (
-              <div
-                className="delete-confirmation"
-                role="alertdialog"
-                aria-labelledby="delete-account-title"
-                aria-describedby="delete-account-description"
-              >
-                <strong id="delete-account-title">Delete your account?</strong>
-                <p id="delete-account-description">
-                  All your discoveries, routes, and account data will be
-                  permanently deleted. This cannot be recovered.
-                </p>
-                <div className="delete-confirmation__actions">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingDelete(false)}
-                    disabled={authPending}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="delete-confirmation__confirm"
-                    type="button"
-                    onClick={deleteAccount}
-                    disabled={authPending}
-                  >
-                    {authPending ? "Deleting…" : "Delete permanently"}
-                  </button>
+              {!confirmingDelete ? (
+                <button
+                  className="delete-account-button"
+                  type="button"
+                  onClick={() => {
+                    setConfirmingDelete(true);
+                    setMessage("");
+                  }}
+                  disabled={authPending}
+                >
+                  Delete account
+                </button>
+              ) : (
+                <div
+                  className="delete-confirmation"
+                  role="alertdialog"
+                  aria-labelledby="delete-account-title"
+                  aria-describedby="delete-account-description"
+                >
+                  <strong id="delete-account-title">
+                    Delete your account?
+                  </strong>
+                  <p id="delete-account-description">
+                    All your discoveries, routes, and account data will be
+                    permanently deleted. This cannot be recovered.
+                  </p>
+                  <div className="delete-confirmation__actions">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(false)}
+                      disabled={authPending}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="delete-confirmation__confirm"
+                      type="button"
+                      onClick={deleteAccount}
+                      disabled={authPending}
+                    >
+                      {authPending ? "Deleting…" : "Delete permanently"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-            {message && (
+              )}
+              {message && (
+                <div
+                  className={`form-message form-message--${messageTone}`}
+                  role={messageTone === "error" ? "alert" : "status"}
+                >
+                  {message}
+                </div>
+              )}
+            </div>
+            {gpxImportSheetOpen && (
               <div
-                className={`form-message form-message--${messageTone}`}
-                role={messageTone === "error" ? "alert" : "status"}
+                className="sheet-backdrop gpx-import-backdrop"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setGpxImportSheetOpen(false);
+                }}
               >
-                {message}
+                <section
+                  className="sheet profile-collection-sheet gpx-import-sheet"
+                  onClick={(event) => event.stopPropagation()}
+                  aria-modal="true"
+                  role="dialog"
+                  aria-labelledby="gpx-import-sheet-title"
+                >
+                  <button
+                    className="icon-button walking-stats-back"
+                    type="button"
+                    onClick={() => setGpxImportSheetOpen(false)}
+                    aria-label="Back to profile"
+                  >
+                    <ArrowLeftIcon />
+                  </button>
+                  <button
+                    className="icon-button sheet__close"
+                    type="button"
+                    onClick={() => {
+                      setGpxImportSheetOpen(false);
+                      onClose();
+                    }}
+                    aria-label="Close GPX import"
+                  >
+                    <XIcon />
+                  </button>
+                  <div className="eyebrow">Your data</div>
+                  <h2 id="gpx-import-sheet-title">Import GPX</h2>
+                  <div className="gpx-import-sheet__content">
+                    <p className="gpx-import-sheet__file-description">
+                      Export a GPX file from Strava or most activity apps, then
+                      add it to your map here.
+                    </p>
+                    <section className="gpx-import-sheet__privacy">
+                      <strong>Your import stays private</strong>
+                      <p>
+                        Imported routes add new ground to your map but don’t
+                        unlock achievements. Cities from an import are only
+                        added to the leaderboard when you add them to your
+                        public snapshot.
+                      </p>
+                      <a
+                        className="account-import-help"
+                        href="https://www.youtube.com/watch?v=zpBD1PVCqhY"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <InfoIcon size={13} strokeWidth={2} />
+                        Exporting from Strava
+                      </a>
+                    </section>
+                    <section
+                      className="gpx-import-sheet__file"
+                      aria-label="Import a GPX file from your device"
+                    >
+                      <span
+                        className="gpx-import-sheet__file-mark"
+                        aria-hidden="true"
+                      >
+                        <RouteIcon size={20} strokeWidth={2} />
+                      </span>
+                      <span>
+                        <strong>Choose a GPX file</strong>
+                      </span>
+                      <label
+                        className={
+                          gpxImportPending
+                            ? "account-import account-import--pending"
+                            : "account-import"
+                        }
+                        htmlFor="gpx-file-input"
+                      >
+                        {gpxImportPending ? "Importing…" : "Select file"}
+                        <input
+                          id="gpx-file-input"
+                          className="account-import-input"
+                          type="file"
+                          accept=".gpx,application/gpx+xml,application/xml,text/xml"
+                          disabled={gpxImportPending}
+                          onChange={handleGpxFileChange}
+                        />
+                      </label>
+                    </section>
+
+                    <section
+                      className="gpx-import-sheet__history"
+                      aria-labelledby="gpx-import-history-title"
+                    >
+                      <strong id="gpx-import-history-title">
+                        Imported routes
+                      </strong>
+                      {gpxImportedRoutes.length === 0 ? (
+                        <p>
+                          No GPX routes imported yet. Routes you import will
+                          appear here.
+                        </p>
+                      ) : (
+                        <ul>
+                          {gpxImportedRoutes.map((route) => (
+                            <li key={route.id}>
+                              <button
+                                type="button"
+                                className="gpx-import-sheet__history-route"
+                                onClick={() => onShowGpxImportRoute(route.id)}
+                                aria-label={`Show imported route ${route.title} on the map`}
+                              >
+                                <strong>{route.title}</strong>
+                                <span className="gpx-import-sheet__history-meta">
+                                  <time
+                                    dateTime={new Date(
+                                      route.addedAt,
+                                    ).toISOString()}
+                                  >
+                                    Added {formatGpxImportDate(route.addedAt)}
+                                  </time>
+                                  {route.addedKm > 0 && (
+                                    <span>
+                                      +{formatGpxImportDistance(route.addedKm)}{" "}
+                                      added
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  </div>
+                </section>
               </div>
             )}
-          </div>
+          </>
         ) : isSyncConfigured ? (
           <div className="auth-panel">
             <div

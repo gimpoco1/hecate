@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const native = vi.hoisted(() => ({
   addWatcher: vi.fn(),
   removeWatcher: vi.fn(),
+  removeAllWatchers: vi.fn(),
   openSettings: vi.fn(),
 }))
 
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { isNativePlatform: () => true },
+  Capacitor: { getPlatform: () => 'ios', isNativePlatform: () => true },
   registerPlugin: () => ({
     addWatcher: native.addWatcher,
     removeWatcher: native.removeWatcher,
+    removeAllWatchers: native.removeAllWatchers,
     openSettings: native.openSettings,
   }),
 }))
@@ -18,7 +20,24 @@ vi.mock('@capacitor/core', () => ({
 import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from './location'
 
 describe('native location lifecycle', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    native.removeAllWatchers.mockResolvedValue(undefined)
+  })
+
+  it('does not register a watcher when stopped during orphan cleanup', async () => {
+    let resolveCleanup!: () => void
+    native.removeAllWatchers.mockReturnValue(new Promise<void>(resolve => { resolveCleanup = resolve }))
+    const tracker = createLocationTracker()
+
+    const starting = tracker.start(() => undefined, () => undefined)
+    await vi.waitFor(() => expect(native.removeAllWatchers).toHaveBeenCalledOnce())
+    await tracker.stop()
+    resolveCleanup()
+    await starting
+
+    expect(native.addWatcher).not.toHaveBeenCalled()
+  })
 
   it('keeps passive location updates in the foreground and removes the watcher when inactive', async () => {
     native.addWatcher.mockResolvedValue('foreground-watcher')
@@ -103,6 +122,7 @@ describe('native location lifecycle', () => {
     const tracker = createForegroundLocationTracker()
 
     const starting = tracker.start(() => undefined, () => undefined)
+    await vi.waitFor(() => expect(native.addWatcher).toHaveBeenCalledOnce())
     await tracker.stop()
     resolveWatcher('late-watcher')
     await starting
