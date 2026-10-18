@@ -1110,7 +1110,7 @@ export default function App() {
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
 
   const enqueueJourneyActivity = (operation: () => Promise<void>): void => {
-    if (Capacitor.getPlatform() !== "ios") return;
+    if (!Capacitor.isNativePlatform()) return;
     journeyActivityQueueRef.current = journeyActivityQueueRef.current
       .then(operation)
       .catch((error: Error) => {
@@ -1149,7 +1149,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (Capacitor.getPlatform() !== "ios") return;
+    if (!Capacitor.isNativePlatform()) return;
     const listener = JourneyActivity.addListener("stopRequested", (request) => {
       if (request.ownerId !== accountUserIdRef.current ||
           request.walkId !== activeWalkRef.current?.id) return;
@@ -1161,7 +1161,7 @@ export default function App() {
 
   useEffect(() => {
     const walk = activeWalkRef.current;
-    if (Capacitor.getPlatform() !== "ios" || !accountUserId || !walk || !documentVisible) return;
+    if (!Capacitor.isNativePlatform() || !accountUserId || !walk || !documentVisible) return;
     let active = true;
     void JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: walk.id })
       .then(({ request }) => {
@@ -1181,7 +1181,7 @@ export default function App() {
       enqueueJourneyActivity(() => JourneyActivity.clear());
       return;
     }
-    if (!documentVisible || Capacitor.getPlatform() !== "ios") return;
+    if (!Capacitor.isNativePlatform() || (Capacitor.getPlatform() === "ios" && !documentVisible)) return;
     if (!accountUserId || tracking !== "tracking" || !walk || !started ||
         trackingUserRef.current !== accountUserId) return;
     const snapshot = journeyActivitySnapshot(
@@ -2794,7 +2794,7 @@ export default function App() {
     }
     const liveWalk = activeWalkRef.current;
     const liveStart = explorationStartRef.current;
-    if (Capacitor.getPlatform() === "ios" && liveWalk && liveStart &&
+    if (Capacitor.isNativePlatform() && liveWalk && liveStart &&
         Date.now() - lastJourneyActivityUpdateRef.current >= 10_000) {
       lastJourneyActivityUpdateRef.current = Date.now();
       const snapshot = journeyActivitySnapshot(
@@ -2835,7 +2835,7 @@ export default function App() {
     const widgetStop = widgetStopRef.current?.walkId === active?.id ? widgetStopRef.current : null;
     const finishedAt = Math.max(active?.startedAt ?? 0, widgetStop?.finishedAt ?? Date.now());
     const liveStart = explorationStartRef.current;
-    if (Capacitor.getPlatform() === "ios" && active && liveStart) {
+    if (Capacitor.isNativePlatform() && active && liveStart) {
       const snapshot = journeyActivitySnapshot(
         active, liveStart.cells, cellsRef.current, journeyActivityCityRef.current,
       );
@@ -3439,7 +3439,7 @@ export default function App() {
     trackerRef.current = tracker;
     let trackerFailed = false;
     const restore = async (): Promise<void> => {
-      if (Capacitor.getPlatform() === "ios") {
+      if (Capacitor.isNativePlatform()) {
         const { request } = await JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: restoredWalkId });
         if (trackerRef.current !== tracker) return;
         if (request) {
