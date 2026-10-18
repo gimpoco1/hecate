@@ -9,12 +9,18 @@ import {
 import { emptyWalkingStats } from "./walkingStats";
 
 describe("journey counters", () => {
-  it("shows completed elapsed minutes from the original walk start", () => {
+  it("shows elapsed minutes and seconds from the original walk start", () => {
     expect(journeyTimeCounter(4 * 60_000 + 32_000)).toMatchObject({
-      value: 4,
-      suffix: " min",
-      label: "4 minutes",
+      text: "4:32",
+      label: "4 minutes, 32 seconds",
     });
+  });
+
+  it.each([
+    [-1000, "0:00"], [0, "0:00"], [59_000, "0:59"], [60_000, "1:00"],
+    [3_599_000, "59:59"], [3_600_000, "1:00:00"], [3_661_000, "1:01:01"],
+  ])("formats %i milliseconds without rounding up", (elapsed, text) => {
+    expect(journeyTimeCounter(elapsed).text).toBe(text);
   });
 
   it("keeps new-area progress at two decimal places", () => {

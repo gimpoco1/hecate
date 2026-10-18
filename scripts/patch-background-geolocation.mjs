@@ -78,6 +78,49 @@ if (!source.includes('@objc func removeAllWatchers')) {
 }
 writeFileSync(pluginPath, source)
 
+// A LiveActivityIntent runs in the app process without bringing its WebView to the foreground.
+// Stop only the matching recorded walk, preserving passive discovery-reminder watchers.
+source = readFileSync(pluginPath, 'utf8')
+if (!source.includes('private var journeyStopObserver: NSObjectProtocol?')) {
+  const replaceRequired = (original, replacement) => {
+    if (!source.includes(original))
+      throw new Error('Background geolocation plugin changed; review the native widget stop integration.')
+    source = source.replace(original, replacement)
+  }
+  replaceRequired('    let callbackId: String', '    var journeyId: String?\n    let callbackId: String')
+  replaceRequired('    private var watchers = [Watcher]()', `    private var watchers = [Watcher]()
+    private var journeyStopObserver: NSObjectProtocol?
+
+    deinit {
+        if let journeyStopObserver { NotificationCenter.default.removeObserver(journeyStopObserver) }
+    }
+
+    private func stopJourneyWatchers(_ walkId: String) {
+        let stopped = watchers.filter { $0.journeyId == walkId }
+        stopped.forEach { watcher in
+            watcher.stop()
+            if let call = bridge?.savedCall(withID: watcher.callbackId) { bridge?.releaseCall(call) }
+        }
+        watchers.removeAll { $0.journeyId == walkId }
+    }`)
+  replaceRequired('        UIDevice.current.isBatteryMonitoringEnabled = true', `        UIDevice.current.isBatteryMonitoringEnabled = true
+        journeyStopObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("HecateJourneyStopRequested"), object: nil, queue: .main
+        ) { [weak self] notification in
+            if let walkId = notification.userInfo?["walkId"] as? String {
+                self?.stopJourneyWatchers(walkId)
+            }
+        }`)
+  replaceRequired('            let background = call.getString("backgroundMessage") != nil', `            let journeyId = call.getString("journeyId")
+            if let journeyId, UserDefaults.standard.data(forKey: "hecate.journey.stop." + journeyId) != nil {
+                call.reject("This journey was stopped from the Lock Screen.", "JOURNEY_STOPPED")
+                return
+            }
+            let background = call.getString("backgroundMessage") != nil`)
+  replaceRequired('            let manager = watcher.locationManager', '            watcher.journeyId = journeyId\n            let manager = watcher.locationManager')
+  writeFileSync(pluginPath, source)
+}
+
 let registration = readFileSync(registrationPath, 'utf8')
 if (!registration.includes('CAP_PLUGIN_METHOD(removeAllWatchers,')) {
   if (!registration.includes(registrationOriginal)) {

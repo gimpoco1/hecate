@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
@@ -116,6 +117,7 @@ import {
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
+import { JourneyActivity, journeyActivitySnapshot, journeyActionFromUrl, type JourneyStopRequest } from "./journeyActivity";
 import { replaceNotificationSchedules } from "./notificationScheduling";
 import {
   defaultActivityNotificationPreferences,
@@ -632,14 +634,15 @@ export function journeyPercentageCounter(
   };
 }
 
-export function journeyTimeCounter(elapsedMs: number): JourneyCounterDisplay {
-  const value = Math.max(1, Math.floor(elapsedMs / 60_000));
+export function journeyTimeCounter(elapsedMs: number): { text: string; label: string } {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor(totalSeconds / 60) % 60;
+  const seconds = totalSeconds % 60;
+  const pad = (value: number): string => String(value).padStart(2, "0");
   return {
-    value,
-    places: integerCounterPlaces(value),
-    prefix: "",
-    suffix: " min",
-    label: `${value} ${value === 1 ? "minute" : "minutes"}`,
+    text: hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`,
+    label: `${hours > 0 ? `${hours} hours, ` : ""}${minutes} minutes, ${seconds} seconds`,
   };
 }
 
@@ -869,6 +872,11 @@ export default function App() {
   const viewCityLookupGenerationRef = useRef(0);
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
+  const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const journeyActivityCityRef = useRef<CityBoundary | null>(null);
+  const lastJourneyActivityUpdateRef = useRef(0);
+  const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<string | null>(null);
+  const widgetStopRef = useRef<JourneyStopRequest | null>(null);
   const trackingUserRef = useRef<string | null>(null);
   const pendingWalksRef = useRef<PendingWalk[]>([]);
   const walkUploadPromiseRef = useRef<Promise<void> | null>(null);
@@ -1014,6 +1022,7 @@ export default function App() {
     currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary)
       ? cityBoundary
       : null;
+  journeyActivityCityRef.current = cityBoundary;
   const isCityScale = zoom >= 6;
   const cachedViewCity = useMemo(
     () =>
@@ -1099,6 +1108,91 @@ export default function App() {
   const nativeApp = isNativeApp();
   const devToolsEnabled =
     import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
+
+  const enqueueJourneyActivity = (operation: () => Promise<void>): void => {
+    if (Capacitor.getPlatform() !== "ios") return;
+    journeyActivityQueueRef.current = journeyActivityQueueRef.current
+      .then(operation)
+      .catch((error: Error) => {
+        console.warn("Could not synchronize journey Live Activity", { error });
+      });
+  };
+
+  useEffect(() => {
+    if (!authReady || discoveryLoading) return;
+    if (!accountUserId) {
+      enqueueJourneyActivity(() => JourneyActivity.clear());
+      return;
+    }
+    const walkId = trackingUserRef.current === accountUserId
+      ? activeWalkRef.current?.id ?? null : null;
+    enqueueJourneyActivity(() => JourneyActivity.reconcile({ ownerId: accountUserId, walkId }));
+  }, [accountUserId, authReady, discoveryLoading, tracking]);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+    let active = true;
+    const handleUrl = (value: string): void => {
+      if (!active) return;
+      const action = journeyActionFromUrl(value);
+      if (!action) return;
+      if (action.action === "stop") setRequestedJourneyStopId(action.walkId);
+    };
+    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) => handleUrl(url));
+    void CapacitorApp.getLaunchUrl().then((result) => {
+      if (result) handleUrl(result.url);
+    }).catch((error: Error) => console.warn("Could not read journey launch URL", { error }));
+    return () => {
+      active = false;
+      void listener.then((handle) => handle.remove());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+    const listener = JourneyActivity.addListener("stopRequested", (request) => {
+      if (request.ownerId !== accountUserIdRef.current ||
+          request.walkId !== activeWalkRef.current?.id) return;
+      widgetStopRef.current = request;
+      setRequestedJourneyStopId(request.walkId);
+    });
+    return () => { void listener.then(handle => handle.remove()); };
+  }, []);
+
+  useEffect(() => {
+    const walk = activeWalkRef.current;
+    if (Capacitor.getPlatform() !== "ios" || !accountUserId || !walk || !documentVisible) return;
+    let active = true;
+    void JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: walk.id })
+      .then(({ request }) => {
+        if (!active || !request || activeWalkRef.current?.id !== request.walkId ||
+            accountUserIdRef.current !== request.ownerId) return;
+        widgetStopRef.current = request;
+        setRequestedJourneyStopId(request.walkId);
+      })
+      .catch((error: Error) => console.error("Could not read widget journey stop", { error, walkId: walk.id }));
+    return () => { active = false; };
+  }, [accountUserId, documentVisible, tracking]);
+
+  useEffect(() => {
+    const walk = activeWalkRef.current;
+    const started = explorationStartRef.current;
+    if (tracking === "denied" || tracking === "unavailable") {
+      enqueueJourneyActivity(() => JourneyActivity.clear());
+      return;
+    }
+    if (!documentVisible || Capacitor.getPlatform() !== "ios") return;
+    if (!accountUserId || tracking !== "tracking" || !walk || !started ||
+        trackingUserRef.current !== accountUserId) return;
+    const snapshot = journeyActivitySnapshot(
+      walk, started.cells, cellsRef.current, journeyActivityCityRef.current,
+    );
+    enqueueJourneyActivity(async () => {
+      if (activeWalkRef.current?.id !== snapshot.walkId ||
+          trackingUserRef.current !== accountUserId) return;
+      await JourneyActivity.start({ ...snapshot, ownerId: accountUserId });
+    });
+  }, [accountUserId, tracking, documentVisible]);
 
   const setDevToolsOpen = (visible: boolean) => {
     setDevToolsVisible(visible);
@@ -2631,6 +2725,7 @@ export default function App() {
   }, [accountUserId, currentPoint]);
 
   const addPoint = (point: Coordinate) => {
+    if (widgetStopRef.current && widgetStopRef.current.walkId === activeWalkRef.current?.id) return;
     if (!isUsableGpsPoint(point)) {
       if (
         reminderEnabledRef.current &&
@@ -2697,6 +2792,16 @@ export default function App() {
       cellsRef.current.push(nextCell);
       discoveredNewCell = true;
     }
+    const liveWalk = activeWalkRef.current;
+    const liveStart = explorationStartRef.current;
+    if (Capacitor.getPlatform() === "ios" && liveWalk && liveStart &&
+        Date.now() - lastJourneyActivityUpdateRef.current >= 10_000) {
+      lastJourneyActivityUpdateRef.current = Date.now();
+      const snapshot = journeyActivitySnapshot(
+        liveWalk, liveStart.cells, cellsRef.current, journeyActivityCityRef.current,
+      );
+      enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+    }
     // Check after adding this point to the map. A newly revealed spot also
     // qualifies if the recording then stays nearby for fifteen minutes.
     considerStopReminder();
@@ -2727,22 +2832,33 @@ export default function App() {
     }
     const active = activeWalkRef.current;
     const walkOwner = trackingUserRef.current;
+    const widgetStop = widgetStopRef.current?.walkId === active?.id ? widgetStopRef.current : null;
+    const finishedAt = Math.max(active?.startedAt ?? 0, widgetStop?.finishedAt ?? Date.now());
+    const liveStart = explorationStartRef.current;
+    if (Capacitor.getPlatform() === "ios" && active && liveStart) {
+      const snapshot = journeyActivitySnapshot(
+        active, liveStart.cells, cellsRef.current, journeyActivityCityRef.current,
+      );
+      enqueueJourneyActivity(() => JourneyActivity.end({ ...snapshot, finishedAt }));
+    }
     activeWalkRef.current = null;
     trackingUserRef.current = null;
     if (active && walkOwner && active.points.length >= 2) {
       const started = explorationStartRef.current;
       const completed: PendingWalk = {
         ...active,
-        finishedAt: Math.max(
-          active.startedAt,
-          active.points.at(-1)?.recordedAt ?? Date.now(),
-        ),
+        finishedAt,
       };
       if (isAutomaticUpdatesEnabled()) {
         setAutomaticUpdatePending(walkOwner, true);
       }
       pendingWalksRef.current.push(completed);
-      saveWalkJournal(walkOwner, pendingWalksRef.current, null);
+      if (!saveWalkJournal(walkOwner, pendingWalksRef.current, null))
+        throw new Error("Could not save the completed journey on this device. The widget stop has not been acknowledged.");
+      if (widgetStop) {
+        enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
+        widgetStopRef.current = null;
+      }
       await flushPendingWalks(walkOwner);
       // The recap and the next app launch must be based on the same completed
       // discovery. Do not rely only on the debounced background cell sync.
@@ -2820,7 +2936,12 @@ export default function App() {
         }
       }
     } else if (active && walkOwner) {
-      saveWalkJournal(walkOwner, pendingWalksRef.current, null);
+      if (!saveWalkJournal(walkOwner, pendingWalksRef.current, null))
+        throw new Error("Could not clear the finished journey from this device.");
+      if (widgetStop) {
+        enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
+        widgetStopRef.current = null;
+      }
     }
     explorationStartRef.current = null;
   };
@@ -3168,7 +3289,6 @@ export default function App() {
   };
 
   const toggleTracking = async () => {
-    void requestDeviceHeadingPermission();
     if (tracking === "tracking") {
       resetInactivityReminder();
       const tracker = trackerRef.current;
@@ -3180,6 +3300,7 @@ export default function App() {
       finalizeRecordedWalk();
       return;
     }
+    void requestDeviceHeadingPermission();
     if (walkFinalizing) return;
     if (!accountUserId) {
       setSyncOpen(true);
@@ -3220,7 +3341,7 @@ export default function App() {
       ...activeWalkRef.current,
       finishedAt: activeWalkRef.current.startedAt,
     });
-    const tracker = createLocationTracker();
+    const tracker = createLocationTracker(walkId);
     trackerRef.current = tracker;
     // The journey exists locally before the native watcher finishes starting,
     // so reflect the active session immediately and roll back on failure.
@@ -3261,6 +3382,21 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!requestedJourneyStopId || !authReady || discoveryLoading ||
+        walkFinalizing || tracking === "requesting") return;
+    const walk = activeWalkRef.current;
+    if (walk && walk.id === requestedJourneyStopId &&
+        trackingUserRef.current === accountUserId && tracking === "tracking") {
+      setRequestedJourneyStopId(null);
+      setSyncOpen(false);
+      void toggleTracking();
+      return;
+    }
+    if (!walk || walk.id !== requestedJourneyStopId)
+      setRequestedJourneyStopId(null);
+  }, [requestedJourneyStopId, accountUserId, authReady, discoveryLoading, tracking, walkFinalizing]);
+
+  useEffect(() => {
     const requestedUserId = pendingMorningWalkStartUserIdRef.current;
     if (authReady && requestedUserId && requestedUserId !== accountUserId) {
       pendingMorningWalkStartUserIdRef.current = null;
@@ -3298,11 +3434,22 @@ export default function App() {
       trackerRef.current
     )
       return;
-    const tracker = createLocationTracker();
+    const restoredWalkId = activeWalkRef.current.id;
+    const tracker = createLocationTracker(restoredWalkId);
     trackerRef.current = tracker;
     let trackerFailed = false;
-    void tracker
-      .start(addPoint, (error) => {
+    const restore = async (): Promise<void> => {
+      if (Capacitor.getPlatform() === "ios") {
+        const { request } = await JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: restoredWalkId });
+        if (trackerRef.current !== tracker) return;
+        if (request) {
+          widgetStopRef.current = request;
+          setRequestedJourneyStopId(request.walkId);
+          setTracking("tracking");
+          return;
+        }
+      }
+      await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
         focusFirstTrackingPointRef.current = false;
@@ -3320,7 +3467,9 @@ export default function App() {
         setTracking(
           error.code === "permission-denied" ? "denied" : "unavailable",
         );
-      })
+      });
+    };
+    void restore()
       .then(() => {
         if (trackerFailed || trackerRef.current !== tracker) return;
         setTracking("tracking");
@@ -3460,13 +3609,21 @@ export default function App() {
   }, []);
 
   const scrollToCityMilestones = useCallback((behavior: ScrollBehavior) => {
-    const title = document.getElementById(JOURNEY_CITY_MILESTONES_TITLE_ID);
+    const overview = journeyCardRef.current?.querySelector(
+      ".journey-overview",
+    ) as HTMLElement | null;
+    const title = overview?.querySelector(
+      `#${JOURNEY_CITY_MILESTONES_TITLE_ID}`,
+    );
     const section = title?.closest("section");
-    if (!section) return false;
-    section.scrollIntoView({
+    if (!overview || !section) return false;
+    const top =
+      section.getBoundingClientRect().top -
+      overview.getBoundingClientRect().top +
+      overview.scrollTop;
+    overview.scrollTo({
       behavior,
-      block: "start",
-      inline: "nearest",
+      top,
     });
     return true;
   }, []);
@@ -4478,7 +4635,9 @@ export default function App() {
                       <span>new area</span>
                     </div>
                     <div>
-                      <JourneyCounterValue display={displayedTimeCounter} />
+                      <strong className="active-journey-value" aria-label={displayedTimeCounter.label}>
+                        {displayedTimeCounter.text}
+                      </strong>
                       <span>time</span>
                     </div>
                   </div>

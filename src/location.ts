@@ -173,7 +173,7 @@ class NativeLocationTracker implements LocationTracker {
   private removalPromise: Promise<void> | null = null;
   private active = false;
 
-  constructor(private readonly mode: "walk" | "foreground" | "reminder") {}
+  constructor(private readonly mode: "walk" | "foreground" | "reminder", private readonly journeyId: string | null) {}
 
   async start(
     onPoint: (point: Coordinate) => void,
@@ -185,8 +185,10 @@ class NativeLocationTracker implements LocationTracker {
     if (this.stopRequested) return;
     const options: Parameters<BackgroundGeolocationPlugin["addWatcher"]>[0] & {
       showsBackgroundLocationIndicator?: boolean;
+      journeyId: string | null;
     } = {
       showsBackgroundLocationIndicator: this.mode === "walk",
+      journeyId: this.journeyId,
       ...(this.mode === "walk"
         ? {
             backgroundTitle: "Hecate is revealing your path",
@@ -259,21 +261,21 @@ export function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
 
-export function createLocationTracker(): LocationTracker {
+export function createLocationTracker(walkId: string): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("walk")
+    ? new NativeLocationTracker("walk", walkId)
     : new WebLocationTracker(true);
 }
 
 export function createForegroundLocationTracker(): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("foreground")
+    ? new NativeLocationTracker("foreground", null)
     : new WebLocationTracker(false);
 }
 
 export function createReminderLocationTracker(): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("reminder")
+    ? new NativeLocationTracker("reminder", null)
     : new WebLocationTracker(false);
 }
 

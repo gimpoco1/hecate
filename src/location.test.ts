@@ -43,7 +43,7 @@ describe('native location lifecycle', () => {
   it('does not register a watcher when stopped during orphan cleanup', async () => {
     let resolveCleanup!: () => void
     native.removeAllWatchers.mockReturnValue(new Promise<void>(resolve => { resolveCleanup = resolve }))
-    const tracker = createLocationTracker()
+    const tracker = createLocationTracker('walk-1')
 
     const starting = tracker.start(() => undefined, () => undefined)
     await vi.waitFor(() => expect(native.removeAllWatchers).toHaveBeenCalledOnce())
@@ -66,6 +66,7 @@ describe('native location lifecycle', () => {
         requestPermissions: true,
         stale: true,
         showsBackgroundLocationIndicator: false,
+        journeyId: null,
       }),
       expect.any(Function),
     )
@@ -86,7 +87,7 @@ describe('native location lifecycle', () => {
     native.removeWatcher
       .mockRejectedValueOnce(new Error('Native watcher is still registering'))
       .mockResolvedValueOnce(undefined)
-    const tracker = createLocationTracker()
+    const tracker = createLocationTracker('walk-1')
 
     await tracker.start(() => undefined, () => undefined)
     await tracker.stop()
@@ -101,7 +102,7 @@ describe('native location lifecycle', () => {
     native.removeWatcher.mockReturnValue(new Promise<void>(resolve => { resolveRemoval = resolve }))
     const onPoint = vi.fn()
     const onError = vi.fn()
-    const tracker = createLocationTracker()
+    const tracker = createLocationTracker('walk-1')
 
     await tracker.start(onPoint, onError)
     const callback = native.addWatcher.mock.calls[0][1]
@@ -164,11 +165,11 @@ describe('native location lifecycle', () => {
 
   it('uses an 8 metre filter for responsive active tracking', async () => {
     native.addWatcher.mockResolvedValue('watcher')
-    const tracker = createLocationTracker()
+    const tracker = createLocationTracker('walk-1')
     await tracker.start(() => undefined, () => undefined)
 
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 8, stale: false, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
+      expect.objectContaining({ journeyId: 'walk-1', distanceFilter: 8, stale: false, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
       expect.any(Function),
     )
   })
@@ -179,7 +180,7 @@ describe('native location lifecycle', () => {
     const tracker = createReminderLocationTracker()
     await tracker.start(() => undefined, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ distanceFilter: 30, stale: false, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
+      expect.objectContaining({ journeyId: null, distanceFilter: 30, stale: false, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
       expect.any(Function),
     )
     await tracker.stop()
