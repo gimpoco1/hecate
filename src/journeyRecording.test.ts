@@ -60,6 +60,23 @@ describe("journey recording validation", () => {
     await tracker.stop();
   });
 
+  it("preserves valid batched fixes before reporting a speed stop", async () => {
+    const input = source();
+    const tracker = createJourneyRecordingTracker(input.tracker, [await barcelona()]);
+    const accepted: Coordinate[] = [];
+    const errors = vi.fn<(error: LocationTrackerError) => void>(() => expect(accepted).toEqual([start, second]));
+    const second = { ...start, lng: 2.1702, recordedAt: 20_000 };
+    await tracker.start((point) => accepted.push(point), errors);
+    input.emit(start);
+    input.emit(second);
+    input.emit({ ...start, lng: 2.18, recordedAt: 21_000, speed: 40 });
+    input.emit({ ...start, recordedAt: 30_000 });
+    await vi.waitFor(() => expect(errors).toHaveBeenCalledOnce());
+    expect(errors.mock.calls[0]).toEqual([{ code: "speed-exceeded", message: expect.any(String) }]);
+    expect(accepted).toEqual([start, second]);
+    await tracker.stop();
+  });
+
   it("verifies a new city before recording its first position", async () => {
     const input = source();
     const tracker = createJourneyRecordingTracker(input.tracker, []);

@@ -183,7 +183,7 @@ import type {
   PendingWalk,
   TrackingState,
 } from "./types";
-import { loadWalkJournalState, saveWalkJournal } from "./walkJournal";
+import { completeWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
 import {
   compactImportedRoute,
   parseGpx,
@@ -860,6 +860,8 @@ export default function App() {
     PersonalAchievementId[]
   >([]);
   const [walkFinalizing, setWalkFinalizing] = useState(false);
+  const [journeySaveError, setJourneySaveError] = useState<string | null>(null);
+  const journeyFinishedAtRef = useRef<number | null>(null);
   const [achievementTestPreview, setAchievementTestPreview] =
     useState<PersonalAchievementId | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -1972,6 +1974,8 @@ export default function App() {
         });
       });
     }
+    journeyFinishedAtRef.current = null;
+    setJourneySaveError(null);
     setPoints([]);
     setCells([]);
     setDiscoveredCities([]);
@@ -2879,7 +2883,8 @@ export default function App() {
     const active = activeWalkRef.current;
     const walkOwner = trackingUserRef.current;
     const widgetStop = widgetStopRef.current?.walkId === active?.id ? widgetStopRef.current : null;
-    const finishedAt = Math.max(active?.startedAt ?? 0, widgetStop?.finishedAt ?? Date.now());
+    const finishedAt = Math.max(active?.startedAt ?? 0, widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now());
+    if (active && walkOwner) journeyFinishedAtRef.current = finishedAt;
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && active && liveStart) {
       const snapshot = journeyActivitySnapshot(
@@ -2887,6 +2892,11 @@ export default function App() {
       );
       enqueueJourneyActivity(() => JourneyActivity.end({ ...snapshot, finishedAt }));
     }
+    if (active && walkOwner) {
+      pendingWalksRef.current = completeWalkJournal(walkOwner, pendingWalksRef.current, { ...active, finishedAt });
+    }
+    journeyFinishedAtRef.current = null;
+    setJourneySaveError(null);
     activeWalkRef.current = null;
     trackingUserRef.current = null;
     if (active && walkOwner && active.points.length >= 2) {
@@ -2898,9 +2908,6 @@ export default function App() {
       if (isAutomaticUpdatesEnabled()) {
         setAutomaticUpdatePending(walkOwner, true);
       }
-      pendingWalksRef.current.push(completed);
-      if (!saveWalkJournal(walkOwner, pendingWalksRef.current, null))
-        throw new Error("Could not save the completed journey on this device. The widget stop has not been acknowledged.");
       if (widgetStop) {
         enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
         widgetStopRef.current = null;
@@ -2982,8 +2989,6 @@ export default function App() {
         }
       }
     } else if (active && walkOwner) {
-      if (!saveWalkJournal(walkOwner, pendingWalksRef.current, null))
-        throw new Error("Could not clear the finished journey from this device.");
       if (widgetStop) {
         enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
         widgetStopRef.current = null;
@@ -2997,6 +3002,9 @@ export default function App() {
     void finishActiveWalk()
       .catch((error) => {
         console.error("Could not finalize recorded walk", { error });
+        if (activeWalkRef.current && trackingUserRef.current === accountUserIdRef.current) {
+          setJourneySaveError(error instanceof Error ? error.message : "Could not save this journey. Keep Hecate open and retry saving.");
+        }
       })
       .finally(() => setWalkFinalizing(false));
   };
@@ -3007,8 +3015,8 @@ export default function App() {
     if (!discoveryHistoryReadyRef.current) {
       throw new Error("Wait for your discovery history to finish loading.");
     }
-    if (trackingStateRef.current !== "idle") {
-      throw new Error("Stop the current discovery before importing a GPX file.");
+    if (trackingStateRef.current !== "idle" || activeWalkRef.current) {
+      throw new Error("Stop and save the current discovery before importing a GPX file.");
     }
     if (file.size > 25 * 1024 * 1024) {
       throw new Error("The GPX file is larger than the 25 MB import limit.");
@@ -3344,7 +3352,7 @@ export default function App() {
       return;
     }
     void requestDeviceHeadingPermission();
-    if (walkFinalizing) return;
+    if (walkFinalizing || journeySaveError) return;
     if (!accountUserId) {
       setSyncOpen(true);
       return;
@@ -4730,7 +4738,8 @@ export default function App() {
                 !authReady ||
                 discoveryLoading ||
                 tracking === "requesting" ||
-                walkFinalizing
+                walkFinalizing ||
+                Boolean(journeySaveError)
               }
               aria-label={
                 !accountUserId
@@ -4777,6 +4786,14 @@ export default function App() {
             </p>
           )}
           {journeyStopMessage && <p className="location-error" role="status">{journeyStopMessage}</p>}
+          {journeySaveError && (
+            <div className="location-error" role="alert">
+              <p>{journeySaveError}</p>
+              <button type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={finalizeRecordedWalk}>
+                Retry saving journey
+              </button>
+            </div>
+          )}
           <JourneyDetails
             accountUserId={accountUserId}
             expanded={citiesExpanded}

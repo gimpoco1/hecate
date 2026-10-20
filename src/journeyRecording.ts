@@ -55,15 +55,15 @@ export function createJourneyRecordingTracker(tracker: LocationTracker, cities: 
       };
       await tracker.start((point) => {
         if (!active || !isUsableGpsPoint(point)) return;
-        // Ignore duplicate/out-of-order fixes instead of comparing them with a newer position.
-        if (previous && point.recordedAt <= previous.recordedAt) return;
-        if (isJourneyTooFast(previous, point)) {
-          fail({ code: "speed-exceeded", message: JOURNEY_SPEED_STOP_MESSAGE });
-          return;
-        }
-        previous = point;
         queue = queue.then(async () => {
           if (!active) return;
+          // Ignore duplicate/out-of-order fixes instead of comparing them with a newer position.
+          if (previous && point.recordedAt <= previous.recordedAt) return;
+          if (isJourneyTooFast(previous, point)) {
+            fail({ code: "speed-exceeded", message: JOURNEY_SPEED_STOP_MESSAGE });
+            return;
+          }
+          previous = point;
           if (!knownCities.some((city) => isPointInCity(point, city))) {
             const city = await verifyJourneyCity(point, controller.signal);
             if (!active) return;

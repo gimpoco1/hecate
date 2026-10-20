@@ -62,3 +62,12 @@ export function saveWalkJournal(userId: string, pending: PendingWalk[], active: 
     return false
   }
 }
+
+/** Persist completion before releasing the active journey or acknowledging its native stop. */
+export function completeWalkJournal(userId: string, pending: PendingWalk[], completed: PendingWalk): PendingWalk[] {
+  const nextPending = completed.points.length >= 2 ? [...pending, completed] : [...pending]
+  if (!saveWalkJournal(userId, nextPending, null)) {
+    throw new Error('Could not save the finished journey on this device. Free up device storage, then retry saving. Keep Hecate open until it is saved.')
+  }
+  return nextPending
+}
