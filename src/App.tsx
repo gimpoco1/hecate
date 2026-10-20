@@ -642,7 +642,7 @@ export function journeyTimeCounter(elapsedMs: number): { text: string; label: st
   const pad = (value: number): string => String(value).padStart(2, "0");
   return {
     text: hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`,
-    label: `${hours > 0 ? `${hours} hours, ` : ""}${minutes} minutes, ${seconds} seconds`,
+    label: `${hours > 0 ? `${hours} ${hours === 1 ? "hour" : "hours"}, ` : ""}${minutes} ${minutes === 1 ? "minute" : "minutes"}, ${seconds} ${seconds === 1 ? "second" : "seconds"}`,
   };
 }
 

@@ -17,6 +17,16 @@ describe("journey counters", () => {
   });
 
   it.each([
+    [0, "0 minutes, 0 seconds"],
+    [1_000, "0 minutes, 1 second"],
+    [61_000, "1 minute, 1 second"],
+    [3_661_000, "1 hour, 1 minute, 1 second"],
+    [7_322_000, "2 hours, 2 minutes, 2 seconds"],
+  ])("pluralizes elapsed time units for %i milliseconds", (elapsed, label) => {
+    expect(journeyTimeCounter(elapsed).label).toBe(label);
+  });
+
+  it.each([
     [-1000, "0:00"], [0, "0:00"], [59_000, "0:59"], [60_000, "1:00"],
     [3_599_000, "59:59"], [3_600_000, "1:00:00"], [3_661_000, "1:01:01"],
   ])("formats %i milliseconds without rounding up", (elapsed, text) => {
