@@ -246,3 +246,72 @@ if (!registration.includes('CAP_PLUGIN_METHOD(getAuthorizationStatus,')) {
   )
   writeFileSync(registrationPath, registration)
 }
+
+// Stop recording watchers at the service boundary, even while the WebView sleeps.
+androidService = readFileSync(androidServicePath, 'utf8')
+if (!androidService.includes('private final android.content.BroadcastReceiver airplaneModeReceiver')) {
+  const anchor = '    // Handles requests from the activity.'
+  if (!androidService.includes(anchor))
+    throw new Error('Background geolocation service changed; review airplane-mode receiver integration.')
+  androidService = androidService.replace(anchor, `    private boolean isAirplaneModeOn() {
+        return android.provider.Settings.Global.getInt(getContentResolver(),
+                android.provider.Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
+    }
+
+    private final android.content.BroadcastReceiver airplaneModeReceiver = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context context, Intent intent) {
+            if (!isAirplaneModeOn()) return;
+            for (Watcher watcher : new java.util.ArrayList<>(watchers)) {
+                if (watcher.journeyId == null) continue;
+                ((LocalBinder) binder).stopJourney(watcher.journeyId);
+                // Reuse the persisted stop request so a runtime restart cannot resume this journey.
+                sendBroadcast(new Intent("com.gimpoco.hecate.STOP_JOURNEY")
+                        .setClassName(getPackageName(), "com.gimpoco.hecate.JourneyActionReceiver")
+                        .putExtra("walkId", watcher.journeyId));
+                Intent stopped = new Intent(ACTION_BROADCAST);
+                stopped.putExtra("id", watcher.id);
+                stopped.putExtra("journeyError", "AIRPLANE_MODE");
+                LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(stopped);
+            }
+        }
+    };
+
+    @Override public void onCreate() {
+        super.onCreate();
+        androidx.core.content.ContextCompat.registerReceiver(this, airplaneModeReceiver,
+                new android.content.IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED),
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED);
+    }
+
+    @Override public void onDestroy() {
+        unregisterReceiver(airplaneModeReceiver);
+        super.onDestroy();
+    }
+
+` + anchor)
+  const startAnchor = '            FusedLocationProviderClient client ='
+  if (!androidService.includes(startAnchor))
+    throw new Error('Background geolocation service changed; review airplane-mode startup check.')
+  androidService = androidService.replace(startAnchor, `            if (journeyId != null && isAirplaneModeOn()) {
+                Intent stopped = new Intent(ACTION_BROADCAST);
+                stopped.putExtra("id", id);
+                stopped.putExtra("journeyError", "AIRPLANE_MODE");
+                LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(stopped);
+                return;
+            }
+` + startAnchor)
+  writeFileSync(androidServicePath, androidService)
+}
+androidSource = readFileSync(androidPluginPath, 'utf8')
+if (!androidSource.includes('intent.getStringExtra("journeyError")')) {
+  const anchor = '            Location location = intent.getParcelableExtra("location");'
+  if (!androidSource.includes(anchor))
+    throw new Error('Background geolocation plugin changed; review airplane-mode stop callback.')
+  androidSource = androidSource.replace(anchor, `            String journeyError = intent.getStringExtra("journeyError");
+            if (journeyError != null) {
+                call.reject("Journey stopped because airplane mode is on. Your recorded walking progress has been saved.", journeyError);
+                return;
+            }
+` + anchor)
+  writeFileSync(androidPluginPath, androidSource)
+}

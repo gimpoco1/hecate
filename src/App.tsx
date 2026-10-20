@@ -33,6 +33,20 @@ import {
   syncAchievementUnlocks,
 } from "./achievementUnlocks";
 import { cityMilestoneProgress } from "./badges";
+import { createJourneyRecordingTracker } from "./journeyRecording";
+import {
+  JOURNEY_SPEED_STOP_MESSAGE,
+  JOURNEY_SPEED_STOP_NOTIFICATION_ID,
+  openJourneySpeedStopReport,
+  sendJourneySpeedStopNotification,
+  type JourneySpeedStopReport,
+} from "./journeyNotifications";
+import {
+  MORNING_INVITE_ACTION_TYPE_ID,
+  START_WALK_ACTION_ID,
+  REPORT_JOURNEY_SPEED_STOP_ACTION_ID,
+  registerNotificationActions,
+} from "./notificationActions";
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
@@ -210,8 +224,6 @@ const STREAK_REMINDER_NOTIFICATION_ID = 1202;
 const MORNING_INVITE_TEST_NOTIFICATION_ID = 1210;
 const WEEKLY_RECAP_TEST_NOTIFICATION_ID = 1211;
 const STREAK_REMINDER_TEST_NOTIFICATION_ID = 1212;
-const MORNING_INVITE_ACTION_TYPE_ID = "morning-invite-actions";
-const START_WALK_ACTION_ID = "start-walk";
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
@@ -727,6 +739,8 @@ async function retryGpxImportOperation(
 }
 
 export default function App() {
+  const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(null);
+  const [pendingSpeedStopReport, setPendingSpeedStopReport] = useState<JourneySpeedStopReport | null>(null);
   const [mode, setMode] = useState<MapMode>("discover");
   const [points, setPoints] = useState<Coordinate[]>([]);
   const [cells, setCells] = useState<DiscoveryCell[]>([]);
@@ -1641,6 +1655,25 @@ export default function App() {
   }, [nativeApp]);
 
   useEffect(() => {
+    if (!pendingSpeedStopReport || !authReady) return;
+    if (pendingSpeedStopReport.userId !== accountUserId) {
+      setJourneyStopMessage("Sign in to the account associated with this journey to report the incorrect speed stop.");
+      setSyncOpen(true);
+      return;
+    }
+    setPendingSpeedStopReport(null);
+    void openJourneySpeedStopReport(AppLauncher, pendingSpeedStopReport)
+      .catch((error: Error) => {
+        console.error("Could not open journey speed-stop report", {
+          walkId: pendingSpeedStopReport.walkId, error,
+        });
+        if (accountUserIdRef.current === pendingSpeedStopReport.userId) {
+          setJourneyStopMessage(`Could not open your email app. Contact supporthecate@gmail.com and include journey ID ${pendingSpeedStopReport.walkId}.`);
+        }
+      });
+  }, [pendingSpeedStopReport, authReady, accountUserId]);
+
+  useEffect(() => {
     const preference = accountUserId
       ? loadReminderPreference(accountUserId)
       : { enabled: false, promptedAt: 0, pausedUntil: 0 };
@@ -1746,16 +1779,7 @@ export default function App() {
       if (generation !== activityNotificationGenerationRef.current) return;
       const accountChanged =
         scheduledNotificationUserRef.current !== accountUserId;
-      await LocalNotifications.registerActionTypes({
-        types: [{
-          id: MORNING_INVITE_ACTION_TYPE_ID,
-          actions: [{
-            id: START_WALK_ACTION_ID,
-            title: "Start walk",
-            foreground: true,
-          }],
-        }],
-      });
+      await registerNotificationActions(LocalNotifications);
       const ids = [
         MORNING_INVITE_NOTIFICATION_ID,
         WEEKLY_RECAP_NOTIFICATION_ID,
@@ -1763,6 +1787,7 @@ export default function App() {
         ...(!accountUserId || accountChanged || notificationPermissionReady === false ? [
           REMINDER_NOTIFICATION_ID,
           REMINDER_TEST_NOTIFICATION_ID,
+          JOURNEY_SPEED_STOP_NOTIFICATION_ID,
           MORNING_INVITE_TEST_NOTIFICATION_ID,
           WEEKLY_RECAP_TEST_NOTIFICATION_ID,
           STREAK_REMINDER_TEST_NOTIFICATION_ID,
@@ -1807,6 +1832,27 @@ export default function App() {
     void LocalNotifications.addListener(
       "localNotificationActionPerformed",
       (event) => {
+        if (event.notification.extra?.kind === "journey-speed-stop") {
+          if (event.actionId === REPORT_JOURNEY_SPEED_STOP_ACTION_ID) {
+            const { userId, walkId } = event.notification.extra;
+            if (typeof userId !== "string" || !userId.trim() ||
+                typeof walkId !== "string" || !walkId.trim()) {
+              setJourneyStopMessage("This notification is missing its journey details. Contact supporthecate@gmail.com to report the incorrect speed stop.");
+              return;
+            }
+            setPendingSpeedStopReport({ userId, walkId });
+            return;
+          }
+          if (
+            typeof event.notification.extra.userId === "string" &&
+            event.notification.extra.userId === accountUserIdRef.current &&
+            trackingStateRef.current !== "tracking" &&
+            trackingStateRef.current !== "requesting"
+          ) {
+            setJourneyStopMessage(JOURNEY_SPEED_STOP_MESSAGE);
+          }
+          return;
+        }
         if (
           event.actionId === START_WALK_ACTION_ID &&
           event.notification.extra?.kind === "morning-invite" &&
@@ -3167,20 +3213,7 @@ export default function App() {
         );
         return;
       }
-      await LocalNotifications.registerActionTypes({
-        types: [
-          {
-            id: MORNING_INVITE_ACTION_TYPE_ID,
-            actions: [
-              {
-                id: START_WALK_ACTION_ID,
-                title: "Start walk",
-                foreground: true,
-              },
-            ],
-          },
-        ],
-      });
+      await registerNotificationActions(LocalNotifications);
       await LocalNotifications.schedule({
         notifications: [{
           ...notification,
@@ -3288,6 +3321,16 @@ export default function App() {
     }
   };
 
+  const notifyJourneySpeedStop = (walkId: string): void => {
+    if (!nativeApp || !accountUserId) return;
+    void sendJourneySpeedStopNotification(
+      LocalNotifications, accountUserId, walkId,
+      () => accountUserIdRef.current === accountUserId,
+    ).catch((error) => {
+      console.error("Could not notify user about journey speed stop", { walkId, error });
+    });
+  };
+
   const toggleTracking = async () => {
     if (tracking === "tracking") {
       resetInactivityReminder();
@@ -3341,7 +3384,8 @@ export default function App() {
       ...activeWalkRef.current,
       finishedAt: activeWalkRef.current.startedAt,
     });
-    const tracker = createLocationTracker(walkId);
+    setJourneyStopMessage(null);
+    const tracker = createJourneyRecordingTracker(createLocationTracker(walkId), progressCities);
     trackerRef.current = tracker;
     // The journey exists locally before the native watcher finishes starting,
     // so reflect the active session immediately and roll back on failure.
@@ -3351,16 +3395,21 @@ export default function App() {
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
+        const journeyStopped = error.code === "journey-stopped" || error.code === "speed-exceeded";
+        setJourneyStopMessage(journeyStopped ? error.message : null);
+        if (error.code === "speed-exceeded") notifyJourneySpeedStop(walkId);
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
-        void Promise.resolve(tracker.stop()).catch(() => undefined);
+        void Promise.resolve(tracker.stop()).catch((stopError) => {
+          console.error("Could not stop journey location tracking", { error: stopError });
+        });
         trackerRef.current = null;
         finalizeRecordedWalk();
         setPassiveLocationStatus(
           error.code === "permission-denied" ? "denied" : "idle",
         );
         setTracking(
-          error.code === "permission-denied" ? "denied" : "unavailable",
+          error.code === "permission-denied" ? "denied" : journeyStopped ? "idle" : "unavailable",
         );
       });
       if (trackerFailed || trackerRef.current !== tracker) return;
@@ -3435,7 +3484,7 @@ export default function App() {
     )
       return;
     const restoredWalkId = activeWalkRef.current.id;
-    const tracker = createLocationTracker(restoredWalkId);
+    const tracker = createJourneyRecordingTracker(createLocationTracker(restoredWalkId), progressCities);
     trackerRef.current = tracker;
     let trackerFailed = false;
     const restore = async (): Promise<void> => {
@@ -3452,6 +3501,9 @@ export default function App() {
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
+        const journeyStopped = error.code === "journey-stopped" || error.code === "speed-exceeded";
+        setJourneyStopMessage(journeyStopped ? error.message : null);
+        if (error.code === "speed-exceeded") notifyJourneySpeedStop(restoredWalkId);
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
         trackerRef.current = null;
@@ -3465,7 +3517,7 @@ export default function App() {
           error.code === "permission-denied" ? "denied" : "idle",
         );
         setTracking(
-          error.code === "permission-denied" ? "denied" : "unavailable",
+          error.code === "permission-denied" ? "denied" : journeyStopped ? "idle" : "unavailable",
         );
       });
     };
@@ -4724,6 +4776,7 @@ export default function App() {
               sample discovery.
             </p>
           )}
+          {journeyStopMessage && <p className="location-error" role="status">{journeyStopMessage}</p>}
           <JourneyDetails
             accountUserId={accountUserId}
             expanded={citiesExpanded}

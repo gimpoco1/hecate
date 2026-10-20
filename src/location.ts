@@ -6,7 +6,7 @@ import type {
 import type { Coordinate } from "./types";
 
 export interface LocationTrackerError {
-  code: "permission-denied" | "unavailable";
+  code: "permission-denied" | "unavailable" | "journey-stopped" | "speed-exceeded";
   message: string;
 }
 
@@ -60,6 +60,7 @@ class WebLocationTracker implements LocationTracker {
           recordedAt: timestamp,
           accuracy: coords.accuracy,
           heading: coords.heading === null ? undefined : coords.heading,
+          speed: coords.speed === null ? undefined : coords.speed,
         });
       },
       (error) => {
@@ -160,7 +161,9 @@ function nativeError(error: CallbackError | unknown): LocationTrackerError {
       : null;
   return {
     code:
-      candidate?.code === "NOT_AUTHORIZED"
+      candidate?.code === "AIRPLANE_MODE"
+        ? "journey-stopped"
+        : candidate?.code === "NOT_AUTHORIZED"
         ? "permission-denied"
         : "unavailable",
     message: candidate?.message || "Location is unavailable.",
@@ -225,6 +228,7 @@ class NativeLocationTracker implements LocationTracker {
           recordedAt: location.time ?? Date.now(),
           accuracy: location.accuracy,
           heading: location.bearing ?? undefined,
+          speed: location.speed ?? undefined,
         });
       },
     );

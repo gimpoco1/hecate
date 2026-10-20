@@ -96,6 +96,21 @@ describe('native location lifecycle', () => {
     expect(native.removeWatcher).toHaveBeenLastCalledWith({ id: 'retry-watcher' })
   })
 
+  it('passes native aircraft speed and airplane-mode stops to the recording validator', async () => {
+    native.addWatcher.mockResolvedValue('flight-watcher')
+    native.removeWatcher.mockResolvedValue(undefined)
+    const tracker = createLocationTracker('walk-1')
+    const onPoint = vi.fn()
+    const onError = vi.fn()
+    await tracker.start(onPoint, onError)
+    const callback = native.addWatcher.mock.calls[0][1]
+    callback({ longitude: 2.17, latitude: 41.38, accuracy: 5, speed: 230, time: 1_000 })
+    expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ speed: 230 }))
+    callback(null, { code: 'AIRPLANE_MODE', message: 'Journey stopped because airplane mode is on.' })
+    expect(onError).toHaveBeenCalledWith({ code: 'journey-stopped', message: 'Journey stopped because airplane mode is on.' })
+    await tracker.stop()
+  })
+
   it('ignores queued native callbacks as soon as watcher teardown begins', async () => {
     let resolveRemoval!: () => void
     native.addWatcher.mockResolvedValue('slow-removal-watcher')
