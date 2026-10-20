@@ -814,7 +814,7 @@ export default function App() {
     string | null
   >(null);
   const [favoritePlacementActive, setFavoritePlacementActive] = useState(false);
-  const [highlightedImportPoints, setHighlightedImportPoints] = useState<
+  const [highlightedRoutePoints, setHighlightedRoutePoints] = useState<
     Coordinate[]
   >([]);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
@@ -3283,6 +3283,37 @@ export default function App() {
     );
   };
 
+  const simulateJourneyRecap = (): void => {
+    const finishedAt = Date.now();
+    const startedAt = finishedAt - 18 * 60_000;
+    const walkId = "dev-journey-recap";
+    const route: [number, number][] = [
+      [2.1604, 41.3902],
+      [2.1624, 41.3917],
+      [2.1644, 41.3932],
+      [2.1664, 41.3917],
+      [2.1684, 41.3902],
+      [2.1664, 41.3887],
+      [2.1644, 41.3872],
+    ];
+    const points: Coordinate[] = route.map(([lng, lat], index) => ({
+      lng, lat, walkId, recordedAt: startedAt + index * 3 * 60_000,
+    }));
+    const previousPoints = points.slice(0, 3);
+    const previousCells = new Set(discoveryCellsFromPoints(previousPoints).map(discoveryCellKey));
+    setExplorationSummary({
+      walkId,
+      points,
+      cells: discoveryCellsFromPoints(points).filter((cell) => !previousCells.has(discoveryCellKey(cell))),
+      startedAt,
+      finishedAt,
+      newGroundKm: Math.max(0, discoveredDistanceKm(points) - discoveredDistanceKm(previousPoints)),
+      travelledKm: routeDistanceKm(points),
+      cityName: "Barcelona",
+      cityPercentageAdded: 0.03,
+    });
+  };
+
   const simulateAchievementUnlock = async () => {
     const achievement =
       PERSONAL_ACHIEVEMENTS[
@@ -4183,10 +4214,10 @@ export default function App() {
     });
   }, [settleJourneySheet]);
 
-  const showImportedRoute = useCallback(
+  const showRouteOnMap = useCallback(
     (routePoints: Coordinate[]) => {
       setSyncOpen(false);
-      setHighlightedImportPoints(routePoints);
+      setHighlightedRoutePoints(routePoints);
       setSelectedFavoritePlaceId(null);
       if (journeyExpandedRef.current) settleJourneySheet(false);
       const map = mapRef.current;
@@ -4210,20 +4241,20 @@ export default function App() {
     [settleJourneySheet],
   );
 
-  const showImportedRouteById = useCallback(
+  const showRouteById = useCallback(
     (routeId: string) => {
       const routePoints = pointsRef.current
         .filter((point) => point.walkId === routeId)
         .sort((first, second) => first.recordedAt - second.recordedAt);
       if (routePoints.length === 0) return;
-      showImportedRoute(routePoints);
+      showRouteOnMap(routePoints);
     },
-    [showImportedRoute],
+    [showRouteOnMap],
   );
 
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
-    setHighlightedImportPoints([]);
+    setHighlightedRoutePoints([]);
     if (journeyExpandedRef.current)
       settleJourneySheet(
         false,
@@ -4252,7 +4283,7 @@ export default function App() {
         mode={mode}
         points={points}
         cells={cells}
-        highlightedPoints={highlightedImportPoints}
+        highlightedPoints={highlightedRoutePoints}
         currentPoint={locationIsCurrent ? currentPoint : undefined}
         locationState={
           tracking === "tracking"
@@ -4322,6 +4353,15 @@ export default function App() {
           {activityNotificationTestMessage && (
             <small role="status">{activityNotificationTestMessage}</small>
           )}
+          <strong>Journey recap</strong>
+          <small>Previews a sample journey without saving progress.</small>
+          <button
+            type="button"
+            data-testid="preview-journey-recap"
+            onClick={simulateJourneyRecap}
+          >
+            Show mock journey recap
+          </button>
           <strong>Achievements</strong>
           <small>
             Opens the real celebration and, in the native app, schedules the
@@ -4858,8 +4898,8 @@ export default function App() {
           onActivityNotificationChange={updateActivityNotificationPreference}
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
-          onShowGpxImport={showImportedRoute}
-          onShowGpxImportRoute={showImportedRouteById}
+          onShowGpxImport={showRouteOnMap}
+          onShowGpxImportRoute={showRouteById}
           onWalkingStatsOpen={() => {
             setGlobalMilestonesOpen(true);
           }}
@@ -4945,6 +4985,13 @@ export default function App() {
               <span>of new ground uncovered</span>
             </div>
             <div className="exploration-recap__insights">
+              {explorationSummary.travelledKm > 0 && (
+                <span>
+                  {Math.round(
+                    explorationSummary.newGroundKm / explorationSummary.travelledKm * 100,
+                  )}% of this walk was new ground
+                </span>
+              )}
               {explorationSummary.cityName &&
                 explorationSummary.cityPercentageAdded !== undefined && (
                   <span>
@@ -4974,16 +5021,10 @@ export default function App() {
               <button
                 className="exploration-recap__view"
                 type="button"
+                data-testid="recap-view-on-map"
                 onClick={() => {
-                  const latest = explorationSummary.points.at(-1);
+                  showRouteOnMap(explorationSummary.points);
                   setExplorationSummary(null);
-                  if (latest)
-                    mapRef.current?.flyTo({
-                      center: [latest.lng, latest.lat],
-                      zoom: 14.2,
-                      duration: 900,
-                      essential: true,
-                    });
                 }}
               >
                 View on map
