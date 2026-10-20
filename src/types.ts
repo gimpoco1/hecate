@@ -4,6 +4,7 @@ export type Coordinate = {
   recordedAt: number
   accuracy?: number
   heading?: number
+  speed?: number
   walkId?: string
   achievementEligible?: boolean
 }

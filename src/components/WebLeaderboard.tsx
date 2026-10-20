@@ -1063,6 +1063,7 @@ export function WebLeaderboard() {
                 group.totalDiscoveredKm / cityGroups[0].totalDiscoveredKm,
               );
               const compact =
+                index >= 6 &&
                 group.totalDiscoveredKm < cityGroups[0].totalDiscoveredKm * 0.1;
               const visibleExplorerCount = compact || index >= 2 ? 2 : 5;
               const myRank = group.explorers.findIndex(

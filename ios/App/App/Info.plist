@@ -43,6 +43,8 @@
 	<string>Hecate uses your location to show your position, reveal a walk you start, and detect walks when reminders are enabled.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>Hecate uses your device orientation to show which direction you are facing on the map.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

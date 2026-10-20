@@ -1,0 +1,8 @@
+// Keep notification integration fixtures separate from an installed Hecate account and its recorded walks.
+allprojects {
+    afterEvaluate { candidate ->
+        if (candidate.path == ':app') {
+            candidate.android.defaultConfig.applicationId = 'com.gimpoco.hecate.journeytest'
+        }
+    }
+}

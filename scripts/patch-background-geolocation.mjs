@@ -4,7 +4,89 @@ import { fileURLToPath } from 'node:url'
 const pluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Swift/Plugin.swift', import.meta.url))
 const registrationPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/ios/Plugin/Plugin.m', import.meta.url))
 const androidPluginPath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/android/src/main/java/com/equimaps/capacitor_background_geolocation/BackgroundGeolocation.java', import.meta.url))
+const androidServicePath = fileURLToPath(new URL('../node_modules/@capacitor-community/background-geolocation/android/src/main/java/com/equimaps/capacitor_background_geolocation/BackgroundGeolocationService.java', import.meta.url))
+let androidService = readFileSync(androidServicePath, 'utf8')
+if (!androidService.includes('updateJourneyNotification(')) {
+  const replaceService = (original, replacement) => {
+    if (!androidService.includes(original))
+      throw new Error('Background geolocation service changed; review Android journey notification integration.')
+    androidService = androidService.replace(original, replacement)
+  }
+  replaceService('        public String id;', '        public String id;\n        public String journeyId;')
+  replaceService('    Notification getNotification() {', `    Notification getNotification() {
+        for (Watcher watcher : watchers) {
+            if (watcher.journeyId != null && watcher.backgroundNotification != null) return watcher.backgroundNotification;
+        }`)
+  replaceService('                float distanceFilter\n', '                float distanceFilter,\n                String journeyId\n')
+  replaceService('            FusedLocationProviderClient client =', `            if (journeyId != null && getSharedPreferences("hecate.journeys", MODE_PRIVATE).contains("stop." + journeyId)) return;
+            FusedLocationProviderClient client =`)
+  replaceService('                    Location location = locationResult.getLastLocation();', `                    boolean active = false;
+                    for (Watcher registered : watchers) if (registered.id.equals(id)) active = true;
+                    if (!active) return;
+                    Location location = locationResult.getLastLocation();`)
+  replaceService('            watcher.id = id;', '            watcher.id = id;\n            watcher.journeyId = journeyId;')
+  replaceService('        void removeWatcher(String id) {', `        public boolean updateJourneyNotification(String journeyId, Notification notification) {
+            for (Watcher watcher : watchers) {
+                if (journeyId.equals(watcher.journeyId)) {
+                    watcher.backgroundNotification = notification;
+                    startForeground(NOTIFICATION_ID, notification);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void stopJourney(String journeyId) {
+            java.util.Iterator<Watcher> iterator = watchers.iterator();
+            while (iterator.hasNext()) {
+                Watcher watcher = iterator.next();
+                if (journeyId.equals(watcher.journeyId)) {
+                    watcher.client.removeLocationUpdates(watcher.locationCallback).addOnFailureListener(
+                        error -> Logger.error("Failed to remove stopped journey location updates", error));
+                    iterator.remove();
+                }
+            }
+            Notification remaining = getNotification();
+            if (remaining == null) stopForeground(true);
+            else startForeground(NOTIFICATION_ID, remaining);
+        }
+
+        void removeWatcher(String id) {`)
+  writeFileSync(androidServicePath, androidService)
+}
+androidService = readFileSync(androidServicePath, 'utf8')
+const staleNotification = '                    if (getNotification() == null) {\n                        stopForeground(true);\n                    }'
+if (androidService.includes(staleNotification)) {
+  androidService = androidService.replace(staleNotification, `                    Notification remaining = getNotification();
+                    if (remaining == null) stopForeground(true);
+                    else startForeground(NOTIFICATION_ID, remaining);`)
+  writeFileSync(androidServicePath, androidService)
+}
+androidService = readFileSync(androidServicePath, 'utf8')
+if (!androidService.includes('ConcurrentHashMap.newKeySet()')) {
+  const original = 'private HashSet<Watcher> watchers = new HashSet<Watcher>();'
+  if (!androidService.includes(original))
+    throw new Error('Background geolocation service changed; review native watcher synchronization.')
+  androidService = androidService.replace(original,
+    'private final java.util.Set<Watcher> watchers = java.util.concurrent.ConcurrentHashMap.newKeySet();')
+  androidService = androidService.replace('watchers = new HashSet<Watcher>();', 'watchers.clear();')
+  for (const signature of ['void addWatcher(', 'void removeWatcher(', 'void onPermissionsGranted(',
+    'public boolean updateJourneyNotification(', 'public void stopJourney(']) {
+    if (!androidService.includes(signature))
+      throw new Error('Background geolocation service changed; missing synchronized journey operation: ' + signature)
+    androidService = androidService.replace(signature, signature.startsWith('public ')
+      ? signature.replace('public ', 'public synchronized ') : 'synchronized ' + signature)
+  }
+  writeFileSync(androidServicePath, androidService)
+}
 let androidSource = readFileSync(androidPluginPath, 'utf8')
+if (!androidSource.includes('call.getString("journeyId")')) {
+  const anchor = '                call.getFloat("distanceFilter", 0f)'
+  if (!androidSource.includes(anchor))
+    throw new Error('Background geolocation plugin changed; review Android journey watcher identity.')
+  androidSource = androidSource.replace(anchor, anchor + ',\n                call.getString("journeyId")')
+  writeFileSync(androidPluginPath, androidSource)
+}
 if (!androidSource.includes('public void getAuthorizationStatus(')) {
   const anchor = '    @PluginMethod()\n    public void openSettings(PluginCall call) {'
   if (!androidSource.includes(anchor))
@@ -78,6 +160,49 @@ if (!source.includes('@objc func removeAllWatchers')) {
 }
 writeFileSync(pluginPath, source)
 
+// A LiveActivityIntent runs in the app process without bringing its WebView to the foreground.
+// Stop only the matching recorded walk, preserving passive discovery-reminder watchers.
+source = readFileSync(pluginPath, 'utf8')
+if (!source.includes('private var journeyStopObserver: NSObjectProtocol?')) {
+  const replaceRequired = (original, replacement) => {
+    if (!source.includes(original))
+      throw new Error('Background geolocation plugin changed; review the native widget stop integration.')
+    source = source.replace(original, replacement)
+  }
+  replaceRequired('    let callbackId: String', '    var journeyId: String?\n    let callbackId: String')
+  replaceRequired('    private var watchers = [Watcher]()', `    private var watchers = [Watcher]()
+    private var journeyStopObserver: NSObjectProtocol?
+
+    deinit {
+        if let journeyStopObserver { NotificationCenter.default.removeObserver(journeyStopObserver) }
+    }
+
+    private func stopJourneyWatchers(_ walkId: String) {
+        let stopped = watchers.filter { $0.journeyId == walkId }
+        stopped.forEach { watcher in
+            watcher.stop()
+            if let call = bridge?.savedCall(withID: watcher.callbackId) { bridge?.releaseCall(call) }
+        }
+        watchers.removeAll { $0.journeyId == walkId }
+    }`)
+  replaceRequired('        UIDevice.current.isBatteryMonitoringEnabled = true', `        UIDevice.current.isBatteryMonitoringEnabled = true
+        journeyStopObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("HecateJourneyStopRequested"), object: nil, queue: .main
+        ) { [weak self] notification in
+            if let walkId = notification.userInfo?["walkId"] as? String {
+                self?.stopJourneyWatchers(walkId)
+            }
+        }`)
+  replaceRequired('            let background = call.getString("backgroundMessage") != nil', `            let journeyId = call.getString("journeyId")
+            if let journeyId, UserDefaults.standard.data(forKey: "hecate.journey.stop." + journeyId) != nil {
+                call.reject("This journey was stopped from the Lock Screen.", "JOURNEY_STOPPED")
+                return
+            }
+            let background = call.getString("backgroundMessage") != nil`)
+  replaceRequired('            let manager = watcher.locationManager', '            watcher.journeyId = journeyId\n            let manager = watcher.locationManager')
+  writeFileSync(pluginPath, source)
+}
+
 let registration = readFileSync(registrationPath, 'utf8')
 if (!registration.includes('CAP_PLUGIN_METHOD(removeAllWatchers,')) {
   if (!registration.includes(registrationOriginal)) {
@@ -120,4 +245,73 @@ if (!registration.includes('CAP_PLUGIN_METHOD(getAuthorizationStatus,')) {
     '    CAP_PLUGIN_METHOD(getAuthorizationStatus, CAPPluginReturnPromise);\n    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);',
   )
   writeFileSync(registrationPath, registration)
+}
+
+// Stop recording watchers at the service boundary, even while the WebView sleeps.
+androidService = readFileSync(androidServicePath, 'utf8')
+if (!androidService.includes('private final android.content.BroadcastReceiver airplaneModeReceiver')) {
+  const anchor = '    // Handles requests from the activity.'
+  if (!androidService.includes(anchor))
+    throw new Error('Background geolocation service changed; review airplane-mode receiver integration.')
+  androidService = androidService.replace(anchor, `    private boolean isAirplaneModeOn() {
+        return android.provider.Settings.Global.getInt(getContentResolver(),
+                android.provider.Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
+    }
+
+    private final android.content.BroadcastReceiver airplaneModeReceiver = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context context, Intent intent) {
+            if (!isAirplaneModeOn()) return;
+            for (Watcher watcher : new java.util.ArrayList<>(watchers)) {
+                if (watcher.journeyId == null) continue;
+                ((LocalBinder) binder).stopJourney(watcher.journeyId);
+                // Reuse the persisted stop request so a runtime restart cannot resume this journey.
+                sendBroadcast(new Intent("com.gimpoco.hecate.STOP_JOURNEY")
+                        .setClassName(getPackageName(), "com.gimpoco.hecate.JourneyActionReceiver")
+                        .putExtra("walkId", watcher.journeyId));
+                Intent stopped = new Intent(ACTION_BROADCAST);
+                stopped.putExtra("id", watcher.id);
+                stopped.putExtra("journeyError", "AIRPLANE_MODE");
+                LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(stopped);
+            }
+        }
+    };
+
+    @Override public void onCreate() {
+        super.onCreate();
+        androidx.core.content.ContextCompat.registerReceiver(this, airplaneModeReceiver,
+                new android.content.IntentFilter(Intent.ACTION_AIRPLANE_MODE_CHANGED),
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED);
+    }
+
+    @Override public void onDestroy() {
+        unregisterReceiver(airplaneModeReceiver);
+        super.onDestroy();
+    }
+
+` + anchor)
+  const startAnchor = '            FusedLocationProviderClient client ='
+  if (!androidService.includes(startAnchor))
+    throw new Error('Background geolocation service changed; review airplane-mode startup check.')
+  androidService = androidService.replace(startAnchor, `            if (journeyId != null && isAirplaneModeOn()) {
+                Intent stopped = new Intent(ACTION_BROADCAST);
+                stopped.putExtra("id", id);
+                stopped.putExtra("journeyError", "AIRPLANE_MODE");
+                LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(stopped);
+                return;
+            }
+` + startAnchor)
+  writeFileSync(androidServicePath, androidService)
+}
+androidSource = readFileSync(androidPluginPath, 'utf8')
+if (!androidSource.includes('intent.getStringExtra("journeyError")')) {
+  const anchor = '            Location location = intent.getParcelableExtra("location");'
+  if (!androidSource.includes(anchor))
+    throw new Error('Background geolocation plugin changed; review airplane-mode stop callback.')
+  androidSource = androidSource.replace(anchor, `            String journeyError = intent.getStringExtra("journeyError");
+            if (journeyError != null) {
+                call.reject("Journey stopped because airplane mode is on. Your recorded walking progress has been saved.", journeyError);
+                return;
+            }
+` + anchor)
+  writeFileSync(androidPluginPath, androidSource)
 }

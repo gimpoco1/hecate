@@ -334,6 +334,8 @@ export function discoveredCityCellDistanceKm(
   return discoveredCityDistanceKm(discoveryPointsFromCells(cells), city);
 }
 
+export class CityNotFoundError extends Error {}
+
 export async function fetchCityBoundary(
   point: Pick<Coordinate, "lng" | "lat">,
   signal?: AbortSignal,
@@ -377,7 +379,7 @@ export async function fetchCityBoundary(
     (feature.geometry.type !== "Polygon" &&
       feature.geometry.type !== "MultiPolygon")
   ) {
-    throw new Error(
+    throw new CityNotFoundError(
       "OpenStreetMap did not return a municipal boundary for this location",
     );
   }
@@ -397,7 +399,7 @@ export async function fetchCityBoundary(
     fetchedAt: Date.now(),
   };
   if (!isPointInCity(point, city))
-    throw new Error(
+    throw new CityNotFoundError(
       "The returned city boundary does not contain this location",
     );
   return city;

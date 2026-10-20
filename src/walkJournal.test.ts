@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadWalkJournal, loadWalkJournalState, saveWalkJournal } from './walkJournal'
+import { completeWalkJournal, loadWalkJournal, loadWalkJournalState, saveWalkJournal } from './walkJournal'
 import type { PendingWalk } from './types'
 
 const walk: PendingWalk = {
@@ -43,5 +43,35 @@ describe('walk recovery journal', () => {
       ...walk,
       points: walk.points.slice(0, 1),
     })
+  })
+})
+
+describe('journey completion persistence', () => {
+  it('preserves recovery data and pending input when storage fails, then saves once on retry', () => {
+    saveWalkJournal('user-a', [], walk)
+    const pending: PendingWalk[] = []
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is full', 'QuotaExceededError')
+    })
+    expect(() => completeWalkJournal('user-a', pending, walk)).toThrow('Free up device storage')
+    expect(pending).toEqual([])
+    expect(loadWalkJournalState('user-a')).toEqual({ active: walk, pending: [] })
+    setItem.mockRestore()
+    const completed = completeWalkJournal('user-a', pending, walk)
+    expect(completed).toEqual([walk])
+    expect(loadWalkJournalState('user-a')).toEqual({ active: null, pending: [walk] })
+  })
+
+  it('retains a short journey when clearing its journal fails', () => {
+    const shortWalk = { ...walk, points: walk.points.slice(0, 1) }
+    saveWalkJournal('user-a', [], shortWalk)
+    const removeItem = vi.spyOn(localStorage, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage is unavailable', 'SecurityError')
+    })
+    expect(() => completeWalkJournal('user-a', [], shortWalk)).toThrow('retry saving')
+    expect(loadWalkJournalState('user-a').active).toEqual(shortWalk)
+    removeItem.mockRestore()
+    expect(completeWalkJournal('user-a', [], shortWalk)).toEqual([])
+    expect(loadWalkJournalState('user-a')).toEqual({ active: null, pending: [] })
   })
 })

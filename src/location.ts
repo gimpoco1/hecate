@@ -6,7 +6,7 @@ import type {
 import type { Coordinate } from "./types";
 
 export interface LocationTrackerError {
-  code: "permission-denied" | "unavailable";
+  code: "permission-denied" | "unavailable" | "journey-stopped" | "speed-exceeded";
   message: string;
 }
 
@@ -60,6 +60,7 @@ class WebLocationTracker implements LocationTracker {
           recordedAt: timestamp,
           accuracy: coords.accuracy,
           heading: coords.heading === null ? undefined : coords.heading,
+          speed: coords.speed === null ? undefined : coords.speed,
         });
       },
       (error) => {
@@ -160,7 +161,9 @@ function nativeError(error: CallbackError | unknown): LocationTrackerError {
       : null;
   return {
     code:
-      candidate?.code === "NOT_AUTHORIZED"
+      candidate?.code === "AIRPLANE_MODE"
+        ? "journey-stopped"
+        : candidate?.code === "NOT_AUTHORIZED"
         ? "permission-denied"
         : "unavailable",
     message: candidate?.message || "Location is unavailable.",
@@ -173,7 +176,7 @@ class NativeLocationTracker implements LocationTracker {
   private removalPromise: Promise<void> | null = null;
   private active = false;
 
-  constructor(private readonly mode: "walk" | "foreground" | "reminder") {}
+  constructor(private readonly mode: "walk" | "foreground" | "reminder", private readonly journeyId: string | null) {}
 
   async start(
     onPoint: (point: Coordinate) => void,
@@ -185,8 +188,10 @@ class NativeLocationTracker implements LocationTracker {
     if (this.stopRequested) return;
     const options: Parameters<BackgroundGeolocationPlugin["addWatcher"]>[0] & {
       showsBackgroundLocationIndicator?: boolean;
+      journeyId: string | null;
     } = {
       showsBackgroundLocationIndicator: this.mode === "walk",
+      journeyId: this.journeyId,
       ...(this.mode === "walk"
         ? {
             backgroundTitle: "Hecate is revealing your path",
@@ -223,6 +228,7 @@ class NativeLocationTracker implements LocationTracker {
           recordedAt: location.time ?? Date.now(),
           accuracy: location.accuracy,
           heading: location.bearing ?? undefined,
+          speed: location.speed ?? undefined,
         });
       },
     );
@@ -259,21 +265,21 @@ export function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
 
-export function createLocationTracker(): LocationTracker {
+export function createLocationTracker(walkId: string): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("walk")
+    ? new NativeLocationTracker("walk", walkId)
     : new WebLocationTracker(true);
 }
 
 export function createForegroundLocationTracker(): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("foreground")
+    ? new NativeLocationTracker("foreground", null)
     : new WebLocationTracker(false);
 }
 
 export function createReminderLocationTracker(): LocationTracker {
   return isNativeApp()
-    ? new NativeLocationTracker("reminder")
+    ? new NativeLocationTracker("reminder", null)
     : new WebLocationTracker(false);
 }
 

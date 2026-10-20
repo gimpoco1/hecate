@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   discoveryProgressCacheKey,
-  journeyPercentageCounter,
+  journeyNewGroundCounter,
   journeyTimeCounter,
   loadCachedDiscoveryProgress,
   saveCachedDiscoveryProgress,
@@ -9,21 +9,36 @@ import {
 import { emptyWalkingStats } from "./walkingStats";
 
 describe("journey counters", () => {
-  it("shows completed elapsed minutes from the original walk start", () => {
+  it("shows elapsed minutes and seconds from the original walk start", () => {
     expect(journeyTimeCounter(4 * 60_000 + 32_000)).toMatchObject({
-      value: 4,
-      suffix: " min",
-      label: "4 minutes",
+      text: "4:32",
+      label: "4 minutes, 32 seconds",
     });
   });
 
-  it("keeps new-area progress at two decimal places", () => {
-    expect(journeyPercentageCounter(0.08)).toEqual({
-      value: 0.08,
-      places: [1, ".", 0.1, 0.01],
+  it.each([
+    [0, "0 minutes, 0 seconds"],
+    [1_000, "0 minutes, 1 second"],
+    [61_000, "1 minute, 1 second"],
+    [3_661_000, "1 hour, 1 minute, 1 second"],
+    [7_322_000, "2 hours, 2 minutes, 2 seconds"],
+  ])("pluralizes elapsed time units for %i milliseconds", (elapsed, label) => {
+    expect(journeyTimeCounter(elapsed).label).toBe(label);
+  });
+
+  it.each([
+    [-1000, "0:00"], [0, "0:00"], [59_000, "0:59"], [60_000, "1:00"],
+    [3_599_000, "59:59"], [3_600_000, "1:00:00"], [3_661_000, "1:01:01"],
+  ])("formats %i milliseconds without rounding up", (elapsed, text) => {
+    expect(journeyTimeCounter(elapsed).text).toBe(text);
+  });
+
+  it.each([[0, 0], [123.6, 124], [1500, 1500]])("shows %s metres of new ground", (meters, value) => {
+    expect(journeyNewGroundCounter(meters)).toMatchObject({
+      value,
       prefix: "+",
-      suffix: "%",
-      label: "Plus 0.08 percent new area",
+      suffix: " m",
+      label: `Plus ${value} metres of new ground`,
     });
   });
 });
