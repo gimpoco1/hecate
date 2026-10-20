@@ -183,11 +183,11 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let distance = call.getDouble("distanceKm"), distance.isFinite, distance >= 0 else {
             return nil
         }
-        let percentage = call.getDouble("newAreaPercentage")
-        if let percentage, !percentage.isFinite || percentage < 0 { return nil }
+        let meters = call.getDouble("newGroundMeters")
+        if let meters, !meters.isFinite || meters < 0 { return nil }
         return JourneyActivityAttributes.ContentState(
             distanceKm: distance,
-            newAreaPercentage: percentage,
+            newGroundMeters: meters,
             updatedAt: Date(),
             finishedAt: finishedAt
         )

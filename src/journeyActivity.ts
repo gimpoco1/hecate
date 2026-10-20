@@ -1,13 +1,12 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
-import { discoveredCityPercentage, isPointInCity, type CityBoundary } from "./city";
-import { discoveryCellKey, routeDistanceKm } from "./geo";
-import type { Coordinate, DiscoveryCell } from "./types";
+import { discoveredDistanceKm, routeDistanceKm } from "./geo";
+import type { Coordinate } from "./types";
 
 export type JourneyActivitySnapshot = {
   walkId: string;
   startedAt: number;
   distanceKm: number;
-  newAreaPercentage: number | null;
+  newGroundMeters: number;
 };
 
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
@@ -25,24 +24,21 @@ interface JourneyActivityPlugin {
 
 export const JourneyActivity = registerPlugin<JourneyActivityPlugin>("JourneyActivity");
 
-/** Uses the recorded route and the same city coverage calculation as the journey panel. */
+/** Uses the same new-ground distance calculation as the completed journey recap. */
+export function journeyNewGroundMeters(points: Coordinate[], startingDistanceKm: number): number {
+  return Math.max(0, discoveredDistanceKm(points) - startingDistanceKm) * 1_000;
+}
+
 export function journeyActivitySnapshot(
   walk: { id: string; startedAt: number; points: Coordinate[] },
-  startingCells: Set<string>,
-  cells: DiscoveryCell[],
-  city: CityBoundary | null,
+  startingDistanceKm: number,
+  points: Coordinate[],
 ): JourneyActivitySnapshot {
-  const point = walk.points.at(-1);
-  const currentCity = city && (!point || isPointInCity(point, city)) ? city : null;
-  const previousCells = cells.filter((cell) => startingCells.has(discoveryCellKey(cell)));
   return {
     walkId: walk.id,
     startedAt: walk.startedAt,
     distanceKm: routeDistanceKm(walk.points),
-    newAreaPercentage: currentCity
-      ? Math.max(0, discoveredCityPercentage(cells, currentCity) -
-          discoveredCityPercentage(previousCells, currentCity))
-      : null,
+    newGroundMeters: journeyNewGroundMeters(points, startingDistanceKm),
   };
 }
 

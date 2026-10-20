@@ -52,7 +52,7 @@ public class JourneyActivityPlugin extends Plugin {
 
     private static JourneyState snapshot(PluginCall call, String ownerId, Long finishedAt) {
         return new JourneyState(requiredString(call, "walkId"), ownerId, (long) requiredNumber(call, "startedAt"),
-            requiredNumber(call, "distanceKm"), call.getDouble("newAreaPercentage"), finishedAt);
+            requiredNumber(call, "distanceKm"), call.getDouble("newGroundMeters"), finishedAt);
     }
 
     private static void reject(PluginCall call, RuntimeException error) {

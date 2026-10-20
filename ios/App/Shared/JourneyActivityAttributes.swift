@@ -6,7 +6,7 @@ import Foundation
 struct JourneyActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         let distanceKm: Double
-        let newAreaPercentage: Double?
+        let newGroundMeters: Double?
         let updatedAt: Date
         let finishedAt: Date?
     }
@@ -86,7 +86,7 @@ struct StopJourneyIntent: LiveActivityIntent {
         let state = activity.content.state
         await activity.end(
             ActivityContent(state: JourneyActivityAttributes.ContentState(
-                distanceKm: state.distanceKm, newAreaPercentage: state.newAreaPercentage,
+                distanceKm: state.distanceKm, newGroundMeters: state.newGroundMeters,
                 updatedAt: finishedAt, finishedAt: finishedAt
             ), staleDate: nil),
             dismissalPolicy: .after(finishedAt.addingTimeInterval(5))

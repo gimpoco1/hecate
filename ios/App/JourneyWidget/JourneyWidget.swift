@@ -162,7 +162,7 @@ private struct JourneyMetrics: View {
         HStack(alignment: .top, spacing: 12) {
             metric(distanceLabel(context.state.distanceKm), label: context.state.finishedAt == nil ? "this walk" : "walked")
             Divider().frame(height: 36)
-            metric(context.state.newAreaPercentage.map { String(format: "+%.2f%%", $0) } ?? "—", label: "new area")
+            metric(context.state.newGroundMeters.map { String(format: "+%.0f m", $0) } ?? "—", label: "new area")
             Divider().frame(height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 if let finishedAt = context.state.finishedAt {

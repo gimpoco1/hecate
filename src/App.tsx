@@ -131,7 +131,7 @@ import {
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
-import { JourneyActivity, journeyActivitySnapshot, journeyActionFromUrl, type JourneyStopRequest } from "./journeyActivity";
+import { JourneyActivity, journeyActivitySnapshot, journeyNewGroundMeters, journeyActionFromUrl, type JourneyStopRequest } from "./journeyActivity";
 import { replaceNotificationSchedules } from "./notificationScheduling";
 import {
   defaultActivityNotificationPreferences,
@@ -633,16 +633,14 @@ export function journeyDistanceCounter(
   };
 }
 
-export function journeyPercentageCounter(
-  percentage: number,
-): JourneyCounterDisplay {
-  const value = Number(percentage.toFixed(2));
+export function journeyNewGroundCounter(meters: number): JourneyCounterDisplay {
+  const value = Math.round(meters);
   return {
     value,
-    places: decimalCounterPlaces(value, 2),
+    places: integerCounterPlaces(value),
     prefix: "+",
-    suffix: "%",
-    label: `Plus ${value.toFixed(2)} percent new area`,
+    suffix: " m",
+    label: `Plus ${value} metres of new ground`,
   };
 }
 
@@ -889,7 +887,6 @@ export default function App() {
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
   const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const journeyActivityCityRef = useRef<CityBoundary | null>(null);
   const lastJourneyActivityUpdateRef = useRef(0);
   const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<string | null>(null);
   const widgetStopRef = useRef<JourneyStopRequest | null>(null);
@@ -1038,7 +1035,6 @@ export default function App() {
     currentPoint && cityBoundary && isPointInCity(currentPoint, cityBoundary)
       ? cityBoundary
       : null;
-  journeyActivityCityRef.current = cityBoundary;
   const isCityScale = zoom >= 6;
   const cachedViewCity = useMemo(
     () =>
@@ -1100,26 +1096,15 @@ export default function App() {
   const activeWalkElapsedMs = activeWalkRef.current
     ? Math.max(0, elapsedNow - activeWalkRef.current.startedAt)
     : 0;
-  const activeWalkPercentageAdded = useMemo(() => {
-    const started = explorationStartRef.current;
-    if (tracking !== "tracking" || !started || !activeCity) return null;
-    const previousCells = cells.filter((cell) =>
-      started.cells.has(discoveryCellKey(cell)),
-    );
-    return Math.max(
-      0,
-      discoveredCityPercentage(cells, activeCity) -
-        discoveredCityPercentage(previousCells, activeCity),
-    );
-  }, [activeCity, cells, tracking]);
   const showActiveJourneyMetrics = tracking === "tracking";
-  const displayedDistanceCounter = journeyDistanceCounter(
-    activeWalkDistance,
-  );
-  const displayedPercentageCounter =
-    activeWalkPercentageAdded === null
-      ? null
-      : journeyPercentageCounter(activeWalkPercentageAdded);
+  const displayedDistanceCounter = journeyDistanceCounter(activeWalkDistance);
+  const activeWalkNewGroundMeters = useMemo(() => {
+    const started = explorationStartRef.current;
+    return tracking === "tracking" && started
+      ? journeyNewGroundMeters(points, started.discoveryDistance)
+      : 0;
+  }, [points, tracking]);
+  const displayedNewGroundCounter = journeyNewGroundCounter(activeWalkNewGroundMeters);
   const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
   const nativeApp = isNativeApp();
   const devToolsEnabled =
@@ -1201,7 +1186,7 @@ export default function App() {
     if (!accountUserId || tracking !== "tracking" || !walk || !started ||
         trackingUserRef.current !== accountUserId) return;
     const snapshot = journeyActivitySnapshot(
-      walk, started.cells, cellsRef.current, journeyActivityCityRef.current,
+      walk, started.discoveryDistance, pointsRef.current,
     );
     enqueueJourneyActivity(async () => {
       if (activeWalkRef.current?.id !== snapshot.walkId ||
@@ -2848,7 +2833,7 @@ export default function App() {
         Date.now() - lastJourneyActivityUpdateRef.current >= 10_000) {
       lastJourneyActivityUpdateRef.current = Date.now();
       const snapshot = journeyActivitySnapshot(
-        liveWalk, liveStart.cells, cellsRef.current, journeyActivityCityRef.current,
+        liveWalk, liveStart.discoveryDistance, pointsRef.current,
       );
       enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
     }
@@ -2888,7 +2873,7 @@ export default function App() {
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && active && liveStart) {
       const snapshot = journeyActivitySnapshot(
-        active, liveStart.cells, cellsRef.current, journeyActivityCityRef.current,
+        active, liveStart.discoveryDistance, pointsRef.current,
       );
       enqueueJourneyActivity(() => JourneyActivity.end({ ...snapshot, finishedAt }));
     }
@@ -4685,13 +4670,7 @@ export default function App() {
                       <span>this walk</span>
                     </div>
                     <div>
-                      {displayedPercentageCounter === null ? (
-                        <strong>—</strong>
-                      ) : (
-                        <JourneyCounterValue
-                          display={displayedPercentageCounter}
-                        />
-                      )}
+                      <JourneyCounterValue display={displayedNewGroundCounter} />
                       <span>new area</span>
                     </div>
                     <div>

@@ -56,7 +56,7 @@ final class JourneyNotifications {
         try {
             JSONObject json = new JSONObject(stored);
             return new JourneyState(json.getString("walkId"), json.getString("ownerId"), json.getLong("startedAt"),
-                json.getDouble("distanceKm"), json.isNull("newAreaPercentage") ? null : json.getDouble("newAreaPercentage"),
+                json.getDouble("distanceKm"), json.isNull("newGroundMeters") ? null : json.getDouble("newGroundMeters"),
                 json.isNull("finishedAt") ? null : json.getLong("finishedAt"));
         } catch (JSONException error) {
             throw new IllegalStateException("Saved Android journey data is invalid: " + key, error);
@@ -69,7 +69,7 @@ final class JourneyNotifications {
         json.put("ownerId", state.ownerId());
         json.put("startedAt", state.startedAt());
         json.put("distanceKm", state.distanceKm());
-        json.put("newAreaPercentage", state.newAreaPercentage() == null ? JSONObject.NULL : state.newAreaPercentage());
+        json.put("newGroundMeters", state.newGroundMeters() == null ? JSONObject.NULL : state.newGroundMeters());
         json.put("finishedAt", state.finishedAt() == null ? JSONObject.NULL : state.finishedAt());
         return json;
     }

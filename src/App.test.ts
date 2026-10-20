@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   discoveryProgressCacheKey,
-  journeyPercentageCounter,
+  journeyNewGroundCounter,
   journeyTimeCounter,
   loadCachedDiscoveryProgress,
   saveCachedDiscoveryProgress,
@@ -33,13 +33,12 @@ describe("journey counters", () => {
     expect(journeyTimeCounter(elapsed).text).toBe(text);
   });
 
-  it("keeps new-area progress at two decimal places", () => {
-    expect(journeyPercentageCounter(0.08)).toEqual({
-      value: 0.08,
-      places: [1, ".", 0.1, 0.01],
+  it.each([[0, 0], [123.6, 124], [1500, 1500]])("shows %s metres of new ground", (meters, value) => {
+    expect(journeyNewGroundCounter(meters)).toMatchObject({
+      value,
       prefix: "+",
-      suffix: "%",
-      label: "Plus 0.08 percent new area",
+      suffix: " m",
+      label: `Plus ${value} metres of new ground`,
     });
   });
 });
