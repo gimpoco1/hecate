@@ -1,3 +1,5 @@
+import { ReminderDuration } from "./ReminderDuration";
+import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
 import { useEffect, useState } from "react";
 import { Browser } from "@capacitor/browser";
@@ -10,9 +12,6 @@ import {
   setAutomaticUpdatesEnabled,
 } from "../automaticUpdates";
 import { clearReminderPreference } from "../explorationReminder";
-import {
-  INACTIVITY_REMINDER_MINUTES,
-} from "../inactivityReminder";
 import { openLocationSettings, readLocationAuthorization, type LocationAuthorization } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { currentWorldMilestone } from "../badges";
@@ -58,6 +57,8 @@ type Props = {
     category: ActivityNotificationCategory,
     enabled: boolean,
   ) => Promise<string | null>;
+  onDiscoveryReminderDurationChange: (minutes: number) => string | null;
+  onInactivityReminderDurationChange: (minutes: number) => string | null;
   onDailyReminderTimeChange: (time: string) => string | null;
   onStreakReminderTimeChange: (time: string) => string | null;
   onAllNotificationsChange: (enabled: boolean) => Promise<string | null>;
@@ -158,6 +159,8 @@ export function SyncSheet({
   onActivityNotificationChange,
   onStreakReminderTimeChange,
   onDailyReminderTimeChange,
+  onDiscoveryReminderDurationChange,
+  onInactivityReminderDurationChange,
   onAllNotificationsChange,
   onGpxImport,
   onShowGpxImport,
@@ -1167,10 +1170,24 @@ export function SyncSheet({
                         <div>
                           <strong>Discovery reminders</strong>
                           <p>
-                            Get notified after five minutes of exploring through
-                            an unmapped area. While tracking, Hecate also
-                            suggests stopping after{" "}
-                            {INACTIVITY_REMINDER_MINUTES} minutes in one place.
+                            Get notified after{" "}
+                            <ReminderDuration
+                              title="Discovery reminder delay"
+                              value={activityNotificationPreferences.discoveryReminderMinutes}
+                              options={DISCOVERY_REMINDER_DURATIONS}
+                              disabled={notificationPending || reminderPending}
+                              onChange={onDiscoveryReminderDurationChange}
+                            />{" "}
+                            of exploring through an unmapped area. While tracking,
+                            Hecate also suggests stopping after{" "}
+                            <ReminderDuration
+                              title="Inactivity reminder delay"
+                              value={activityNotificationPreferences.inactivityReminderMinutes}
+                              options={INACTIVITY_REMINDER_DURATIONS}
+                              disabled={notificationPending || reminderPending}
+                              onChange={onInactivityReminderDurationChange}
+                            />{" "}
+                            in one place.
                             Reminder locations are never saved or synced.
                           </p>
                         </div>

@@ -89,7 +89,7 @@ describe("activity notifications", () => {
       enabledActivityNotificationPreferences(),
     );
     expect(hasSavedActivityNotificationPreferences("new-user")).toBe(true);
-    const preferences = { ...enabledActivityNotificationPreferences(), streakReminderTime: "21:45", dailyReminderTime: "08:15" };
+    const preferences = { ...enabledActivityNotificationPreferences(), streakReminderTime: "21:45", dailyReminderTime: "08:15", discoveryReminderMinutes: 10, inactivityReminderMinutes: 30 };
     saveActivityNotificationPreferences("new-user", preferences);
     expect(loadActivityNotificationPreferences("new-user")).toEqual(preferences);
     saveActivityNotificationPreferences("new-user", { ...preferences, dailyReminderTime: "09:30" });
@@ -102,12 +102,14 @@ describe("activity notifications", () => {
     expect(loadActivityNotificationPreferences("streak-user")).toEqual({
       morningInvite: true, weeklyRecap: false, streakReminder: true,
       streakReminderTime: "22:15", dailyReminderTime: "10:00",
+      discoveryReminderMinutes: 5, inactivityReminderMinutes: 15,
     });
     values.set("hecate:activity-notifications:v1:legacy-user", JSON.stringify({
       morningInvite: false, weeklyRecap: true, streakReminder: true,
     }));
     expect(loadActivityNotificationPreferences("legacy-user")).toEqual({
       morningInvite: false, weeklyRecap: true, streakReminder: true, streakReminderTime: "18:00", dailyReminderTime: "10:00",
+      discoveryReminderMinutes: 5, inactivityReminderMinutes: 15,
     });
   });
 });

@@ -1,3 +1,5 @@
+import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
+
 export type ActivityNotificationCategory =
   | "morningInvite"
   | "weeklyRecap"
@@ -6,7 +8,7 @@ export type ActivityNotificationCategory =
 export type ActivityNotificationPreferences = Record<
   ActivityNotificationCategory,
   boolean
-> & { streakReminderTime: string; dailyReminderTime: string };
+> & { streakReminderTime: string; dailyReminderTime: string; discoveryReminderMinutes: number; inactivityReminderMinutes: number };
 
 const STORAGE_VERSION = 1;
 
@@ -17,6 +19,8 @@ export function defaultActivityNotificationPreferences(): ActivityNotificationPr
     streakReminder: false,
     streakReminderTime: "18:00",
     dailyReminderTime: "10:00",
+    discoveryReminderMinutes: 5,
+    inactivityReminderMinutes: 15,
   };
 }
 
@@ -27,6 +31,8 @@ export function enabledActivityNotificationPreferences(): ActivityNotificationPr
     streakReminder: true,
     streakReminderTime: "18:00",
     dailyReminderTime: "10:00",
+    discoveryReminderMinutes: 5,
+    inactivityReminderMinutes: 15,
   };
 }
 
@@ -43,6 +49,8 @@ function isActivityNotificationPreferences(
 ): value is Record<ActivityNotificationCategory, boolean> & {
   streakReminderTime?: string;
   dailyReminderTime?: string;
+  discoveryReminderMinutes?: number;
+  inactivityReminderMinutes?: number;
 } {
   if (!value || typeof value !== "object") return false;
   const preferences = value as Partial<ActivityNotificationPreferences>;
@@ -55,7 +63,11 @@ function isActivityNotificationPreferences(
         isReminderTime(preferences.streakReminderTime))) &&
     (preferences.dailyReminderTime === undefined ||
       (typeof preferences.dailyReminderTime === "string" &&
-        isReminderTime(preferences.dailyReminderTime)))
+        isReminderTime(preferences.dailyReminderTime))) &&
+    (preferences.discoveryReminderMinutes === undefined ||
+      DISCOVERY_REMINDER_DURATIONS.includes(preferences.discoveryReminderMinutes)) &&
+    (preferences.inactivityReminderMinutes === undefined ||
+      INACTIVITY_REMINDER_DURATIONS.includes(preferences.inactivityReminderMinutes))
   );
 }
 
@@ -69,6 +81,8 @@ export function loadActivityNotificationPreferences(
           ...stored,
           streakReminderTime: stored.streakReminderTime ?? "18:00",
           dailyReminderTime: stored.dailyReminderTime ?? "10:00",
+          discoveryReminderMinutes: stored.discoveryReminderMinutes ?? 5,
+          inactivityReminderMinutes: stored.inactivityReminderMinutes ?? 15,
         }
       : defaultActivityNotificationPreferences();
   } catch {

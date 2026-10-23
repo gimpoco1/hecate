@@ -3,7 +3,6 @@ import type { Coordinate } from './types'
 
 export const INACTIVITY_REMINDER_MINUTES = 15
 export const INACTIVITY_RADIUS_M = 150
-const INACTIVITY_DURATION_MS = INACTIVITY_REMINDER_MINUTES * 60_000
 
 /** Includes cells revealed earlier in the current recording. */
 export function isDiscoveredArea(point: Coordinate, discoveredCells: Set<string>) {
@@ -16,6 +15,8 @@ export class InactivityReminder {
   private anchor: Coordinate | null = null
   private dueAt: number | null = null
   private reminded = false
+
+  constructor(private durationMinutes: number) {}
 
   observe(point: Coordinate, discovered: boolean, now: number): number | null {
     // A poor fix cannot tell us whether the person has moved, so keep the
@@ -38,7 +39,7 @@ export class InactivityReminder {
       }
       if (this.reminded) return this.dueAt
       this.anchor = point
-      this.dueAt = now + INACTIVITY_DURATION_MS
+      this.dueAt = now + this.durationMinutes * 60_000
     }
     if (this.reminded) return this.dueAt
     if (this.dueAt !== null && now >= this.dueAt) this.markReminded()

@@ -3850,6 +3850,11 @@ button {
   background: var(--forest);
   color: var(--paper);
 }
+.reminder-duration-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
 .streak-time-picker__actions {
   display: flex;
   justify-content: flex-end;

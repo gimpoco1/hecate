@@ -3,7 +3,6 @@ import type { Coordinate } from './types'
 
 export const REMINDER_MINUTES = 5
 export const REMINDER_DISTANCE_M = 150
-const REMINDER_DURATION_MS = REMINDER_MINUTES * 60_000
 const THREE_MINUTES = 3 * 60_000
 export const REMINDER_COOLDOWN_MS = 2 * 60 * 60_000
 export const REMINDER_TAP_PAUSE_MS = 30 * 60_000
@@ -22,7 +21,7 @@ export function isUnmappedArea(point: Coordinate, knownCells: Set<string>) {
 /** Runs the production detector on synthetic points without altering app data. */
 export function simulateUnmappedWalk(knownCells: Set<string>, now = Date.now()) {
   for (let candidate = 0; candidate < 30; candidate += 1) {
-    const detector = new ExplorationReminder()
+    const detector = new ExplorationReminder(0, 0, REMINDER_MINUTES)
     let result: ReminderKind | null = null
     for (let minute = 0; minute <= REMINDER_MINUTES; minute += 1) {
       const point: Coordinate = {
@@ -80,7 +79,7 @@ export class ExplorationReminder {
   private distanceM = 0
   private unmappedSegments = 0
 
-  constructor(private lastPromptAt = 0, private pauseUntil = 0) {}
+  constructor(private lastPromptAt: number, private pauseUntil: number, readonly durationMinutes: number) {}
 
   pauseAfterTap(tappedAt: number) {
     this.reset()
@@ -134,7 +133,7 @@ export class ExplorationReminder {
     this.last = point
     this.distanceM += movementM
     this.unmappedSegments += 1
-    if (!this.first || point.recordedAt - this.first.recordedAt < REMINDER_DURATION_MS
+    if (!this.first || point.recordedAt - this.first.recordedAt < this.durationMinutes * 60_000
       || this.distanceM < REMINDER_DISTANCE_M || this.unmappedSegments < 3) return null
     if (this.lastPromptAt && point.recordedAt - this.lastPromptAt < REMINDER_COOLDOWN_MS) return null
 
