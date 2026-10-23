@@ -8,7 +8,7 @@ export type ActivityNotificationCategory =
 export type ActivityNotificationPreferences = Record<
   ActivityNotificationCategory,
   boolean
-> & { streakReminderTime: string; dailyReminderTime: string; discoveryReminderMinutes: number; inactivityReminderMinutes: number };
+> & { streakReminderTime: string; dailyReminderTime: string; discoveryReminderMinutes: number; inactivityReminderMinutes: number; discoveredAreaReminders: boolean };
 
 const STORAGE_VERSION = 1;
 
@@ -21,6 +21,7 @@ export function defaultActivityNotificationPreferences(): ActivityNotificationPr
     dailyReminderTime: "10:00",
     discoveryReminderMinutes: 5,
     inactivityReminderMinutes: 15,
+    discoveredAreaReminders: false,
   };
 }
 
@@ -33,6 +34,7 @@ export function enabledActivityNotificationPreferences(): ActivityNotificationPr
     dailyReminderTime: "10:00",
     discoveryReminderMinutes: 5,
     inactivityReminderMinutes: 15,
+    discoveredAreaReminders: false,
   };
 }
 
@@ -51,6 +53,7 @@ function isActivityNotificationPreferences(
   dailyReminderTime?: string;
   discoveryReminderMinutes?: number;
   inactivityReminderMinutes?: number;
+  discoveredAreaReminders?: boolean;
 } {
   if (!value || typeof value !== "object") return false;
   const preferences = value as Partial<ActivityNotificationPreferences>;
@@ -67,7 +70,9 @@ function isActivityNotificationPreferences(
     (preferences.discoveryReminderMinutes === undefined ||
       DISCOVERY_REMINDER_DURATIONS.includes(preferences.discoveryReminderMinutes)) &&
     (preferences.inactivityReminderMinutes === undefined ||
-      INACTIVITY_REMINDER_DURATIONS.includes(preferences.inactivityReminderMinutes))
+      INACTIVITY_REMINDER_DURATIONS.includes(preferences.inactivityReminderMinutes)) &&
+    (preferences.discoveredAreaReminders === undefined ||
+      typeof preferences.discoveredAreaReminders === "boolean")
   );
 }
 
@@ -83,6 +88,7 @@ export function loadActivityNotificationPreferences(
           dailyReminderTime: stored.dailyReminderTime ?? "10:00",
           discoveryReminderMinutes: stored.discoveryReminderMinutes ?? 5,
           inactivityReminderMinutes: stored.inactivityReminderMinutes ?? 15,
+          discoveredAreaReminders: stored.discoveredAreaReminders ?? false,
         }
       : defaultActivityNotificationPreferences();
   } catch {

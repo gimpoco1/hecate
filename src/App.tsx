@@ -231,22 +231,23 @@ const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
 
 function reminderMessage(minutes: number): string {
-  return `You have been moving through new areas for ${minutes} minutes. Start recording your journey?`;
+  return `You have been walking for ${minutes} minutes. Start recording your journey?`;
 }
 
 async function sendReminderNotification(
   userId: string,
   minutes: number,
+  kind: ReminderKind,
 ) {
   await LocalNotifications.schedule({
     notifications: [
       {
         id: REMINDER_NOTIFICATION_ID,
-        title: "Discovering somewhere new?",
+        title: "Ready to record your journey?",
         body: reminderMessage(minutes),
         isExactNotification: false,
         schedule: { at: new Date(Date.now() + 1_000) },
-        extra: { kind: "unmapped", userId },
+        extra: { kind, userId },
       },
     ],
   });
@@ -871,7 +872,7 @@ export default function App() {
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
   const latestPassivePointRef = useRef<Coordinate | null>(null);
   const focusFirstTrackingPointRef = useRef(false);
-  const reminderRef = useRef(new ExplorationReminder(0, 0, 5));
+  const reminderRef = useRef(new ExplorationReminder(0, 0, 5, "unmapped"));
   const inactivityReminderRef = useRef(new InactivityReminder(15));
   const inactivityDueAtRef = useRef<number | null>(null);
   const inactivityTimerRef = useRef<number | null>(null);
@@ -1671,6 +1672,7 @@ export default function App() {
       preference.promptedAt,
       preference.pausedUntil,
       activityNotificationPreferences.discoveryReminderMinutes,
+      activityNotificationPreferences.discoveredAreaReminders ? "all" : "unmapped",
     );
     const enabled = preference.enabled &&
       notificationPermissionReady === true && discoveryLocationAllowed;
@@ -1678,7 +1680,7 @@ export default function App() {
     reminderEnabledRef.current = enabled;
     if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
-  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder, activityNotificationPreferences.discoveryReminderMinutes]);
+  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder, activityNotificationPreferences.discoveryReminderMinutes, activityNotificationPreferences.discoveredAreaReminders]);
 
   useEffect(() => {
     resetInactivityReminder();
@@ -2475,7 +2477,7 @@ export default function App() {
               reminderRef.current.pausedUntil,
             );
             if (nativeApp)
-              void sendReminderNotification(accountUserId, reminderRef.current.durationMinutes).catch((error) =>
+              void sendReminderNotification(accountUserId, reminderRef.current.durationMinutes, kind).catch((error) =>
                 console.warn("Could not show discovery reminder", error),
               );
             else if (visible) setReminderPrompt(kind);
@@ -3156,6 +3158,19 @@ export default function App() {
     return null;
   };
 
+  const updateDiscoveredAreaReminders = (enabled: boolean): string | null => {
+    if (!accountUserId) return "Sign in before changing journey reminders.";
+    const next = { ...activityNotificationPreferences, discoveredAreaReminders: enabled };
+    try {
+      saveActivityNotificationPreferences(accountUserId, next);
+    } catch (error) {
+      console.error("Could not save discovered-area reminder preference", { accountUserId, enabled, error });
+      return "Could not save your reminder preference. Try again.";
+    }
+    setActivityNotificationPreferences(next);
+    return null;
+  };
+
   const updateReminderTime = (
     field: "streakReminderTime" | "dailyReminderTime",
     time: string,
@@ -3216,6 +3231,7 @@ export default function App() {
       dailyReminderTime: activityNotificationPreferences.dailyReminderTime,
       discoveryReminderMinutes: activityNotificationPreferences.discoveryReminderMinutes,
       inactivityReminderMinutes: activityNotificationPreferences.inactivityReminderMinutes,
+      discoveredAreaReminders: activityNotificationPreferences.discoveredAreaReminders,
     };
     const remindersActive = enabled && discoveryLocationAllowed;
     setReminderEnabled(remindersActive);
@@ -3300,7 +3316,7 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: REMINDER_TEST_NOTIFICATION_ID,
-        title: "Discovering somewhere new?",
+        title: "Ready to record your journey?",
         body: reminderMessage(activityNotificationPreferences.discoveryReminderMinutes),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "test-unmapped", userId: accountUserId },
@@ -4951,6 +4967,7 @@ export default function App() {
           activityNotificationPreferences={activityNotificationPreferences}
           onActivityNotificationChange={updateActivityNotificationPreference}
           onStreakReminderTimeChange={(time) => updateReminderTime("streakReminderTime", time)}
+          onDiscoveredAreaRemindersChange={updateDiscoveredAreaReminders}
           onDiscoveryReminderDurationChange={(minutes) => updateReminderDuration("discoveryReminderMinutes", minutes)}
           onInactivityReminderDurationChange={(minutes) => updateReminderDuration("inactivityReminderMinutes", minutes)}
           onDailyReminderTimeChange={(time) => updateReminderTime("dailyReminderTime", time)}

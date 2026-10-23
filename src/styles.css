@@ -3722,6 +3722,29 @@ button {
   border-bottom: 1px solid rgba(24, 60, 47, 0.08);
   background: transparent;
 }
+.sheet .account-reminder-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #65736d;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.account-reminder-option input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--forest);
+  cursor: pointer;
+}
+.account-reminder-option:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
+}
 .account-setting--all {
   padding-top: 4px;
 }

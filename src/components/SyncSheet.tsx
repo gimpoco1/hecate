@@ -57,6 +57,7 @@ type Props = {
     category: ActivityNotificationCategory,
     enabled: boolean,
   ) => Promise<string | null>;
+  onDiscoveredAreaRemindersChange: (enabled: boolean) => string | null;
   onDiscoveryReminderDurationChange: (minutes: number) => string | null;
   onInactivityReminderDurationChange: (minutes: number) => string | null;
   onDailyReminderTimeChange: (time: string) => string | null;
@@ -160,6 +161,7 @@ export function SyncSheet({
   onStreakReminderTimeChange,
   onDailyReminderTimeChange,
   onDiscoveryReminderDurationChange,
+  onDiscoveredAreaRemindersChange,
   onInactivityReminderDurationChange,
   onAllNotificationsChange,
   onGpxImport,
@@ -1166,48 +1168,60 @@ export function SyncSheet({
                             : "Turn all on"}
                         </button>
                       </div>
-                      <div className="account-setting">
-                        <div>
-                          <strong>Discovery reminders</strong>
-                          <p>
-                            Get notified after{" "}
-                            <ReminderDuration
-                              title="Discovery reminder delay"
-                              value={activityNotificationPreferences.discoveryReminderMinutes}
-                              options={DISCOVERY_REMINDER_DURATIONS}
-                              disabled={notificationPending || reminderPending}
-                              onChange={onDiscoveryReminderDurationChange}
-                            />{" "}
-                            of exploring through an unmapped area. While tracking,
-                            Hecate also suggests stopping after{" "}
-                            <ReminderDuration
-                              title="Inactivity reminder delay"
-                              value={activityNotificationPreferences.inactivityReminderMinutes}
-                              options={INACTIVITY_REMINDER_DURATIONS}
-                              disabled={notificationPending || reminderPending}
-                              onChange={onInactivityReminderDurationChange}
-                            />{" "}
-                            in one place.
-                            Reminder locations are never saved or synced.
-                          </p>
+                      <div className="account-setting" role="group" aria-labelledby="discovery-reminders-title">
+                          <div>
+                            <strong id="discovery-reminders-title">Undiscovered area reminders</strong>
+                            <p>
+                              Get notified after{" "}
+                              <ReminderDuration
+                                title="Discovery reminder delay"
+                                value={activityNotificationPreferences.discoveryReminderMinutes}
+                                options={DISCOVERY_REMINDER_DURATIONS}
+                                disabled={notificationPending || reminderPending}
+                                onChange={onDiscoveryReminderDurationChange}
+                              />{" "}
+                              of exploring through an undiscovered area. While tracking,
+                              Hecate also suggests stopping after{" "}
+                              <ReminderDuration
+                                title="Inactivity reminder delay"
+                                value={activityNotificationPreferences.inactivityReminderMinutes}
+                                options={INACTIVITY_REMINDER_DURATIONS}
+                                disabled={notificationPending || reminderPending}
+                                onChange={onInactivityReminderDurationChange}
+                              />{" "}
+                              in one place.
+                              Reminder locations are never saved or synced.
+                            </p>
+                            <label className="account-reminder-option">
+                              <input
+                                type="checkbox"
+                                aria-label="Journey reminders in discovered areas"
+                                checked={activityNotificationPreferences.discoveredAreaReminders}
+                                disabled={!reminderEnabled || notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
+                                onChange={(event) => setReminderError(onDiscoveredAreaRemindersChange(
+                                  event.target.checked,
+                                ) ?? "")}
+                              />
+                              <span>Also remind me in discovered areas</span>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
+                            aria-label="Undiscovered area reminders"
+                            disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
+                            onClick={() => {
+                              setReminderPending(true);
+                              setReminderError("");
+                              void onReminderChange(!reminderEnabled)
+                                .then((error) => setReminderError(error ?? ""))
+                                .finally(() => setReminderPending(false));
+                            }}
+                          >
+                            {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
-                          aria-label="Walking reminders"
-                          disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
-                          onClick={() => {
-                            setReminderPending(true);
-                            setReminderError("");
-                            void onReminderChange(!reminderEnabled)
-                              .then((error) => setReminderError(error ?? ""))
-                              .finally(() => setReminderPending(false));
-                          }}
-                        >
-                          {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
-                        </button>
-                      </div>
                       {notificationPermissionReady === true && (locationAuthorization === "whenInUse" ||
                         locationAuthorization === "denied" ||
                         locationAuthorization === "notDetermined" ||
