@@ -16,10 +16,35 @@ afterEach(() => {
 });
 
 describe("activity notifications", () => {
-  it("uses progress without exposing location in the morning invite", () => {
-    expect(morningInviteMessage(0.08)).toBe(
-      "You have pioneered 0.08 km so far. Where to today?",
+  it("mentions world milestones only within a short walk and near completion", () => {
+    expect(morningInviteMessage(4.5, null)).toBe(
+      "Just 500 m to your Wayfinder milestone. Head out for a walk today!",
     );
+    expect(morningInviteMessage(99, null)).toBe(
+      "Just 1 km to your Edge of Space milestone. Head out for a walk today!",
+    );
+    const ordinary = "A new day, a new path. Where will you discover today?";
+    expect(morningInviteMessage(4, null)).toBe(ordinary);
+    expect(morningInviteMessage(98.99, null)).toBe(ordinary);
+    expect(morningInviteMessage(50, null)).toBe(ordinary);
+    expect(morningInviteMessage(5, null)).toBe(ordinary);
+    expect(morningInviteMessage(384_400, null)).toBe(ordinary);
+    expect(morningInviteMessage(null, null)).toBe(ordinary);
+  });
+
+  it("uses new ground for nearby city milestones and chooses the closest qualifying milestone", () => {
+    const city = { cityName: "Barcelona", discoveredKm: 4.5 };
+    expect(morningInviteMessage(50, city)).toBe(
+      "Just 500 m of new ground to your First Footprint milestone in Barcelona. Head out for a walk today!",
+    );
+    expect(morningInviteMessage(99, city)).toContain("First Footprint milestone in Barcelona");
+    expect(morningInviteMessage(4.75, city)).toContain("250 m to your Wayfinder milestone");
+    const ordinary = morningInviteMessage(null, null);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 4 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 24 })).toContain("1 km of new ground");
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 23.99 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 5 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 100 })).toBe(ordinary);
   });
 
   it("schedules an at-risk streak for this evening or tomorrow", () => {

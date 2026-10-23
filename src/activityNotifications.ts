@@ -1,3 +1,4 @@
+import { cityMilestoneProgress, nextWorldMilestone, worldMilestoneProgress } from "./badges";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
 
 export type ActivityNotificationCategory =
@@ -116,8 +117,50 @@ export function saveActivityNotificationPreferences(
   localStorage.setItem(storageKey(userId), JSON.stringify(preferences));
 }
 
-export function morningInviteMessage(discoveryDistanceKm: number): string {
-  return `You have pioneered ${discoveryDistanceKm.toFixed(2)} km so far. Where to today?`;
+type CityReminderProgress = {
+  cityName: string;
+  discoveredKm: number;
+};
+
+type NearbyMilestone = {
+  remainingKm: number;
+  progress: number;
+  title: string;
+  distanceScope: string;
+};
+
+export function morningInviteMessage(
+  travelledDistanceKm: number | null,
+  city: CityReminderProgress | null,
+): string {
+  const candidates: NearbyMilestone[] = [];
+  if (travelledDistanceKm !== null) {
+    const next = nextWorldMilestone(travelledDistanceKm);
+    if (next) candidates.push({
+      remainingKm: next.thresholdKm - travelledDistanceKm,
+      progress: worldMilestoneProgress(travelledDistanceKm),
+      title: `${next.title} milestone`,
+      distanceScope: "",
+    });
+  }
+  if (city) {
+    const milestone = cityMilestoneProgress(city.discoveredKm);
+    if (milestone.next) candidates.push({
+      remainingKm: milestone.next.thresholdKm - city.discoveredKm,
+      progress: milestone.progress,
+      title: `${milestone.next.title} milestone in ${city.cityName}`,
+      distanceScope: " of new ground",
+    });
+  }
+  const closest = candidates
+    .filter(({ remainingKm, progress }) => remainingKm > 0 && remainingKm <= 1 && progress >= 0.9)
+    .sort((a, b) => a.remainingKm - b.remainingKm)[0];
+  if (closest) {
+    const meters = Math.ceil(closest.remainingKm * 1_000);
+    const distance = meters >= 1_000 ? "1 km" : `${meters} m`;
+    return `Just ${distance}${closest.distanceScope} to your ${closest.title}. Head out for a walk today!`;
+  }
+  return "A new day, a new path. Where will you discover today?";
 }
 
 export function weeklyRecapMessage(

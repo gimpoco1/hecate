@@ -1453,13 +1453,13 @@ export default function App() {
   const activeCityProgress = activeCity
     ? cityProgresses.find(({ city }) => city.id === activeCity.id)
     : null;
-  const accountCityProgress = activeCity && activeCityProgress
+  const accountCityProgress = useMemo(() => activeCity && activeCityProgress
     ? {
         cityId: activeCity.id,
         cityName: activeCity.name,
         discoveredKm: activeCityProgress.distance,
       }
-    : null;
+    : null, [activeCity, activeCityProgress]);
   const earnedAchievementIds = useMemo(
     () =>
       achievementEvaluations
@@ -1731,7 +1731,12 @@ export default function App() {
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
         title: "Heading out today?",
-        body: "A new day, a new path. Where will you discover today?",
+        body: morningInviteMessage(
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance : null,
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? accountCityProgress : null,
+        ),
         schedule: {
           on: { hour, minute, second: 0 },
           allowWhileIdle: false,
@@ -1815,6 +1820,7 @@ export default function App() {
     accountUserId,
     activityNotificationPreferences,
     discoveryProgress,
+    accountCityProgress,
     nativeApp,
     notificationPermissionReady,
     notificationClock,
@@ -3303,7 +3309,12 @@ export default function App() {
       {
         id: MORNING_INVITE_TEST_NOTIFICATION_ID,
         title: "Heading out today?",
-        body: morningInviteMessage(discoveryProgress.discoveryDistance),
+        body: morningInviteMessage(
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance : null,
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? accountCityProgress : null,
+        ),
         schedule: { at: new Date(Date.now() + 5_000) },
         actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
         extra: { kind: "morning-invite", userId: accountUserId },
