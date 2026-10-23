@@ -138,6 +138,7 @@ import {
   enabledActivityNotificationPreferences,
   hasSavedActivityNotificationPreferences,
   loadActivityNotificationPreferences,
+  isReminderTime,
   morningInviteMessage,
   nextWeeklyRecapDate,
   saveActivityNotificationPreferences,
@@ -1714,12 +1715,13 @@ export default function App() {
       .reduce((total, journey) => total + journey.travelledKm, 0);
     const notifications: LocalNotificationSchema[] = [];
     if (preferences.morningInvite) {
+      const [hour, minute] = preferences.dailyReminderTime.split(":").map(Number);
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
         title: "Heading out today?",
         body: "A new day, a new path. Where will you discover today?",
         schedule: {
-          on: { hour: 10, minute: 0, second: 0 },
+          on: { hour, minute, second: 0 },
           allowWhileIdle: false,
         },
         isExactNotification: false,
@@ -1740,7 +1742,7 @@ export default function App() {
         extra: { kind: "weekly-recap", userId: accountUserId },
       });
     }
-    const streakDate = streakReminderDate(now, todayDistance);
+    const streakDate = streakReminderDate(now, todayDistance, preferences.streakReminderTime);
     if (
       preferences.streakReminder &&
       citiesLoadedUserId === accountUserId &&
@@ -3144,6 +3146,23 @@ export default function App() {
     return null;
   };
 
+  const updateReminderTime = (
+    field: "streakReminderTime" | "dailyReminderTime",
+    time: string,
+  ): string | null => {
+    if (!accountUserId) return "Sign in before changing the reminder time.";
+    if (!isReminderTime(time)) return "Choose a valid reminder time.";
+    const next = { ...activityNotificationPreferences, [field]: time };
+    try {
+      saveActivityNotificationPreferences(accountUserId, next);
+    } catch (error) {
+      console.error("Could not save reminder time", { accountUserId, field, time, error });
+      return "Could not save your reminder time. Try again.";
+    }
+    setActivityNotificationPreferences(next);
+    return null;
+  };
+
   const updateAllNotifications = async (
     enabled: boolean,
   ): Promise<string | null> => {
@@ -3160,9 +3179,13 @@ export default function App() {
     }
     if (accountUserIdRef.current !== accountUserId)
       return "Your account changed. Reopen notification settings and try again.";
-    const nextActivityPreferences = enabled
-      ? enabledActivityNotificationPreferences()
-      : defaultActivityNotificationPreferences();
+    const nextActivityPreferences = {
+      ...(enabled
+        ? enabledActivityNotificationPreferences()
+        : defaultActivityNotificationPreferences()),
+      streakReminderTime: activityNotificationPreferences.streakReminderTime,
+      dailyReminderTime: activityNotificationPreferences.dailyReminderTime,
+    };
     const remindersActive = enabled && discoveryLocationAllowed;
     setReminderEnabled(remindersActive);
     reminderEnabledRef.current = remindersActive;
@@ -4896,6 +4919,8 @@ export default function App() {
           onReminderChange={updateReminderEnabled}
           activityNotificationPreferences={activityNotificationPreferences}
           onActivityNotificationChange={updateActivityNotificationPreference}
+          onStreakReminderTimeChange={(time) => updateReminderTime("streakReminderTime", time)}
+          onDailyReminderTimeChange={(time) => updateReminderTime("dailyReminderTime", time)}
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
           onShowGpxImport={showRouteOnMap}

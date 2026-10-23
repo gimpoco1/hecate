@@ -6,7 +6,7 @@ export type ActivityNotificationCategory =
 export type ActivityNotificationPreferences = Record<
   ActivityNotificationCategory,
   boolean
->;
+> & { streakReminderTime: string; dailyReminderTime: string };
 
 const STORAGE_VERSION = 1;
 
@@ -15,6 +15,8 @@ export function defaultActivityNotificationPreferences(): ActivityNotificationPr
     morningInvite: false,
     weeklyRecap: false,
     streakReminder: false,
+    streakReminderTime: "18:00",
+    dailyReminderTime: "10:00",
   };
 }
 
@@ -23,7 +25,13 @@ export function enabledActivityNotificationPreferences(): ActivityNotificationPr
     morningInvite: true,
     weeklyRecap: true,
     streakReminder: true,
+    streakReminderTime: "18:00",
+    dailyReminderTime: "10:00",
   };
+}
+
+export function isReminderTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function storageKey(userId: string): string {
@@ -32,13 +40,22 @@ function storageKey(userId: string): string {
 
 function isActivityNotificationPreferences(
   value: unknown,
-): value is ActivityNotificationPreferences {
+): value is Record<ActivityNotificationCategory, boolean> & {
+  streakReminderTime?: string;
+  dailyReminderTime?: string;
+} {
   if (!value || typeof value !== "object") return false;
   const preferences = value as Partial<ActivityNotificationPreferences>;
   return (
     typeof preferences.morningInvite === "boolean" &&
     typeof preferences.weeklyRecap === "boolean" &&
-    typeof preferences.streakReminder === "boolean"
+    typeof preferences.streakReminder === "boolean" &&
+    (preferences.streakReminderTime === undefined ||
+      (typeof preferences.streakReminderTime === "string" &&
+        isReminderTime(preferences.streakReminderTime))) &&
+    (preferences.dailyReminderTime === undefined ||
+      (typeof preferences.dailyReminderTime === "string" &&
+        isReminderTime(preferences.dailyReminderTime)))
   );
 }
 
@@ -48,7 +65,11 @@ export function loadActivityNotificationPreferences(
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey(userId)) ?? "null");
     return isActivityNotificationPreferences(stored)
-      ? stored
+      ? {
+          ...stored,
+          streakReminderTime: stored.streakReminderTime ?? "18:00",
+          dailyReminderTime: stored.dailyReminderTime ?? "10:00",
+        }
       : defaultActivityNotificationPreferences();
   } catch {
     return defaultActivityNotificationPreferences();
@@ -94,14 +115,19 @@ export function streakReminderMessage(streakDays: number): string {
 export function streakReminderDate(
   now: number,
   travelledTodayKm: number,
+  reminderTime: string,
 ): Date | null {
+  if (!isReminderTime(reminderTime)) {
+    throw new RangeError(`Invalid streak reminder time: ${reminderTime}. Expected HH:mm.`);
+  }
+  const [hour, minute] = reminderTime.split(":").map(Number);
   const scheduled = new Date(now);
+  scheduled.setHours(hour, minute, 0, 0);
   if (travelledTodayKm > 0) {
     scheduled.setDate(scheduled.getDate() + 1);
-  } else if (scheduled.getHours() >= 18) {
+  } else if (scheduled.getTime() <= now) {
     return null;
   }
-  scheduled.setHours(18, 0, 0, 0);
   return scheduled;
 }
 
