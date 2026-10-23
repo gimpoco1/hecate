@@ -1,3 +1,6 @@
+import { ReminderDuration } from "./ReminderDuration";
+import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
+import { ReminderTime } from "./ReminderTime";
 import { useEffect, useState } from "react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -9,9 +12,6 @@ import {
   setAutomaticUpdatesEnabled,
 } from "../automaticUpdates";
 import { clearReminderPreference } from "../explorationReminder";
-import {
-  INACTIVITY_REMINDER_MINUTES,
-} from "../inactivityReminder";
 import { openLocationSettings, readLocationAuthorization, type LocationAuthorization } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { currentWorldMilestone } from "../badges";
@@ -57,6 +57,11 @@ type Props = {
     category: ActivityNotificationCategory,
     enabled: boolean,
   ) => Promise<string | null>;
+  onDiscoveredAreaRemindersChange: (enabled: boolean) => string | null;
+  onDiscoveryReminderDurationChange: (minutes: number) => string | null;
+  onInactivityReminderDurationChange: (minutes: number) => string | null;
+  onDailyReminderTimeChange: (time: string) => string | null;
+  onStreakReminderTimeChange: (time: string) => string | null;
   onAllNotificationsChange: (enabled: boolean) => Promise<string | null>;
   onGpxImport: (file: File) => Promise<GpxImportResult>;
   onShowGpxImport: (points: Coordinate[]) => void;
@@ -153,6 +158,11 @@ export function SyncSheet({
   onReminderChange,
   activityNotificationPreferences,
   onActivityNotificationChange,
+  onStreakReminderTimeChange,
+  onDailyReminderTimeChange,
+  onDiscoveryReminderDurationChange,
+  onDiscoveredAreaRemindersChange,
+  onInactivityReminderDurationChange,
   onAllNotificationsChange,
   onGpxImport,
   onShowGpxImport,
@@ -1158,34 +1168,60 @@ export function SyncSheet({
                             : "Turn all on"}
                         </button>
                       </div>
-                      <div className="account-setting">
-                        <div>
-                          <strong>Discovery reminders</strong>
-                          <p>
-                            Get notified after five minutes of exploring through
-                            an unmapped area. While tracking, Hecate also
-                            suggests stopping after{" "}
-                            {INACTIVITY_REMINDER_MINUTES} minutes in one place.
-                            Reminder locations are never saved or synced.
-                          </p>
+                      <div className="account-setting" role="group" aria-labelledby="discovery-reminders-title">
+                          <div>
+                            <strong id="discovery-reminders-title">Undiscovered area reminders</strong>
+                            <p>
+                              Get notified after{" "}
+                              <ReminderDuration
+                                title="Discovery reminder delay"
+                                value={activityNotificationPreferences.discoveryReminderMinutes}
+                                options={DISCOVERY_REMINDER_DURATIONS}
+                                disabled={notificationPending || reminderPending}
+                                onChange={onDiscoveryReminderDurationChange}
+                              />{" "}
+                              of exploring through an undiscovered area. While tracking,
+                              Hecate also suggests stopping after{" "}
+                              <ReminderDuration
+                                title="Inactivity reminder delay"
+                                value={activityNotificationPreferences.inactivityReminderMinutes}
+                                options={INACTIVITY_REMINDER_DURATIONS}
+                                disabled={notificationPending || reminderPending}
+                                onChange={onInactivityReminderDurationChange}
+                              />{" "}
+                              in one place.
+                              Reminder locations are never saved or synced.
+                            </p>
+                            <label className="account-reminder-option">
+                              <input
+                                type="checkbox"
+                                aria-label="Journey reminders in discovered areas"
+                                checked={activityNotificationPreferences.discoveredAreaReminders}
+                                disabled={!reminderEnabled || notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
+                                onChange={(event) => setReminderError(onDiscoveredAreaRemindersChange(
+                                  event.target.checked,
+                                ) ?? "")}
+                              />
+                              <span>Also remind me in discovered areas</span>
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
+                            aria-label="Undiscovered area reminders"
+                            disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
+                            onClick={() => {
+                              setReminderPending(true);
+                              setReminderError("");
+                              void onReminderChange(!reminderEnabled)
+                                .then((error) => setReminderError(error ?? ""))
+                                .finally(() => setReminderPending(false));
+                            }}
+                          >
+                            {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
-                          aria-label="Walking reminders"
-                          disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
-                          onClick={() => {
-                            setReminderPending(true);
-                            setReminderError("");
-                            void onReminderChange(!reminderEnabled)
-                              .then((error) => setReminderError(error ?? ""))
-                              .finally(() => setReminderPending(false));
-                          }}
-                        >
-                          {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
-                        </button>
-                      </div>
                       {notificationPermissionReady === true && (locationAuthorization === "whenInUse" ||
                         locationAuthorization === "denied" ||
                         locationAuthorization === "notDetermined" ||
@@ -1246,13 +1282,37 @@ export function SyncSheet({
                         [
                           "streakReminder",
                           "Streak reminder",
-                          "Receive a 6 PM reminder when you have not walked that day and your current streak is at risk.",
+                          "Receive a reminder at your chosen time when you have not walked that day and your current streak is at risk.",
                         ] as const,
                       ].map(([category, title, description]) => (
                         <div className="account-setting" key={category}>
                           <div>
                             <strong>{title}</strong>
-                            <p>{description}</p>
+                            <p>
+                              {category === "streakReminder" ? (
+                                <>
+                                  Receive a reminder at{" "}
+                                  <ReminderTime
+                                    title="Streak reminder time"
+                                    value={activityNotificationPreferences.streakReminderTime}
+                                    disabled={notificationPending || reminderPending}
+                                    onChange={onStreakReminderTimeChange}
+                                  />{" "}
+                                  when you have not walked that day and your current streak is at risk.
+                                </>
+                              ) : category === "morningInvite" ? (
+                                <>
+                                  Receive a reminder at{" "}
+                                  <ReminderTime
+                                    title="Daily reminder time"
+                                    value={activityNotificationPreferences.dailyReminderTime}
+                                    disabled={notificationPending || reminderPending}
+                                    onChange={onDailyReminderTimeChange}
+                                  />{" "}
+                                  to get outside and add distance to your map.
+                                </>
+                              ) : description}
+                            </p>
                           </div>
                           <button
                             type="button"
@@ -1457,7 +1517,7 @@ export function SyncSheet({
             account sync.
           </div>
         )}
-        <section className="account-project-support" aria-label="Support Hecate">
+        {user && <section className="account-project-support" aria-label="Support Hecate">
           <strong>Enjoying Hecate?</strong>
           <p>
             If Hecate adds a little discovery to your day, consider buying me a
@@ -1470,7 +1530,7 @@ export function SyncSheet({
             <CoffeeIcon size={18} />
             Buy me a coffee
           </button>
-        </section>
+        </section>}
         <nav className="account-legal-links" aria-label="Legal and support">
           <a href="/privacy-policy.html">Privacy Policy</a>
           <span aria-hidden="true">·</span>

@@ -1,3 +1,4 @@
+import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -138,6 +139,7 @@ import {
   enabledActivityNotificationPreferences,
   hasSavedActivityNotificationPreferences,
   loadActivityNotificationPreferences,
+  isReminderTime,
   morningInviteMessage,
   nextWeeklyRecapDate,
   saveActivityNotificationPreferences,
@@ -228,22 +230,24 @@ const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
 const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
 
-function reminderMessage() {
-  return "You have been moving through new areas for 5 minutes. Start recording your journey?";
+function reminderMessage(minutes: number): string {
+  return `You have been walking for ${minutes} minutes. Start recording your journey?`;
 }
 
 async function sendReminderNotification(
   userId: string,
+  minutes: number,
+  kind: ReminderKind,
 ) {
   await LocalNotifications.schedule({
     notifications: [
       {
         id: REMINDER_NOTIFICATION_ID,
-        title: "Discovering somewhere new?",
-        body: reminderMessage(),
+        title: "Ready to record your journey?",
+        body: reminderMessage(minutes),
         isExactNotification: false,
         schedule: { at: new Date(Date.now() + 1_000) },
-        extra: { kind: "unmapped", userId },
+        extra: { kind, userId },
       },
     ],
   });
@@ -868,8 +872,8 @@ export default function App() {
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
   const latestPassivePointRef = useRef<Coordinate | null>(null);
   const focusFirstTrackingPointRef = useRef(false);
-  const reminderRef = useRef(new ExplorationReminder());
-  const inactivityReminderRef = useRef(new InactivityReminder());
+  const reminderRef = useRef(new ExplorationReminder(0, 0, 5, "unmapped"));
+  const inactivityReminderRef = useRef(new InactivityReminder(15));
   const inactivityDueAtRef = useRef<number | null>(null);
   const inactivityTimerRef = useRef<number | null>(null);
   const inactivityGenerationRef = useRef(0);
@@ -1449,13 +1453,13 @@ export default function App() {
   const activeCityProgress = activeCity
     ? cityProgresses.find(({ city }) => city.id === activeCity.id)
     : null;
-  const accountCityProgress = activeCity && activeCityProgress
+  const accountCityProgress = useMemo(() => activeCity && activeCityProgress
     ? {
         cityId: activeCity.id,
         cityName: activeCity.name,
         discoveredKm: activeCityProgress.distance,
       }
-    : null;
+    : null, [activeCity, activeCityProgress]);
   const earnedAchievementIds = useMemo(
     () =>
       achievementEvaluations
@@ -1667,6 +1671,8 @@ export default function App() {
     reminderRef.current = new ExplorationReminder(
       preference.promptedAt,
       preference.pausedUntil,
+      activityNotificationPreferences.discoveryReminderMinutes,
+      activityNotificationPreferences.discoveredAreaReminders ? "all" : "unmapped",
     );
     const enabled = preference.enabled &&
       notificationPermissionReady === true && discoveryLocationAllowed;
@@ -1674,7 +1680,14 @@ export default function App() {
     reminderEnabledRef.current = enabled;
     if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
-  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder]);
+  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder, activityNotificationPreferences.discoveryReminderMinutes, activityNotificationPreferences.discoveredAreaReminders]);
+
+  useEffect(() => {
+    resetInactivityReminder();
+    inactivityReminderRef.current = new InactivityReminder(
+      activityNotificationPreferences.inactivityReminderMinutes,
+    );
+  }, [accountUserId, activityNotificationPreferences.inactivityReminderMinutes, resetInactivityReminder]);
 
   useEffect(() => {
     if (!accountUserId) {
@@ -1714,12 +1727,18 @@ export default function App() {
       .reduce((total, journey) => total + journey.travelledKm, 0);
     const notifications: LocalNotificationSchema[] = [];
     if (preferences.morningInvite) {
+      const [hour, minute] = preferences.dailyReminderTime.split(":").map(Number);
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
         title: "Heading out today?",
-        body: "A new day, a new path. Where will you discover today?",
+        body: morningInviteMessage(
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance : null,
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? accountCityProgress : null,
+        ),
         schedule: {
-          on: { hour: 10, minute: 0, second: 0 },
+          on: { hour, minute, second: 0 },
           allowWhileIdle: false,
         },
         isExactNotification: false,
@@ -1740,7 +1759,7 @@ export default function App() {
         extra: { kind: "weekly-recap", userId: accountUserId },
       });
     }
-    const streakDate = streakReminderDate(now, todayDistance);
+    const streakDate = streakReminderDate(now, todayDistance, preferences.streakReminderTime);
     if (
       preferences.streakReminder &&
       citiesLoadedUserId === accountUserId &&
@@ -1801,6 +1820,7 @@ export default function App() {
     accountUserId,
     activityNotificationPreferences,
     discoveryProgress,
+    accountCityProgress,
     nativeApp,
     notificationPermissionReady,
     notificationClock,
@@ -2463,7 +2483,7 @@ export default function App() {
               reminderRef.current.pausedUntil,
             );
             if (nativeApp)
-              void sendReminderNotification(accountUserId).catch((error) =>
+              void sendReminderNotification(accountUserId, reminderRef.current.durationMinutes, kind).catch((error) =>
                 console.warn("Could not show discovery reminder", error),
               );
             else if (visible) setReminderPrompt(kind);
@@ -3144,6 +3164,55 @@ export default function App() {
     return null;
   };
 
+  const updateDiscoveredAreaReminders = (enabled: boolean): string | null => {
+    if (!accountUserId) return "Sign in before changing journey reminders.";
+    const next = { ...activityNotificationPreferences, discoveredAreaReminders: enabled };
+    try {
+      saveActivityNotificationPreferences(accountUserId, next);
+    } catch (error) {
+      console.error("Could not save discovered-area reminder preference", { accountUserId, enabled, error });
+      return "Could not save your reminder preference. Try again.";
+    }
+    setActivityNotificationPreferences(next);
+    return null;
+  };
+
+  const updateReminderTime = (
+    field: "streakReminderTime" | "dailyReminderTime",
+    time: string,
+  ): string | null => {
+    if (!accountUserId) return "Sign in before changing the reminder time.";
+    if (!isReminderTime(time)) return "Choose a valid reminder time.";
+    const next = { ...activityNotificationPreferences, [field]: time };
+    try {
+      saveActivityNotificationPreferences(accountUserId, next);
+    } catch (error) {
+      console.error("Could not save reminder time", { accountUserId, field, time, error });
+      return "Could not save your reminder time. Try again.";
+    }
+    setActivityNotificationPreferences(next);
+    return null;
+  };
+
+  const updateReminderDuration = (
+    field: "discoveryReminderMinutes" | "inactivityReminderMinutes",
+    minutes: number,
+  ): string | null => {
+    if (!accountUserId) return "Sign in before changing reminder durations.";
+    const options = field === "discoveryReminderMinutes"
+      ? DISCOVERY_REMINDER_DURATIONS : INACTIVITY_REMINDER_DURATIONS;
+    if (!options.includes(minutes)) return "Choose one of the available reminder durations.";
+    const next = { ...activityNotificationPreferences, [field]: minutes };
+    try {
+      saveActivityNotificationPreferences(accountUserId, next);
+    } catch (error) {
+      console.error("Could not save reminder duration", { accountUserId, field, minutes, error });
+      return "Could not save your reminder duration. Try again.";
+    }
+    setActivityNotificationPreferences(next);
+    return null;
+  };
+
   const updateAllNotifications = async (
     enabled: boolean,
   ): Promise<string | null> => {
@@ -3160,9 +3229,16 @@ export default function App() {
     }
     if (accountUserIdRef.current !== accountUserId)
       return "Your account changed. Reopen notification settings and try again.";
-    const nextActivityPreferences = enabled
-      ? enabledActivityNotificationPreferences()
-      : defaultActivityNotificationPreferences();
+    const nextActivityPreferences = {
+      ...(enabled
+        ? enabledActivityNotificationPreferences()
+        : defaultActivityNotificationPreferences()),
+      streakReminderTime: activityNotificationPreferences.streakReminderTime,
+      dailyReminderTime: activityNotificationPreferences.dailyReminderTime,
+      discoveryReminderMinutes: activityNotificationPreferences.discoveryReminderMinutes,
+      inactivityReminderMinutes: activityNotificationPreferences.inactivityReminderMinutes,
+      discoveredAreaReminders: activityNotificationPreferences.discoveredAreaReminders,
+    };
     const remindersActive = enabled && discoveryLocationAllowed;
     setReminderEnabled(remindersActive);
     reminderEnabledRef.current = remindersActive;
@@ -3233,7 +3309,12 @@ export default function App() {
       {
         id: MORNING_INVITE_TEST_NOTIFICATION_ID,
         title: "Heading out today?",
-        body: morningInviteMessage(discoveryProgress.discoveryDistance),
+        body: morningInviteMessage(
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance : null,
+          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
+            ? accountCityProgress : null,
+        ),
         schedule: { at: new Date(Date.now() + 5_000) },
         actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
         extra: { kind: "morning-invite", userId: accountUserId },
@@ -3246,8 +3327,8 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: REMINDER_TEST_NOTIFICATION_ID,
-        title: "Discovering somewhere new?",
-        body: reminderMessage(),
+        title: "Ready to record your journey?",
+        body: reminderMessage(activityNotificationPreferences.discoveryReminderMinutes),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "test-unmapped", userId: accountUserId },
       },
@@ -4465,7 +4546,7 @@ export default function App() {
           aria-label="Discovery reminder"
         >
           <strong>Start recording your journey?</strong>
-          <p>{reminderMessage()}</p>
+          <p>{reminderMessage(activityNotificationPreferences.discoveryReminderMinutes)}</p>
           <div>
             <button
               type="button"
@@ -4896,6 +4977,11 @@ export default function App() {
           onReminderChange={updateReminderEnabled}
           activityNotificationPreferences={activityNotificationPreferences}
           onActivityNotificationChange={updateActivityNotificationPreference}
+          onStreakReminderTimeChange={(time) => updateReminderTime("streakReminderTime", time)}
+          onDiscoveredAreaRemindersChange={updateDiscoveredAreaReminders}
+          onDiscoveryReminderDurationChange={(minutes) => updateReminderDuration("discoveryReminderMinutes", minutes)}
+          onInactivityReminderDurationChange={(minutes) => updateReminderDuration("inactivityReminderMinutes", minutes)}
+          onDailyReminderTimeChange={(time) => updateReminderTime("dailyReminderTime", time)}
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
           onShowGpxImport={showRouteOnMap}

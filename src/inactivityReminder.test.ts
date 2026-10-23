@@ -12,8 +12,13 @@ const nearby = (meters: number, now: number): Coordinate => ({
 })
 
 describe('active recording inactivity reminder', () => {
+  it('schedules using the selected inactivity duration', () => {
+    const detector = new InactivityReminder(30)
+    expect(detector.observe(start, true, 1_000)).toBe(1_000 + 30 * 60_000)
+  })
+
   it('waits 15 minutes inside 150 m of a previously discovered spot', () => {
-    const detector = new InactivityReminder()
+    const detector = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     const due = detector.observe(start, true, 1_000)
     expect(due).toBe(1_000 + INACTIVITY_REMINDER_MINUTES * 60_000)
     expect(distanceKm(start, nearby(140, 2_000)) * 1_000).toBeLessThan(INACTIVITY_RADIUS_M)
@@ -23,7 +28,7 @@ describe('active recording inactivity reminder', () => {
   })
 
   it('restarts when leaving the radius or entering new ground', () => {
-    const detector = new InactivityReminder()
+    const detector = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     detector.observe(start, true, 1_000)
     const moved = nearby(200, 60_000)
     expect(detector.observe(moved, true, 60_000)).toBe(60_000 + INACTIVITY_REMINDER_MINUTES * 60_000)
@@ -32,7 +37,7 @@ describe('active recording inactivity reminder', () => {
   })
 
   it('keeps a valid due notification scheduled, without scheduling another one', () => {
-    const detector = new InactivityReminder()
+    const detector = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     const due = detector.observe(start, true, 1_000)!
     expect(detector.observe(start, true, due)).toBe(due)
     expect(detector.observe(start, true, due + 30_000)).toBe(due)
@@ -50,7 +55,7 @@ describe('active recording inactivity reminder', () => {
   })
 
   it('keeps the pending reminder through an inaccurate GPS fix', () => {
-    const detector = new InactivityReminder()
+    const detector = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     expect(detector.observe({ ...start, accuracy: 100 }, true, 1_000)).toBeNull()
     const due = detector.observe(start, true, 2_000)
     expect(detector.observe({ ...start, accuracy: 100 }, true, 3_000)).toBe(due)
@@ -58,12 +63,12 @@ describe('active recording inactivity reminder', () => {
   })
 
   it('cancels a due notification when a usable fix shows movement or new ground', () => {
-    const moved = new InactivityReminder()
+    const moved = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     const movedDue = moved.observe(start, true, 1_000)!
     expect(moved.observe(nearby(200, movedDue), true, movedDue)).toBeNull()
     expect(moved.observe(nearby(200, movedDue + 60_000), true, movedDue + 60_000)).toBeNull()
 
-    const newGround = new InactivityReminder()
+    const newGround = new InactivityReminder(INACTIVITY_REMINDER_MINUTES)
     const groundDue = newGround.observe(start, true, 1_000)!
     expect(newGround.observe(start, false, groundDue)).toBeNull()
     expect(newGround.observe(start, true, groundDue + 60_000)).toBeNull()

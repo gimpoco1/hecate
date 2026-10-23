@@ -1,3 +1,6 @@
+import { cityMilestoneProgress, nextWorldMilestone, worldMilestoneProgress } from "./badges";
+import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
+
 export type ActivityNotificationCategory =
   | "morningInvite"
   | "weeklyRecap"
@@ -6,7 +9,7 @@ export type ActivityNotificationCategory =
 export type ActivityNotificationPreferences = Record<
   ActivityNotificationCategory,
   boolean
->;
+> & { streakReminderTime: string; dailyReminderTime: string; discoveryReminderMinutes: number; inactivityReminderMinutes: number; discoveredAreaReminders: boolean };
 
 const STORAGE_VERSION = 1;
 
@@ -15,6 +18,11 @@ export function defaultActivityNotificationPreferences(): ActivityNotificationPr
     morningInvite: false,
     weeklyRecap: false,
     streakReminder: false,
+    streakReminderTime: "18:00",
+    dailyReminderTime: "10:00",
+    discoveryReminderMinutes: 5,
+    inactivityReminderMinutes: 15,
+    discoveredAreaReminders: false,
   };
 }
 
@@ -23,7 +31,16 @@ export function enabledActivityNotificationPreferences(): ActivityNotificationPr
     morningInvite: true,
     weeklyRecap: true,
     streakReminder: true,
+    streakReminderTime: "18:00",
+    dailyReminderTime: "10:00",
+    discoveryReminderMinutes: 5,
+    inactivityReminderMinutes: 15,
+    discoveredAreaReminders: false,
   };
+}
+
+export function isReminderTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function storageKey(userId: string): string {
@@ -32,13 +49,31 @@ function storageKey(userId: string): string {
 
 function isActivityNotificationPreferences(
   value: unknown,
-): value is ActivityNotificationPreferences {
+): value is Record<ActivityNotificationCategory, boolean> & {
+  streakReminderTime?: string;
+  dailyReminderTime?: string;
+  discoveryReminderMinutes?: number;
+  inactivityReminderMinutes?: number;
+  discoveredAreaReminders?: boolean;
+} {
   if (!value || typeof value !== "object") return false;
   const preferences = value as Partial<ActivityNotificationPreferences>;
   return (
     typeof preferences.morningInvite === "boolean" &&
     typeof preferences.weeklyRecap === "boolean" &&
-    typeof preferences.streakReminder === "boolean"
+    typeof preferences.streakReminder === "boolean" &&
+    (preferences.streakReminderTime === undefined ||
+      (typeof preferences.streakReminderTime === "string" &&
+        isReminderTime(preferences.streakReminderTime))) &&
+    (preferences.dailyReminderTime === undefined ||
+      (typeof preferences.dailyReminderTime === "string" &&
+        isReminderTime(preferences.dailyReminderTime))) &&
+    (preferences.discoveryReminderMinutes === undefined ||
+      DISCOVERY_REMINDER_DURATIONS.includes(preferences.discoveryReminderMinutes)) &&
+    (preferences.inactivityReminderMinutes === undefined ||
+      INACTIVITY_REMINDER_DURATIONS.includes(preferences.inactivityReminderMinutes)) &&
+    (preferences.discoveredAreaReminders === undefined ||
+      typeof preferences.discoveredAreaReminders === "boolean")
   );
 }
 
@@ -48,7 +83,14 @@ export function loadActivityNotificationPreferences(
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey(userId)) ?? "null");
     return isActivityNotificationPreferences(stored)
-      ? stored
+      ? {
+          ...stored,
+          streakReminderTime: stored.streakReminderTime ?? "18:00",
+          dailyReminderTime: stored.dailyReminderTime ?? "10:00",
+          discoveryReminderMinutes: stored.discoveryReminderMinutes ?? 5,
+          inactivityReminderMinutes: stored.inactivityReminderMinutes ?? 15,
+          discoveredAreaReminders: stored.discoveredAreaReminders ?? false,
+        }
       : defaultActivityNotificationPreferences();
   } catch {
     return defaultActivityNotificationPreferences();
@@ -75,8 +117,50 @@ export function saveActivityNotificationPreferences(
   localStorage.setItem(storageKey(userId), JSON.stringify(preferences));
 }
 
-export function morningInviteMessage(discoveryDistanceKm: number): string {
-  return `You have pioneered ${discoveryDistanceKm.toFixed(2)} km so far. Where to today?`;
+type CityReminderProgress = {
+  cityName: string;
+  discoveredKm: number;
+};
+
+type NearbyMilestone = {
+  remainingKm: number;
+  progress: number;
+  title: string;
+  distanceScope: string;
+};
+
+export function morningInviteMessage(
+  travelledDistanceKm: number | null,
+  city: CityReminderProgress | null,
+): string {
+  const candidates: NearbyMilestone[] = [];
+  if (travelledDistanceKm !== null) {
+    const next = nextWorldMilestone(travelledDistanceKm);
+    if (next) candidates.push({
+      remainingKm: next.thresholdKm - travelledDistanceKm,
+      progress: worldMilestoneProgress(travelledDistanceKm),
+      title: `${next.title} milestone`,
+      distanceScope: "",
+    });
+  }
+  if (city) {
+    const milestone = cityMilestoneProgress(city.discoveredKm);
+    if (milestone.next) candidates.push({
+      remainingKm: milestone.next.thresholdKm - city.discoveredKm,
+      progress: milestone.progress,
+      title: `${milestone.next.title} milestone in ${city.cityName}`,
+      distanceScope: " of new ground",
+    });
+  }
+  const closest = candidates
+    .filter(({ remainingKm, progress }) => remainingKm > 0 && remainingKm <= 1 && progress >= 0.9)
+    .sort((a, b) => a.remainingKm - b.remainingKm)[0];
+  if (closest) {
+    const meters = Math.ceil(closest.remainingKm * 1_000);
+    const distance = meters >= 1_000 ? "1 km" : `${meters} m`;
+    return `Just ${distance}${closest.distanceScope} to your ${closest.title}. Head out for a walk today!`;
+  }
+  return "A new day, a new path. Where will you discover today?";
 }
 
 export function weeklyRecapMessage(
@@ -94,14 +178,19 @@ export function streakReminderMessage(streakDays: number): string {
 export function streakReminderDate(
   now: number,
   travelledTodayKm: number,
+  reminderTime: string,
 ): Date | null {
+  if (!isReminderTime(reminderTime)) {
+    throw new RangeError(`Invalid streak reminder time: ${reminderTime}. Expected HH:mm.`);
+  }
+  const [hour, minute] = reminderTime.split(":").map(Number);
   const scheduled = new Date(now);
+  scheduled.setHours(hour, minute, 0, 0);
   if (travelledTodayKm > 0) {
     scheduled.setDate(scheduled.getDate() + 1);
-  } else if (scheduled.getHours() >= 18) {
+  } else if (scheduled.getTime() <= now) {
     return null;
   }
-  scheduled.setHours(18, 0, 0, 0);
   return scheduled;
 }
 

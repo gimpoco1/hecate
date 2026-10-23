@@ -3722,6 +3722,29 @@ button {
   border-bottom: 1px solid rgba(24, 60, 47, 0.08);
   background: transparent;
 }
+.sheet .account-reminder-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #65736d;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.account-reminder-option input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--forest);
+  cursor: pointer;
+}
+.account-reminder-option:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
+}
 .account-setting--all {
   padding-top: 4px;
 }
@@ -3764,6 +3787,105 @@ button {
 .account-setting button:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+.account-setting .streak-reminder-time {
+  display: inline;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--forest);
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  box-shadow: none;
+  cursor: pointer;
+}
+.streak-reminder-time:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 3px;
+}
+.streak-time-picker {
+  width: min(320px, calc(100vw - 40px));
+  padding: 24px;
+  border: 1px solid #dfe7dd;
+  border-radius: 24px;
+  background: var(--paper);
+  color: var(--forest);
+  box-shadow: 0 20px 70px #183c2f33;
+}
+.streak-time-picker::backdrop {
+  background: #183c2f40;
+}
+.streak-time-picker h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.streak-time-picker p {
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.streak-time-picker__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.streak-time-picker__columns strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  text-align: center;
+}
+.streak-time-picker__options {
+  display: grid;
+  gap: 4px;
+  height: 180px;
+  overflow-y: auto;
+  border-radius: 14px;
+  background: #dfe7dd66;
+  padding: 6px;
+  overscroll-behavior: contain;
+}
+.streak-time-picker button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--forest);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.streak-time-picker button:hover {
+  background: #dfe7dd;
+}
+.streak-time-picker button:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: -2px;
+}
+.streak-time-picker button[aria-pressed="true"],
+.streak-time-picker__actions button:last-child {
+  background: var(--forest);
+  color: var(--paper);
+}
+.reminder-duration-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.streak-time-picker__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.streak-time-picker__actions button {
+  padding: 8px 16px;
 }
 .account-settings-link {
   width: 100%;
