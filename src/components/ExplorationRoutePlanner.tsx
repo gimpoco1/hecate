@@ -15,7 +15,7 @@ import {
 } from "../explorationRouting";
 import type { DiscoveryCell } from "../types";
 import { DestinationSearch } from "./DestinationSearch";
-import type { DestinationResult } from "../destinationSearch";
+import { reverseGeocodeDestination, type DestinationResult } from "../destinationSearch";
 import { ArrowLeftIcon, CyclingIcon, InfoIcon, RouteIcon, WalkingIcon, XIcon } from "./Icons";
 
 export type RouteDestination = RoutePoint & { name?: string };
@@ -62,6 +62,9 @@ export function ExplorationRoutePlanner({
   const infoId = useId();
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchRevision, setSearchRevision] = useState(0);
+  const [namePending, setNamePending] = useState(false);
+  const [nameError, setNameError] = useState("");
+  const [nameRevision, setNameRevision] = useState(0);
   const [step, setStep] = useState<"destination" | "options">("destination");
   const [mode, setMode] = useState<TransportMode>("pedestrian");
   const [budget, setBudget] = useState(0);
@@ -91,7 +94,27 @@ export function ExplorationRoutePlanner({
   }, [plan, step, budget]);
   const selected = routes.find(({ id }) => id === selectedId) ?? routes[1] ?? routes[0];
   const destinationLabel = destination?.name ?? (namedDestination && destination && namedDestination.point.lng === destination.lng && namedDestination.point.lat === destination.lat
-    ? namedDestination.name : "Selected destination");
+    ? namedDestination.name : namePending ? "Finding place name…" : "Map destination");
+
+  useEffect(() => {
+    setNameError("");
+    if (!destination || destination.name || (namedDestination && namedDestination.point.lng === destination.lng && namedDestination.point.lat === destination.lat)) {
+      setNamePending(false);
+      return;
+    }
+    const controller = new AbortController();
+    setNamePending(true);
+    void reverseGeocodeDestination(destination, controller.signal).then((result) => {
+      if (!controller.signal.aborted) setNamedDestination(result);
+    }).catch((cause) => {
+      if (controller.signal.aborted) return;
+      console.error("Could not name destination", { destination, cause });
+      setNameError(cause instanceof Error ? cause.message : "Could not look up the destination name.");
+    }).finally(() => {
+      if (!controller.signal.aborted) setNamePending(false);
+    });
+    return () => controller.abort();
+  }, [destination, namedDestination, nameRevision]);
 
   useEffect(() => {
     controllerRef.current?.abort();
@@ -345,6 +368,7 @@ export function ExplorationRoutePlanner({
         }} />
         {destination && <div className="exploration-direct-summary">
           <div className="exploration-route-place"><RouteIcon size={20} /><strong>{destinationLabel}</strong><button className="exploration-route-clear" type="button" aria-label="Clear route" onClick={() => { setNamedDestination(null); setSearchRevision((revision) => revision + 1); onClear(); }}>Clear</button></div>
+          {nameError && <div className="exploration-destination-error" role="alert"><strong>Couldn’t find a name for this location</strong><p>{nameError}</p><button className="exploration-route-clear" type="button" onClick={() => setNameRevision((revision) => revision + 1)}>Retry name lookup</button></div>}
           {destinationError ? <div className="exploration-destination-error" role="alert"><strong>{destinationError.title}</strong><p>{destinationError.message}</p></div> : <div className="exploration-direct-estimates">
             {(["pedestrian", "bicycle"] as const).map((profile) => <div key={profile}>
               {profile === "pedestrian" ? <WalkingIcon size={18} /> : <CyclingIcon size={18} />}

@@ -19,9 +19,13 @@ export function parseDestinations(value: unknown): DestinationResult[] {
       throw new TypeError(`Destination search returned invalid coordinates for result ${index}.`);
     }
     const properties = feature.properties;
-    const name = [properties.name, properties.street, properties.city].find((text) => typeof text === "string" && text.trim());
+    const streetAddress = typeof properties.street === "string" && properties.street.trim()
+      ? [properties.street.trim(), typeof properties.housenumber === "string" ? properties.housenumber.trim() : ""].filter(Boolean).join(" ")
+      : undefined;
+    const placeName = properties.name === properties.street ? streetAddress : properties.name;
+    const name = [placeName, streetAddress, properties.city].find((text) => typeof text === "string" && text.trim());
     if (typeof name !== "string") throw new TypeError(`Destination search result ${index} has no usable name.`);
-    const detail = [...new Set([properties.housenumber, properties.street, properties.city, properties.state, properties.country]
+    const detail = [...new Set([streetAddress, properties.city, properties.state, properties.country]
       .filter((text): text is string => typeof text === "string" && text.length > 0 && text !== name))].join(", ");
     return { id: `${lng}:${lat}:${index}`, name, detail, point: { lng, lat } };
   });
@@ -34,15 +38,31 @@ export async function searchDestinations(query: string, near: RoutePoint | null,
   url.searchParams.set("q", query.trim());
   url.searchParams.set("limit", "5");
   if (near) { url.searchParams.set("lat", String(near.lat)); url.searchParams.set("lon", String(near.lng)); }
+  return requestDestinations(url, signal);
+}
+
+/** Resolves a nearby name without moving the user's chosen destination to the search result. */
+export async function reverseGeocodeDestination(point: RoutePoint, signal: AbortSignal): Promise<DestinationResult> {
+  const url = new URL(import.meta.env.VITE_DESTINATION_REVERSE_URL || "/reverse", SEARCH_URL);
+  url.searchParams.set("lat", String(point.lat));
+  url.searchParams.set("lon", String(point.lng));
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("radius", "0.1");
+  const results = await requestDestinations(url, signal);
+  if (results.length === 0) throw new Error("No place or street name was found within 100 m of this destination.");
+  return { ...results[0], point };
+}
+
+async function requestDestinations(url: URL, signal: AbortSignal): Promise<DestinationResult[]> {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const response = await fetch(url, { signal });
-      if (!response.ok) throw new Error(`Destination search failed (${response.status}): ${await response.text()}. Query: ${query}`);
+      if (!response.ok) throw new Error(`Destination lookup failed (${response.status}): ${await response.text()}. Request: ${url}`);
       return parseDestinations(await response.json());
     } catch (error) {
       if (signal.aborted || attempt === 2) throw error;
-      console.warn("Destination search failed; retrying", { query, attempt, error });
+      console.warn("Destination lookup failed; retrying", { url: url.href, attempt, error });
     }
   }
-  throw new Error(`Destination search exhausted attempts. Query: ${query}`);
+  throw new Error(`Destination lookup exhausted attempts. Request: ${url}`);
 }
