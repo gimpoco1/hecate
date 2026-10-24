@@ -2,7 +2,7 @@ import { routeCameraBearing } from "./routeCamera";
 import type { PlannedRoute } from "./explorationRouting";
 import { ExplorationRoutePlanner, type RouteDestination } from "./components/ExplorationRoutePlanner";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
@@ -839,6 +839,29 @@ export default function App() {
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
   const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const topbarRef = useRef<HTMLElement>(null);
+  const mapActionsRef = useRef<HTMLElement>(null);
+  const [compactMapActions, setCompactMapActions] = useState(false);
+  useLayoutEffect(() => {
+    const topbar = topbarRef.current;
+    const actions = mapActionsRef.current;
+    if (!routePlannerOpen || !topbar || !actions) return;
+    const measure = (): void => {
+      const buttons = Array.from(actions.children);
+      const columnHeight = buttons.reduce((height, button) => height + button.getBoundingClientRect().height, 0) + Math.max(0, buttons.length - 1) * 8;
+      const availableHeight = actions.getBoundingClientRect().bottom - topbar.getBoundingClientRect().bottom - 12;
+      setCompactMapActions(columnHeight > availableHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(topbar);
+    observer.observe(actions);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [routePlannerOpen, routePanelHeight, keyboardInset]);
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null);
   const [viewCenter, setViewCenter] = useState<{
     lng: number;
@@ -4390,7 +4413,7 @@ export default function App() {
   );
 
   return (
-    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px` } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
+    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px`, "--route-panel-bottom": keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
@@ -4424,6 +4447,7 @@ export default function App() {
         <ExplorationRoutePlanner
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
+          keyboardInset={keyboardInset}
           userId={accountUserId}
           onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
           destination={routeDestination}
@@ -4525,7 +4549,7 @@ export default function App() {
         </button>
       )}
 
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <button
           className="brand"
           onClick={showGlobe}
@@ -4733,7 +4757,7 @@ export default function App() {
           </button>
         )}
 
-      <nav className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}`} aria-label="Map controls">
+      <nav ref={mapActionsRef} className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}${routePlannerOpen && compactMapActions ? " map-actions--compact" : ""}`} aria-label="Map controls">
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}

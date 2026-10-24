@@ -170,16 +170,21 @@ const DETOUR_CORRIDORS: readonly DetourCorridor[] = [
   { entry: 0.55, exit: 0.85 },
 ];
 
-/** Fits a parallel detour with separate entry and exit points to the requested extra time. */
+/** Widens long detours so nearby destinations do not produce narrow out-and-back routes. */
+function detourAlongKm(separationKm: number, offsetKm: number, fraction: number): number {
+  return separationKm * fraction + (fraction - 0.5) * 2 * Math.max(0, offsetKm - separationKm / 2);
+}
+
+/** Fits a broad detour with separate entry and exit points to the requested extra time. */
 function detourOffsetKm(separationKm: number, baselineSeconds: number, extraMinutes: number, corridor: DetourCorridor): number {
   const targetLength = separationKm * (1 + extraMinutes * 60 / baselineSeconds);
-  const parallelLength = separationKm * (corridor.exit - corridor.entry);
   let lower = 0;
   let upper = targetLength / 2;
   for (let iteration = 0; iteration < 30; iteration += 1) {
     const offset = (lower + upper) / 2;
-    const length = Math.hypot(separationKm * corridor.entry, offset) + parallelLength +
-      Math.hypot(separationKm * (1 - corridor.exit), offset);
+    const entry = detourAlongKm(separationKm, offset, corridor.entry);
+    const exit = detourAlongKm(separationKm, offset, corridor.exit);
+    const length = Math.hypot(entry, offset) + exit - entry + Math.hypot(separationKm - exit, offset);
     if (length < targetLength) lower = offset;
     else upper = offset;
   }
@@ -192,9 +197,10 @@ function detourPoint(origin: RoutePoint, destination: RoutePoint, offsetKm: numb
   const dy = destination.lat - origin.lat;
   const length = Math.hypot(dx, dy);
   const offset = offsetKm / 111.32;
+  const along = detourAlongKm(length * 111.32, offsetKm, fraction) / (length * 111.32);
   return {
-    lng: origin.lng + (destination.lng - origin.lng) * fraction - side * dy / length * offset / longitudeScale,
-    lat: origin.lat + (destination.lat - origin.lat) * fraction + side * dx / length * offset,
+    lng: origin.lng + (destination.lng - origin.lng) * along - side * dy / length * offset / longitudeScale,
+    lat: origin.lat + (destination.lat - origin.lat) * along + side * dx / length * offset,
   };
 }
 
@@ -286,15 +292,16 @@ export async function calculateExplorationRoutes(
 ): Promise<RoutePlan> {
   if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError("Choose an extra-time target of 5, 10, or 20 minutes.");
   const direct = await calculateDirectRoute(origin, destination, cells, mode, signal);
-  return findExplorationRoutes(direct, cells, extraMinutes, signal);
+  return findExplorationRoutes(direct, cells, extraMinutes, signal, () => {});
 }
 
-/** Reuses the displayed direct estimate and searches every corridor with at most three concurrent requests. */
+/** Publishes usable suggestions as they arrive while comparing corridors with at most three concurrent requests. */
 export async function findExplorationRoutes(
   direct: RoutePlan,
   cells: readonly DiscoveryCell[],
   extraMinutes: number,
   signal: AbortSignal,
+  onRoutesFound: (plan: RoutePlan) => void,
 ): Promise<RoutePlan> {
   if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError("Choose an extra-time target of 5, 10, or 20 minutes.");
   const { origin, destination, mode } = direct;
@@ -306,11 +313,24 @@ export async function findExplorationRoutes(
   const cancel = (): void => controller.abort();
   if (signal.aborted) controller.abort();
   signal.addEventListener("abort", cancel, { once: true });
+  const available: PlannedRoute[] = [];
+  let publishedIds = "";
+  const publish = (routes: readonly PlannedRoute[]): void => {
+    if (controller.signal.aborted || routes.length === 0) return;
+    available.push(...routes);
+    const plan: RoutePlan = { mode, extraMinutes, origin, destination, routes: [baseline, ...available] };
+    const suggestions = routesForExtraTime(plan);
+    const ids = suggestions.map(({ id }) => id).join(",");
+    if (suggestions.length > 1 && ids !== publishedIds) {
+      publishedIds = ids;
+      onRoutesFound(plan);
+    }
+  };
   try {
     const batches = await Promise.all(Array.from({ length: 3 }, async (_, lane): Promise<DetourSearch[]> => {
       const results: DetourSearch[] = [];
       for (let index = lane; index < strategies.length; index += 3) {
-        results.push(await searchDetour(strategies[index], index, baseline, direct, extraMinutes, known, controller.signal));
+        results.push(await searchDetour(strategies[index], index, baseline, direct, extraMinutes, known, controller.signal, publish));
       }
       return results;
     }));
@@ -323,8 +343,10 @@ export async function findExplorationRoutes(
         const entry = detourPoint(origin, destination, search.nextOffsetKm, side, corridor.entry);
         const exit = detourPoint(origin, destination, search.nextOffsetKm, side, corridor.exit);
         const routes = await requestRoutes([origin, entry, exit, destination], mode, controller.signal);
-        return routes.filter((route) => Math.abs(route.durationSeconds - baseline.durationSeconds - extraMinutes * 60) <= extraTimeToleranceSeconds(extraMinutes))
+        const scored = routes.filter((route) => Math.abs(route.durationSeconds - baseline.durationSeconds - extraMinutes * 60) <= extraTimeToleranceSeconds(extraMinutes))
           .map((route, index) => scoreRoute(route, `refinement-${search.strategyIndex}-${index}`, known));
+        publish(scored);
+        return scored;
       }));
       candidates.push(...refinements.flat());
     }
@@ -334,7 +356,7 @@ export async function findExplorationRoutes(
       const halfExtraMinutes = (suggestions[1].durationSeconds - baseline.durationSeconds) / 120;
       const middleStrategies = discoveryGuidedDetours(origin, destination, separationKm, baseline.durationSeconds, halfExtraMinutes, known).slice(0, 2);
       const middleSearches = await Promise.all(middleStrategies.map((strategy, index) =>
-        searchDetour(strategy, strategies.length + index, baseline, direct, halfExtraMinutes, known, controller.signal),
+        searchDetour(strategy, strategies.length + index, baseline, direct, halfExtraMinutes, known, controller.signal, publish),
       ));
       return { ...plan, routes: [...plan.routes, ...middleSearches.flatMap(({ routes }) => routes)] };
     }
@@ -353,6 +375,7 @@ async function searchDetour(
   extraMinutes: number,
   known: ReadonlySet<string>,
   signal: AbortSignal,
+  onCandidates: (routes: readonly PlannedRoute[]) => void,
 ): Promise<DetourSearch> {
   const { origin, destination, mode } = direct;
   const { corridor, side } = strategy;
@@ -373,6 +396,7 @@ async function searchDetour(
       .filter((route) => route.durationSeconds > baseline.durationSeconds + 30 && route.durationSeconds <= baseline.durationSeconds + targetExtraSeconds + extraTimeToleranceSeconds(extraMinutes))
       .map((route, index) => scoreRoute(route, `detour-${strategyIndex}-${attempt}-${index}`, known));
     scored.push(...candidates);
+    onCandidates(candidates);
     if (candidates.some((route) => isUsefulDiscoveryRoute(route, baseline, extraMinutes))) break;
     if (routes.length === 0) {
       upper = offset;

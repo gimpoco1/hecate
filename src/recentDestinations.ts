@@ -1,7 +1,7 @@
 import type { RoutePoint } from "./explorationRouting";
 import type { DestinationResult } from "./destinationSearch";
 
-const HISTORY_LIMIT = 3;
+const HISTORY_LIMIT = 6;
 
 function storageKey(userId: string | null): string {
   return `hecate:recent-destinations:v1:${userId ?? "guest"}`;

@@ -42,6 +42,7 @@ export type RouteDestination = RoutePoint & { name?: string };
 
 type Props = {
   open: boolean;
+  keyboardInset: number;
   userId: string | null;
   destination: RouteDestination | null;
   origin: RoutePoint | null;
@@ -69,6 +70,7 @@ const LAYERS = [
 
 export function ExplorationRoutePlanner({
   open,
+  keyboardInset,
   userId,
   destination,
   origin,
@@ -115,6 +117,16 @@ export function ExplorationRoutePlanner({
       setHistoryError(cause instanceof Error ? cause.message : "Could not clear recent destinations.");
     }
   };
+  const removeRecentDestination = (result: DestinationResult): void => {
+    try {
+      const updated = loadRecentDestinations(userId).filter(({ point }) => point.lng !== result.point.lng || point.lat !== result.point.lat);
+      saveRecentDestinations(userId, updated);
+      setRecent(updated); setHistoryError("");
+    } catch (cause) {
+      console.error("Could not remove recent destination", { userId, destination: result.point, cause });
+      setHistoryError(cause instanceof Error ? cause.message : "Could not remove recent destination.");
+    }
+  };
   const [step, setStep] = useState<"destination" | "options">("destination");
   const [mode, setMode] = useState<TransportMode>("pedestrian");
   const [budget, setBudget] = useState(0);
@@ -140,6 +152,9 @@ export function ExplorationRoutePlanner({
   const [error, setError] = useState("");
   const controllerRef = useRef<AbortController | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (open && keyboardInset > 0) panelRef.current?.scrollTo({ top: 0 });
+  }, [open, keyboardInset]);
   const originRef = useRef(origin);
   const cellsRef = useRef(cells);
   originRef.current = origin;
@@ -436,16 +451,19 @@ export function ExplorationRoutePlanner({
     setPending(true);
     setError("");
     setExplorationPlan(null);
+    setSelectedId("");
     try {
       const result = await findExplorationRoutes(
         directPlans[mode],
         cells,
         extraMinutes,
         controller.signal,
+        (available) => {
+          if (!controller.signal.aborted) setExplorationPlan(available);
+        },
       );
       if (controller.signal.aborted) return;
       setExplorationPlan(result);
-      setSelectedId("");
     } catch (cause) {
       if (controller.signal.aborted) return;
       console.error("Could not plan exploration route", {
@@ -513,6 +531,10 @@ export function ExplorationRoutePlanner({
     <section
       ref={panelRef}
       className={`exploration-route-panel${step === "destination" ? " exploration-route-panel--destination" : ""}`}
+      style={keyboardInset > 0 ? {
+        bottom: `${keyboardInset + 12}px`,
+        maxHeight: `calc(100dvh - ${keyboardInset + 176}px - env(safe-area-inset-top))`,
+      } : undefined}
       aria-label="Route suggestions"
       aria-busy={pending || directPending}
     >
@@ -587,6 +609,7 @@ export function ExplorationRoutePlanner({
             recent={recent}
             historyError={historyError}
             onClearHistory={clearHistory}
+            onRemoveRecent={removeRecentDestination}
             destination={destination}
             near={origin}
             city={searchCity}
@@ -788,7 +811,7 @@ export function ExplorationRoutePlanner({
           {pending && (
             <p className="exploration-route-progress" role="status">
               <span />
-              Comparing paths through undiscovered areas…
+              {hasExploration ? "Checking more options…" : "Comparing paths through undiscovered areas…"}
             </p>
           )}
           {budget > 0 && !hasExploration && (
@@ -824,7 +847,11 @@ export function ExplorationRoutePlanner({
                         ? "Select direct route"
                         : `Select discovery route ${index}`
                     }
-                    onClick={() => setSelectedId(route.id)}
+                    onClick={() => {
+                      controllerRef.current?.abort();
+                      setPending(false);
+                      setSelectedId(route.id);
+                    }}
                   >
                     <span>
                       <strong>
@@ -851,10 +878,11 @@ export function ExplorationRoutePlanner({
                 ))}
               </div>
               {routes.length === 1 && (
-                <p
-                  className="exploration-route-help"
-                  role="status"
-                >{`No additional new ground found within ${budget} extra minutes. Try adding more time or choosing another destination.`}</p>
+                <RouteNotice
+                  title="No discovery route found"
+                  message={`We couldn’t find a suitable route with ${budget} extra minutes. Try a different time or destination.`}
+                  action={null}
+                />
               )}
             </>
           )}
@@ -862,7 +890,7 @@ export function ExplorationRoutePlanner({
             <button
               className="exploration-route-primary"
               type="button"
-              disabled={pending || !directPlans[mode]}
+              disabled={!directPlans[mode]}
               onClick={tracking ? onReturnToJourney : () => onStart(selected)}
             >
               {tracking ? "Back to journey" : "Start journey"}

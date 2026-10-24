@@ -11,6 +11,18 @@ function route(id: string, seconds: number, discoveredKm: number): PlannedRoute 
 }
 
 describe("exploration route planning", () => {
+  it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("finds a twenty-minute cycling detour to a nearby destination", async () => {
+    const start = { lat: 41.399, lng: 2.1956 };
+    const finish = { lat: 41.4012, lng: 2.1974 };
+    const cells = [pointToDiscoveryCell({ ...start, recordedAt: 0 })];
+    const plan = await calculateExplorationRoutes(start, finish, cells, "bicycle", 20, new AbortController().signal);
+    const suggestions = routesForExtraTime(plan);
+    console.info("Nearby cycling detours", plan.routes.map(({ durationSeconds, distanceKm, backtrackedKm, unproductiveLoopKm, newGroundKm }) => ({ durationSeconds, distanceKm, backtrackedKm, unproductiveLoopKm, newGroundKm })));
+    expect(suggestions.length).toBeGreaterThan(1);
+    expect(Math.abs(suggestions[1].durationSeconds - plan.routes[0].durationSeconds - 1200)).toBeLessThanOrEqual(120);
+    expect(suggestions[1].newGroundKm).toBeGreaterThan(plan.routes[0].newGroundKm + 0.1);
+    expect(suggestions[1].backtrackedKm).toBeLessThanOrEqual(plan.routes[0].backtrackedKm + 0.025);
+  }, 120_000);
   it("estimates discovery against the actual footprint without modifying saved cells or crediting repeated paths twice", () => {
     const cells = points.map((point) => pointToDiscoveryCell({ ...point, recordedAt: 0 }));
     const before = structuredClone(cells);
@@ -101,7 +113,7 @@ describe("exploration route planning", () => {
     const controller = new AbortController();
     controller.abort();
     const direct: RoutePlan = { extraMinutes: 0, mode: "pedestrian", origin, destination, routes: [route("direct", 600, 0.2)] };
-    await expect(findExplorationRoutes(direct, [], 10, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(findExplorationRoutes(direct, [], 10, controller.signal, () => {})).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("routes walking and cycling destinations beyond the former app limits", async () => {
@@ -157,7 +169,18 @@ describe("exploration route planning", () => {
   }, 120_000);
 
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("generates real cycling detours near the selected extra time", async () => {
-    const plan = await calculateExplorationRoutes(origin, destination, [], "bicycle", 10, new AbortController().signal);
+    const controller = new AbortController();
+    const direct = await calculateDirectRoute(origin, destination, [], "bicycle", controller.signal);
+    const started = performance.now();
+    const published: RoutePlan[] = [];
+    let firstResultMs = 0;
+    const plan = await findExplorationRoutes(direct, [], 10, controller.signal, (available) => {
+      if (published.length === 0) firstResultMs = performance.now() - started;
+      expect(routesForExtraTime(available).length).toBeGreaterThan(1);
+      published.push(available);
+    });
+    expect(published.length).toBeGreaterThan(0);
+    console.info("Progressive route timing", { firstResultMs, completeMs: performance.now() - started });
     expect(plan.mode).toBe("bicycle");
     const suggestions = routesForExtraTime(plan);
     expect(suggestions.length).toBeGreaterThan(1);
