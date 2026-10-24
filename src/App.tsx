@@ -821,6 +821,7 @@ export default function App() {
   const [perspectiveView, setPerspectiveView] = useState(false);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
+  const [routePanelHeight, setRoutePanelHeight] = useState(0);
   const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
   useEffect(() => {
     plannedJourneyRouteRef.current = null;
@@ -4425,11 +4426,13 @@ export default function App() {
           open={routePlannerOpen}
           onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
           destination={routeDestination}
+          searchCity={activeCity}
           origin={locationIsCurrent && currentPoint ? currentPoint : null}
           cells={cells}
           ready={!accountDataLoading && (!accountUserId || (citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current))}
           tracking={tracking === "tracking" || tracking === "requesting"}
           mapRef={mapRef}
+          onPanelHeightChange={setRoutePanelHeight}
           onClose={clearPlannedRoute}
           onReturnToJourney={() => setRoutePlannerOpen(false)}
           onClear={clearRouteDestination}
@@ -4729,7 +4732,7 @@ export default function App() {
           </button>
         )}
 
-      <nav className="map-actions" aria-label="Map controls">
+      <nav className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px` } as React.CSSProperties : undefined} aria-label="Map controls">
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}

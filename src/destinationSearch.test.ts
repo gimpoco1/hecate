@@ -1,3 +1,4 @@
+import { metropolitanCityForPoint, isPointInCity } from "./city";
 import { describe, expect, it } from "vitest";
 import { parseDestinations, reverseGeocodeDestination, searchDestinations } from "./destinationSearch";
 
@@ -25,8 +26,20 @@ describe("destination search", () => {
   }, 25_000);
 
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("finds a real destination near Barcelona", async () => {
-    const results = await searchDestinations("Sagrada Familia Barcelona", { lat: 41.399, lng: 2.1956 }, AbortSignal.timeout(20_000));
+    const near = { lat: 41.399, lng: 2.1956 };
+    const city = await metropolitanCityForPoint(near);
+    if (!city) throw new Error("Barcelona city boundary is unavailable for the integration test.");
+    const results = await searchDestinations("Sagrada Familia Barcelona", near, city, AbortSignal.timeout(20_000));
     expect(results.length).toBeGreaterThan(0);
+    expect(results.every(({ point }) => isPointInCity(point, city))).toBe(true);
     expect(results.some(({ point }) => Math.abs(point.lat - 41.4036) < 0.01 && Math.abs(point.lng - 2.1744) < 0.01)).toBe(true);
   }, 25_000);
+  it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("does not suggest an outside-city landmark", async () => {
+    const near = { lat: 41.399, lng: 2.1956 };
+    const city = await metropolitanCityForPoint(near);
+    if (!city) throw new Error("Barcelona city boundary is unavailable for the integration test.");
+    const results = await searchDestinations("Buckingham Palace London", near, city, AbortSignal.timeout(20_000));
+    expect(results).toEqual([]);
+  }, 25_000);
+
 });

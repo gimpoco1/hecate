@@ -6682,7 +6682,7 @@ button {
 }
 
 .exploration-destination-error {
-  margin: 12px 0 0;
+  margin: 12px 0 16px;
   padding: 12px;
   border-radius: 12px;
   background: #f2e9df;
@@ -6696,4 +6696,16 @@ button {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.map-actions--route-planner {
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom) + var(--route-panel-height) + 30px);
+  transform: none;
+}
+@media (max-width: 600px) {
+  .map-actions--route-planner { bottom: calc(env(safe-area-inset-bottom) + var(--route-panel-height) + 24px); }
+}
+@media (max-height: 740px) {
+  .map-actions--route-planner { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 28px); gap: 6px; }
 }

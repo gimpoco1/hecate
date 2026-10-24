@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pointToDiscoveryCell } from "./geo";
-import { calculateDirectRoute, calculateExplorationRoutes, findExplorationRoutes, estimateRouteDiscovery, parsePlannedRoutes, routesForExtraTime, DestinationTooCloseError, DestinationTooFarError, ExplorationRoutingError, type RoutePlan, type PlannedRoute } from "./explorationRouting";
+import { calculateDirectRoute, calculateExplorationRoutes, findExplorationRoutes, estimateRouteDiscovery, parsePlannedRoutes, routesForExtraTime, DestinationTooCloseError, ExplorationRoutingError, type RoutePlan, type PlannedRoute } from "./explorationRouting";
 
 const origin = { lat: 41.3874, lng: 2.1686 };
 const destination = { lat: 41.4036, lng: 2.1744 };
@@ -79,10 +79,16 @@ describe("exploration route planning", () => {
     expect(parsePlannedRoutes({ code: "Ok", routes: [{ distance: 1_000, duration: 600, geometry: { type: "LineString", coordinates: [[2, 41], [2.01, 41]] } }] })[0].distanceKm).toBe(1);
   });
 
-  it("rejects destinations outside the supported walking range before contacting the router", async () => {
+  it("rejects destinations too close before contacting the router", async () => {
     await expect(calculateExplorationRoutes(origin, origin, [], "pedestrian", 20, new AbortController().signal)).rejects.toBeInstanceOf(DestinationTooCloseError);
-    await expect(calculateExplorationRoutes(origin, { lat: 42, lng: 2 }, [], "pedestrian", 20, new AbortController().signal)).rejects.toBeInstanceOf(DestinationTooFarError);
-    await expect(calculateExplorationRoutes(origin, { lat: 42, lng: 2 }, [], "bicycle", 5, new AbortController().signal)).rejects.toBeInstanceOf(DestinationTooFarError);
+  });
+
+  it("allows distant destinations to reach the router for either transport mode", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    for (const mode of ["pedestrian", "bicycle"] as const) {
+      await expect(calculateDirectRoute(origin, { lat: 42, lng: 2 }, [], mode, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    }
   });
 
   it("keeps no-extra-time plans on the direct route", () => {
@@ -97,6 +103,14 @@ describe("exploration route planning", () => {
     const direct: RoutePlan = { extraMinutes: 0, mode: "pedestrian", origin, destination, routes: [route("direct", 600, 0.2)] };
     await expect(findExplorationRoutes(direct, [], 10, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("routes walking and cycling destinations beyond the former app limits", async () => {
+    const start = { lat: 41.399, lng: 2.1956 };
+    const walking = await calculateDirectRoute(start, { lat: 41.496506, lng: 2.1534198 }, [], "pedestrian", AbortSignal.timeout(40_000));
+    const cycling = await calculateDirectRoute(start, { lat: 41.6830176, lng: 2.2859632 }, [], "bicycle", AbortSignal.timeout(40_000));
+    expect(walking.routes[0].distanceKm).toBeGreaterThan(10);
+    expect(cycling.routes[0].distanceKm).toBeGreaterThan(30);
+  }, 85_000);
 
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("finds a five-minute cycling detour near the Poblenou coast", async () => {
     const start = { lat: 41.399, lng: 2.1956 };

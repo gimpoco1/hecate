@@ -1,11 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import type { CityBoundary } from "../city";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
   findExplorationRoutes,
   calculateDirectRoute,
   DestinationTooCloseError,
-  DestinationTooFarError,
-  MAX_ROUTE_DISTANCE_KM,
   ROUTE_BUDGETS,
   routesForExtraTime,
   type PlannedRoute,
@@ -24,11 +23,13 @@ type Props = {
   open: boolean;
   destination: RouteDestination | null;
   origin: RoutePoint | null;
+  searchCity: CityBoundary | null;
   cells: DiscoveryCell[];
   ready: boolean;
   tracking: boolean;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
   onDestinationSelect: (point: RoutePoint) => void;
+  onPanelHeightChange: (height: number) => void;
   onClose: () => void;
   onReturnToJourney: () => void;
   onClear: () => void;
@@ -48,11 +49,13 @@ export function ExplorationRoutePlanner({
   open,
   destination,
   origin,
+  searchCity,
   cells,
   ready,
   tracking,
   mapRef,
   onDestinationSelect,
+  onPanelHeightChange,
   onClose,
   onReturnToJourney,
   onClear,
@@ -73,7 +76,6 @@ export function ExplorationRoutePlanner({
   const [directErrors, setDirectErrors] = useState<Record<TransportMode, string>>({ pedestrian: "", bicycle: "" });
   const [directPending, setDirectPending] = useState(false);
   const [destinationError, setDestinationError] = useState<{ title: string; message: string } | null>(null);
-  const [walkingRangeError, setWalkingRangeError] = useState("");
   const [directRevision, setDirectRevision] = useState(0);
   const [namedDestination, setNamedDestination] = useState<DestinationResult | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -95,6 +97,16 @@ export function ExplorationRoutePlanner({
   const selected = routes.find(({ id }) => id === selectedId) ?? routes[1] ?? routes[0];
   const destinationLabel = destination?.name ?? (namedDestination && destination && namedDestination.point.lng === destination.lng && namedDestination.point.lat === destination.lat
     ? namedDestination.name : namePending ? "Finding place name…" : "Map destination");
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    const measure = (): void => onPanelHeightChange(panel.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(panel);
+    return () => { observer.disconnect(); onPanelHeightChange(0); };
+  }, [open, onPanelHeightChange]);
 
   useEffect(() => {
     setNameError("");
@@ -123,7 +135,6 @@ export function ExplorationRoutePlanner({
     setDirectPlans({ pedestrian: null, bicycle: null });
     setDirectErrors({ pedestrian: "", bicycle: "" });
     setDestinationError(null);
-    setWalkingRangeError("");
     const start = originRef.current;
     if (!destination || !start || !ready) { setDirectPending(false); return; }
     const controller = new AbortController();
@@ -136,11 +147,6 @@ export function ExplorationRoutePlanner({
         if (controller.signal.aborted) return;
         if (cause instanceof DestinationTooCloseError) {
           setDestinationError({ title: "This destination is too close", message: cause.message });
-          return;
-        }
-        if (cause instanceof DestinationTooFarError) {
-          if (profile === "pedestrian") setWalkingRangeError(cause.message);
-          else setDestinationError({ title: "This destination is too far", message: `Choose somewhere closer. Walking routes support destinations within ${MAX_ROUTE_DISTANCE_KM.pedestrian} km and cycling routes within ${MAX_ROUTE_DISTANCE_KM.bicycle} km.` });
           return;
         }
         console.error("Could not calculate direct route", { start, destination, profile, cause });
@@ -361,7 +367,7 @@ export function ExplorationRoutePlanner({
       </div>
       {step === "destination" ? <>
         <p className="exploration-route-help">Search, tap the map, or choose a saved place.</p>
-        <DestinationSearch key={searchRevision} near={origin} onSelect={(result) => {
+        <DestinationSearch key={searchRevision} near={origin} city={searchCity} onSelect={(result) => {
           setNamedDestination(result);
           onDestinationSelect(result.point);
           mapRef.current?.flyTo({ center: [result.point.lng, result.point.lat], zoom: 14, duration: 600 });
@@ -373,12 +379,11 @@ export function ExplorationRoutePlanner({
             {(["pedestrian", "bicycle"] as const).map((profile) => <div key={profile}>
               {profile === "pedestrian" ? <WalkingIcon size={18} /> : <CyclingIcon size={18} />}
               <div className="exploration-direct-estimate-copy"><span>{profile === "pedestrian" ? "Walking" : "Cycling"}</span>
-              <strong>{directPlans[profile] ? `${Math.ceil(directPlans[profile].routes[0].durationSeconds / 60)} min` : profile === "pedestrian" && walkingRangeError ? "Too far" : directErrors[profile] ? "Unavailable" : "Calculating…"}</strong>
+              <strong>{directPlans[profile] ? `${Math.ceil(directPlans[profile].routes[0].durationSeconds / 60)} min`  : directErrors[profile] ? "Unavailable" : "Calculating…"}</strong>
               {directPlans[profile] && <small> · {directPlans[profile].routes[0].distanceKm.toFixed(1)} km</small>}</div>
               {directErrors[profile] && <p className="exploration-route-error" role="alert">{directErrors[profile]}</p>}
             </div>)}
           </div>}
-          {!destinationError && walkingRangeError && <div className="exploration-destination-error" role="alert"><strong>Too far for walking</strong><p>{walkingRangeError}{directPlans.bicycle ? " You can continue with cycling." : ""}</p></div>}
           {!directPending && (directPlans.pedestrian || directPlans.bicycle) && <button className="exploration-route-primary" type="button" onClick={() => setStep("options")}>Next: choose your route</button>}
           {!directPending && (directErrors.pedestrian || directErrors.bicycle) && <button className="exploration-route-clear" type="button" onClick={() => setDirectRevision((revision) => revision + 1)}>Retry direct routes</button>}
         </div>}

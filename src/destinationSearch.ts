@@ -1,3 +1,4 @@
+import { cityBounds, cityPointPredicate, type CityBoundary } from "./city";
 import type { RoutePoint } from "./explorationRouting";
 
 export type DestinationResult = { id: string; name: string; detail: string; point: RoutePoint };
@@ -31,14 +32,18 @@ export function parseDestinations(value: unknown): DestinationResult[] {
   });
 }
 
-/** Search is submitted explicitly, rather than issuing a request for every keystroke. */
-export async function searchDestinations(query: string, near: RoutePoint | null, signal: AbortSignal): Promise<DestinationResult[]> {
+/** Restricts suggestions to the current city polygon, including holes and disconnected boundaries. */
+export async function searchDestinations(query: string, near: RoutePoint | null, city: CityBoundary, signal: AbortSignal): Promise<DestinationResult[]> {
   if (query.trim().length < 3) throw new RangeError("Enter at least three characters to search for a destination.");
   const url = new URL(SEARCH_URL);
   url.searchParams.set("q", query.trim());
-  url.searchParams.set("limit", "5");
+  url.searchParams.set("limit", "10");
+  const bounds = cityBounds(city);
+  url.searchParams.set("bbox", [bounds.west, bounds.south, bounds.east, bounds.north].join(","));
   if (near) { url.searchParams.set("lat", String(near.lat)); url.searchParams.set("lon", String(near.lng)); }
-  return requestDestinations(url, signal);
+  const results = await requestDestinations(url, signal);
+  const contains = cityPointPredicate(city);
+  return results.filter(({ point }) => contains(point)).slice(0, 5);
 }
 
 /** Resolves a nearby name without moving the user's chosen destination to the search result. */

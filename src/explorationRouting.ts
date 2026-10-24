@@ -15,7 +15,6 @@ export type PlannedRoute = {
 };
 export type RoutePlan = { extraMinutes: number; mode: TransportMode; origin: RoutePoint; destination: RoutePoint; routes: PlannedRoute[] };
 export const ROUTE_BUDGETS: readonly number[] = [5, 10, 20];
-export const MAX_ROUTE_DISTANCE_KM: Readonly<Record<TransportMode, number>> = { pedestrian: 10, bicycle: 30 };
 const ROUTER_URL = import.meta.env.VITE_WALKING_ROUTER_URL || "https://valhalla1.openstreetmap.de/route";
 
 export class ExplorationRoutingError extends Error {
@@ -29,13 +28,6 @@ export class DestinationTooCloseError extends ExplorationRoutingError {
   constructor() {
     super("Choose somewhere at least 100 m away. Tap another point on the map or search for a different place.");
     this.name = "DestinationTooCloseError";
-  }
-}
-
-export class DestinationTooFarError extends ExplorationRoutingError {
-  constructor(mode: TransportMode) {
-    super(`Choose a destination within ${MAX_ROUTE_DISTANCE_KM[mode]} km for ${mode === "pedestrian" ? "walking" : "cycling"}.`);
-    this.name = "DestinationTooFarError";
   }
 }
 
@@ -260,7 +252,7 @@ export async function calculateDirectRoute(
   mode: TransportMode,
   signal: AbortSignal,
 ): Promise<RoutePlan> {
-  validateDestination(origin, destination, mode);
+  validateDestination(origin, destination);
   const routes = await requestRoutes([origin, destination], mode, signal);
   if (routes.length === 0) throw new ExplorationRoutingError("No accessible direct route found for this transport mode.");
   const fastest = [...routes].sort((a, b) => a.durationSeconds - b.durationSeconds)[0];
@@ -268,10 +260,9 @@ export async function calculateDirectRoute(
   return { origin, destination, mode, extraMinutes: 0, routes: [scoreRoute(fastest, "direct", known)] };
 }
 
-function validateDestination(origin: RoutePoint, destination: RoutePoint, mode: TransportMode): number {
+function validateDestination(origin: RoutePoint, destination: RoutePoint): number {
   const separationKm = distanceKm(coordinate(origin), coordinate(destination));
   if (separationKm < 0.1) throw new DestinationTooCloseError();
-  if (separationKm > MAX_ROUTE_DISTANCE_KM[mode]) throw new DestinationTooFarError(mode);
   return separationKm;
 }
 
@@ -297,7 +288,7 @@ export async function findExplorationRoutes(
 ): Promise<RoutePlan> {
   if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError("Choose an extra-time target of 5, 10, or 20 minutes.");
   const { origin, destination, mode } = direct;
-  const separationKm = validateDestination(origin, destination, mode);
+  const separationKm = validateDestination(origin, destination);
   const known = new Set(cells.flatMap(discoveryFootprintCells).map(discoveryCellKey));
   const baseline = scoreRoute(direct.routes[0], "direct", known);
   const strategies = discoveryGuidedDetours(origin, destination, separationKm, baseline.durationSeconds, extraMinutes, known);
