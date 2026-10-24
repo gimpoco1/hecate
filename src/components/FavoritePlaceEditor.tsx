@@ -17,6 +17,7 @@ type Props = {
   onSave: (favorite: FavoritePlace) => void;
   onDelete: (favorite: FavoritePlace) => void;
   onDirections: (favorite: FavoritePlace) => void;
+  onHecateDirections: (favorite: FavoritePlace) => void;
 };
 
 function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
@@ -41,6 +42,7 @@ export function FavoritePlaceEditor({
   onSave,
   onDelete,
   onDirections,
+  onHecateDirections,
 }: Props) {
   const [draft, setDraft] = useState(favorite);
   const [mode, setMode] = useState(initialMode);
@@ -169,7 +171,7 @@ export function FavoritePlaceEditor({
           )}
           {mode === "view" ? (
             <>
-              <button className="favorite-editor__directions" type="button" onClick={() => onDirections(draft)}>
+              <button className="favorite-editor__directions" type="button" onClick={() => onHecateDirections(draft)}>
                 <DirectionsIcon size={18} /> Get directions
               </button>
               <button className="favorite-editor__save" type="button" onClick={() => setMode("edit")}>Update note</button>
@@ -185,6 +187,11 @@ export function FavoritePlaceEditor({
             </button>
           )}
         </div>
+        {mode === "view" && (
+          <button className="favorite-editor__external-directions" type="button" onClick={() => onDirections(draft)}>
+            Or open in other maps
+          </button>
+        )}
       </section>
     </div>
   );

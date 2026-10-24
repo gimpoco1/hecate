@@ -1,13 +1,16 @@
 import {
   mdiArrowLeft,
   mdiBellOutline,
+  mdiBike,
   mdiCityVariantOutline,
   mdiCoffeeOutline,
+  mdiTrashCanOutline,
   mdiLogout,
   mdiMedalOutline,
   mdiPodium,
   mdiVideo2d,
   mdiVideo3d,
+  mdiWalk,
 } from "@mdi/js";
 
 type IconProps = { size?: number; strokeWidth?: number }
@@ -20,11 +23,14 @@ export const LocateIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(si
 export const LocationOffIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/><path d="M4 4l16 16"/></svg>
 export const RouteIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7"/></svg>
 export const DirectionsIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="M14 5 21 12l-7 7v-4H8.5A4.5 4.5 0 0 0 4 19.5V18a8 8 0 0 1 8-8h2V5Z"/></svg>
+export const TrashIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiTrashCanOutline}/></svg>
 export const ViewDimensionIcon = ({ size, dimension }: Pick<IconProps, "size"> & { dimension: "2d" | "3d" }) => <svg {...filledBase(size)}><path d={dimension === "3d" ? mdiVideo3d : mdiVideo2d}/></svg>
 export const UserIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>
 export const InfoIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
 export const StarIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg>
 export const ArrowLeftIcon = ({ size }: IconProps) => <svg {...filledBase(size)}><path d={mdiArrowLeft}/></svg>
+export const WalkingIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiWalk}/></svg>
+export const CyclingIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiBike}/></svg>
 export const BellIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiBellOutline}/></svg>
 export const CoffeeIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiCoffeeOutline}/></svg>
 export const SignOutIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiLogout}/></svg>

@@ -1,5 +1,8 @@
+import { routeCameraBearing } from "./routeCamera";
+import type { PlannedRoute } from "./explorationRouting";
+import { ExplorationRoutePlanner, type RouteDestination } from "./components/ExplorationRoutePlanner";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
@@ -85,6 +88,7 @@ import {
   FogIcon,
   ViewDimensionIcon,
   SaveIcon,
+  RouteIcon,
   UserIcon,
   XIcon,
 } from "./components/Icons";
@@ -227,6 +231,8 @@ const MORNING_INVITE_TEST_NOTIFICATION_ID = 1210;
 const WEEKLY_RECAP_TEST_NOTIFICATION_ID = 1211;
 const STREAK_REMINDER_TEST_NOTIFICATION_ID = 1212;
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
+const DEV_TOOLS_ENABLED = import.meta.env.VITE_ENABLE_DEV_TOOLS === "1" ||
+  (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_TOOLS !== "0");
 const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
 
@@ -777,7 +783,7 @@ export default function App() {
     useState("");
   const [achievementTestMessage, setAchievementTestMessage] = useState("");
   const [devToolsVisible, setDevToolsVisible] = useState(() => {
-    if (!(import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1"))
+    if (!DEV_TOOLS_ENABLED)
       return false;
     try {
       return localStorage.getItem(DEV_TOOLS_VISIBILITY_KEY) !== "false";
@@ -813,6 +819,15 @@ export default function App() {
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
+  const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
+  const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
+  const [routePanelHeight, setRoutePanelHeight] = useState(0);
+  const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
+  useEffect(() => {
+    plannedJourneyRouteRef.current = null;
+    setRoutePlannerOpen(false);
+    setRouteDestination(null);
+  }, [accountUserId]);
   const [favoritePlaces, setFavoritePlaces] = useState<FavoritePlace[]>([]);
   const [selectedFavoritePlaceId, setSelectedFavoritePlaceId] = useState<
     string | null
@@ -824,6 +839,29 @@ export default function App() {
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
   const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const topbarRef = useRef<HTMLElement>(null);
+  const mapActionsRef = useRef<HTMLElement>(null);
+  const [compactMapActions, setCompactMapActions] = useState(false);
+  useLayoutEffect(() => {
+    const topbar = topbarRef.current;
+    const actions = mapActionsRef.current;
+    if (!routePlannerOpen || !topbar || !actions) return;
+    const measure = (): void => {
+      const buttons = Array.from(actions.children);
+      const columnHeight = buttons.reduce((height, button) => height + button.getBoundingClientRect().height, 0) + Math.max(0, buttons.length - 1) * 8;
+      const availableHeight = actions.getBoundingClientRect().bottom - topbar.getBoundingClientRect().bottom - 12;
+      setCompactMapActions(columnHeight > availableHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(topbar);
+    observer.observe(actions);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [routePlannerOpen, routePanelHeight, keyboardInset]);
   const [cityBoundary, setCityBoundary] = useState<CityBoundary | null>(null);
   const [viewCenter, setViewCenter] = useState<{
     lng: number;
@@ -917,6 +955,7 @@ export default function App() {
   const resumeCenterFrameRef = useRef<number | null>(null);
   const followCameraFrameRef = useRef<number | null>(null);
   const followCameraTargetRef = useRef<Coordinate | null>(null);
+  const followCameraBearingRef = useRef<number | null>(null);
   const followCameraTimestampRef = useRef<number | null>(null);
   const followCameraEnabledRef = useRef(true);
   const discoveryUiRefreshTimerRef = useRef<number | null>(null);
@@ -947,6 +986,8 @@ export default function App() {
   }, []);
   const animateFollowCamera = useCallback((point: Coordinate) => {
     followCameraTargetRef.current = point;
+    const route = plannedJourneyRouteRef.current;
+    followCameraBearingRef.current = route ? routeCameraBearing(route.points, point) : null;
     if (
       !followCameraEnabledRef.current ||
       followCameraFrameRef.current !== null
@@ -960,28 +1001,35 @@ export default function App() {
         followCameraTimestampRef.current = null;
         return;
       }
+      if (plannedJourneyRouteRef.current && map.isMoving()) {
+        followCameraFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
       const previousTimestamp = followCameraTimestampRef.current ?? timestamp;
       const elapsed = Math.min(50, Math.max(0, timestamp - previousTimestamp));
       followCameraTimestampRef.current = timestamp;
       const center = map.getCenter();
       const longitudeDelta = ((target.lng - center.lng + 540) % 360) - 180;
       const blend = 1 - Math.exp(-elapsed / 180);
+      const plannedRoute = plannedJourneyRouteRef.current;
+      const targetBearing = followCameraBearingRef.current;
+      const bearingDelta = targetBearing === null ? 0 : ((targetBearing - map.getBearing() + 540) % 360) - 180;
       const next = {
-        lng: center.lng + longitudeDelta * blend,
-        lat: center.lat + (target.lat - center.lat) * blend,
+        lng: plannedRoute ? target.lng : center.lng + longitudeDelta * blend,
+        lat: plannedRoute ? target.lat : center.lat + (target.lat - center.lat) * blend,
       };
       map.jumpTo(
-        { center: [next.lng, next.lat] },
+        { center: [next.lng, next.lat], ...(targetBearing === null ? {} : { bearing: map.getBearing() + bearingDelta * (plannedRoute ? 1 : blend) }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
         { hecateFollowCamera: true },
       );
       if (
         distanceKm(
           { ...next, recordedAt: target.recordedAt },
           target,
-        ) < 0.0005
+        ) < 0.0005 && Math.abs(bearingDelta) < 0.5
       ) {
         map.jumpTo(
-          { center: [target.lng, target.lat] },
+          { center: [target.lng, target.lat], ...(targetBearing === null ? {} : { bearing: targetBearing }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
           { hecateFollowCamera: true },
         );
         followCameraFrameRef.current = null;
@@ -1111,8 +1159,7 @@ export default function App() {
   const displayedNewGroundCounter = journeyNewGroundCounter(activeWalkNewGroundMeters);
   const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
   const nativeApp = isNativeApp();
-  const devToolsEnabled =
-    import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEV_TOOLS === "1";
+  const devToolsEnabled = DEV_TOOLS_ENABLED;
 
   const enqueueJourneyActivity = (operation: () => Promise<void>): void => {
     if (!Capacitor.isNativePlatform()) return;
@@ -2751,9 +2798,12 @@ export default function App() {
     followCameraEnabledRef.current = true;
     stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
+    const route = plannedJourneyRouteRef.current;
+    if (route) setPerspectiveView(true);
     mapRef.current?.flyTo({
       center: [point.lng, point.lat],
-      zoom: 15,
+      zoom: route ? 17 : 15,
+      ...(route ? { pitch: 55, bearing: routeCameraBearing(route.points, point), padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}),
       duration: 1400,
       essential: true,
     });
@@ -2815,6 +2865,7 @@ export default function App() {
     const appVisible = document.visibilityState === "visible";
     if (appVisible) {
       setCurrentPoint(point);
+      if (plannedJourneyRouteRef.current) animateFollowCamera(point);
       if (centerOnNextPassivePointRef.current) {
         centerOnNextPassivePointRef.current = false;
         centerMapOnPoint(point);
@@ -2864,7 +2915,7 @@ export default function App() {
     if (appVisible) {
       scheduleDiscoveryUiRefresh();
       if (discoveredNewCell) setCells([...cellsRef.current]);
-      animateFollowCamera(recordedPoint);
+      if (!plannedJourneyRouteRef.current) animateFollowCamera(recordedPoint);
     } else {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
@@ -3002,7 +3053,19 @@ export default function App() {
     explorationStartRef.current = null;
   };
 
+  const clearRouteDestination = (): void => {
+    plannedJourneyRouteRef.current = null;
+    setRouteDestination(null);
+    setSelectedFavoritePlaceId(null);
+  };
+
+  const clearPlannedRoute = (): void => {
+    setRoutePlannerOpen(false);
+    clearRouteDestination();
+  };
+
   const finalizeRecordedWalk = (): void => {
+    clearPlannedRoute();
     setWalkFinalizing(true);
     void finishActiveWalk()
       .catch((error) => {
@@ -3651,16 +3714,8 @@ export default function App() {
   const locate = () => {
     void requestDeviceHeadingPermission();
     if (currentPoint) {
-      followCameraEnabledRef.current = true;
-      stopFollowCameraAnimation();
-      setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
+      focusOnUserPoint(currentPoint);
       setViewedCity(null);
-      mapRef.current?.flyTo({
-        center: [currentPoint.lng, currentPoint.lat],
-        zoom: 15,
-        duration: 1400,
-        essential: true,
-      });
     }
     if (!currentPoint || passiveLocationStatus !== "located") {
       setPassiveLocationStatus("requesting");
@@ -4358,7 +4413,7 @@ export default function App() {
   );
 
   return (
-    <main className="app-shell" aria-busy={accountDataLoading}>
+    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px`, "--route-panel-bottom": keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
@@ -4374,17 +4429,42 @@ export default function App() {
               : "idle"
         }
         onMapClick={handleMapClick}
+        onDestinationSelect={routePlannerOpen ? (point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); } : undefined}
         favoritePlaces={favoritePlaces}
         selectedFavoritePlaceId={selectedFavoritePlaceId}
         favoritePlacementActive={favoritePlacementActive}
         onFavoritePlaceRequest={handleFavoritePlaceRequest}
-        onFavoriteSelect={openFavoritePlace}
+        onFavoriteSelect={routePlannerOpen
+          ? (favorite) => { setRouteDestination({ lng: favorite.lng, lat: favorite.lat, name: favorite.name }); setSelectedFavoritePlaceId(favorite.id); }
+          : openFavoritePlace}
         onZoomChange={onZoomChange}
         onViewChange={onViewChange}
         onUserNavigation={suspendFollowCamera}
         mapRef={mapRef}
         fogLayerRef={fogLayerRef}
       />
+      {(routePlannerOpen || routeDestination !== null) && (
+        <ExplorationRoutePlanner
+          key={accountUserId ?? "guest"}
+          open={routePlannerOpen}
+          keyboardInset={keyboardInset}
+          userId={accountUserId}
+          onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
+          destination={routeDestination}
+          searchCity={activeCity}
+          origin={locationIsCurrent && currentPoint ? currentPoint : null}
+          cells={cells}
+          ready={!accountDataLoading && (!accountUserId || (citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current))}
+          tracking={tracking === "tracking" || tracking === "requesting"}
+          mapRef={mapRef}
+          onPanelHeightChange={setRoutePanelHeight}
+          onClose={clearPlannedRoute}
+          onReturnToJourney={() => setRoutePlannerOpen(false)}
+          onClear={clearRouteDestination}
+          onLocate={locate}
+          onStart={(route) => { plannedJourneyRouteRef.current = route; setRoutePlannerOpen(false); void toggleTracking(); }}
+        />
+      )}
       {devToolsEnabled && devToolsVisible && (
         <aside
           className="dev-tools"
@@ -4469,7 +4549,7 @@ export default function App() {
         </button>
       )}
 
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <button
           className="brand"
           onClick={showGlobe}
@@ -4480,21 +4560,52 @@ export default function App() {
           </span>
           <span>Hecate</span>
         </button>
-        <button
-          className="avatar-button"
-          type="button"
-          onClick={() => {
-            setGlobalMilestonesOpen(false);
-            setSyncInitialIntent("signin");
-            setSyncOpen(true);
-          }}
-          aria-label="Account and sync"
-        >
-          <UserIcon size={19} />
-        </button>
+        <div className="topbar-account">
+          {accountUserId && summaryCity && isCityScale && (
+            <button
+              className="map-milestone"
+              type="button"
+              onClick={openJourneyAtCityMilestones}
+              aria-label={
+                currentCityMilestone.next
+                  ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
+                  : `All 3 city stars earned in ${summaryCity.name}. Open city progress.`
+              }
+              title={
+                currentCityMilestone.next
+                  ? `Next city star at ${formatDistance(currentCityMilestone.next.thresholdKm)}`
+                  : "All 3 city stars earned"
+              }
+            >
+              <CityLevelStars level={currentCityMilestoneLevel} />
+              <span className="map-milestone__track" aria-hidden="true">
+                <span
+                  style={{ width: `${currentCityMilestone.progress * 100}%` }}
+                />
+              </span>
+              <small>
+                {currentCityMilestone.next
+                  ? `${formatRemainingDistance(currentCityMilestoneRemaining)} left`
+                  : "Complete"}
+              </small>
+            </button>
+          )}
+          <button
+            className="avatar-button"
+            type="button"
+            onClick={() => {
+              setGlobalMilestonesOpen(false);
+              setSyncInitialIntent("signin");
+              setSyncOpen(true);
+            }}
+            aria-label="Account and sync"
+          >
+            <UserIcon size={19} />
+          </button>
+        </div>
       </header>
 
-      {!accountUserId && !isCityScale && !accountDataLoading ? (
+      {!accountUserId && !isCityScale && !accountDataLoading && !routePlannerOpen ? (
         <section className="guest-intro" aria-labelledby="guest-intro-title">
           <div className="eyebrow">Discover your world</div>
           <h1 id="guest-intro-title">Turn every walk into your map.</h1>
@@ -4646,41 +4757,31 @@ export default function App() {
           </button>
         )}
 
-      <nav className="map-actions" aria-label="Map controls">
-        {accountUserId && summaryCity && isCityScale && (
-          <button
-            className="map-milestone"
-            type="button"
-            onClick={openJourneyAtCityMilestones}
-            aria-label={
-              currentCityMilestone.next
-                ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
-                : `All 3 city stars earned in ${summaryCity.name}. Open city progress.`
-            }
-            title={
-              currentCityMilestone.next
-                ? `Next city star at ${formatDistance(currentCityMilestone.next.thresholdKm)}`
-                : "All 3 city stars earned"
-            }
-          >
-            <CityLevelStars level={currentCityMilestoneLevel} />
-            <span className="map-milestone__track" aria-hidden="true">
-              <span
-                style={{ width: `${currentCityMilestone.progress * 100}%` }}
-              />
-            </span>
-            <small>
-              {currentCityMilestone.next
-                ? `${formatRemainingDistance(currentCityMilestoneRemaining)} left`
-                : "Complete"}
-            </small>
-          </button>
-        )}
+      <nav ref={mapActionsRef} className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}${routePlannerOpen && compactMapActions ? " map-actions--compact" : ""}`} aria-label="Map controls">
+        <button
+          type="button"
+          className={routePlannerOpen ? "active" : ""}
+          aria-label="Plan a discovery route"
+          aria-pressed={routePlannerOpen}
+          onClick={() => {
+            if (routePlannerOpen) clearPlannedRoute();
+            else setRoutePlannerOpen(true);
+            setFavoritePlacementActive(false);
+            setFavoriteDraft(null);
+            setHighlightedRoutePoints([]);
+            setSelectedFavoritePlaceId(null);
+            suspendFollowCamera();
+            if (journeyExpandedRef.current) settleJourneySheet(false);
+          }}
+        >
+          <RouteIcon size={21} />
+        </button>
         {accountUserId && (
           <button
             className={favoritePlacementActive ? "active" : ""}
             type="button"
             onClick={() => {
+              if (routePlannerOpen) clearPlannedRoute();
               setFavoriteDraft(null);
               setFavoritePlacementActive((active) => !active);
               if (journeyExpandedRef.current) settleJourneySheet(false);
@@ -4749,11 +4850,22 @@ export default function App() {
           onSave={saveFavoriteDraft}
           onDelete={deleteFavoriteDraft}
           onDirections={(favorite) => void chooseFavoriteDirections(favorite)}
+          onHecateDirections={(favorite) => {
+            setFavoriteDraft(null);
+            setSavedPlacesOpen(false);
+            setFavoritePlacementActive(false);
+            setHighlightedRoutePoints([]);
+            setSelectedFavoritePlaceId(favorite.id);
+            setRouteDestination({ lng: favorite.lng, lat: favorite.lat, name: favorite.name });
+            setRoutePlannerOpen(true);
+            suspendFollowCamera();
+            if (journeyExpandedRef.current) settleJourneySheet(false);
+          }}
         />
       )}
 
 
-      {isCityScale && (
+      {isCityScale && !routePlannerOpen && (
         <section
           ref={journeyCardRef}
           className="journey-card"
