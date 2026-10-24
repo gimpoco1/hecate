@@ -47,14 +47,14 @@ export async function searchDestinations(query: string, near: RoutePoint | null,
 }
 
 /** Resolves a nearby name without moving the user's chosen destination to the search result. */
-export async function reverseGeocodeDestination(point: RoutePoint, signal: AbortSignal): Promise<DestinationResult> {
+export async function reverseGeocodeDestination(point: RoutePoint, signal: AbortSignal): Promise<DestinationResult | null> {
   const url = new URL(import.meta.env.VITE_DESTINATION_REVERSE_URL || "/reverse", SEARCH_URL);
   url.searchParams.set("lat", String(point.lat));
   url.searchParams.set("lon", String(point.lng));
   url.searchParams.set("limit", "1");
   url.searchParams.set("radius", "0.1");
   const results = await requestDestinations(url, signal);
-  if (results.length === 0) throw new Error("No place or street name was found within 100 m of this destination.");
+  if (results.length === 0) return null;
   return { ...results[0], point };
 }
 

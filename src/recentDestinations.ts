@@ -1,3 +1,4 @@
+import type { RoutePoint } from "./explorationRouting";
 import type { DestinationResult } from "./destinationSearch";
 
 const HISTORY_LIMIT = 3;
@@ -36,4 +37,15 @@ export function saveRecentDestinations(userId: string | null, destinations: read
 
 export function clearRecentDestinations(userId: string | null): void {
   localStorage.removeItem(storageKey(userId));
+}
+
+/** Uses saved-place names first and only applies a geocoded name to the point it describes. */
+export function recentDestinationFromSelection(destination: RoutePoint & { name?: string }, resolved: DestinationResult | null): DestinationResult {
+  const matching = resolved?.point.lng === destination.lng && resolved.point.lat === destination.lat ? resolved : null;
+  return {
+    id: matching?.id ?? `${destination.lng}:${destination.lat}`,
+    name: destination.name ?? matching?.name ?? "Selected point",
+    detail: matching?.detail ?? `${destination.lat.toFixed(5)}, ${destination.lng.toFixed(5)}`,
+    point: { lng: destination.lng, lat: destination.lat },
+  };
 }

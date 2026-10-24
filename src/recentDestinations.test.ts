@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseRecentDestinations, withRecentDestination } from "./recentDestinations";
+import { parseRecentDestinations, recentDestinationFromSelection, withRecentDestination } from "./recentDestinations";
 import type { DestinationResult } from "./destinationSearch";
 
 function destination(id: string, lng: number): DestinationResult {
@@ -21,4 +21,14 @@ describe("recent destinations", () => {
     expect(() => parseRecentDestinations([{ ...place, point: { lng: NaN, lat: 41 } }])).toThrow(TypeError);
     expect(() => parseRecentDestinations({})).toThrow(TypeError);
   });
+  it("remembers map picks and saved places without applying an old point's geocoded name", () => {
+    const resolved = destination("Street 12", 2.1);
+    expect(recentDestinationFromSelection(resolved.point, resolved)).toEqual(resolved);
+    expect(recentDestinationFromSelection({ ...resolved.point, name: "My saved cafe" }, resolved).name).toBe("My saved cafe");
+    const other = { lng: 2.4, lat: 41.4 };
+    expect(recentDestinationFromSelection(other, resolved)).toMatchObject({ name: "Selected point", point: other });
+    const original = recentDestinationFromSelection(resolved.point, null);
+    expect(withRecentDestination([original], recentDestinationFromSelection(resolved.point, resolved))).toEqual([resolved]);
+  });
+
 });

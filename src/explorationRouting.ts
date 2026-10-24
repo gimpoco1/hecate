@@ -31,6 +31,13 @@ export class DestinationTooCloseError extends ExplorationRoutingError {
   }
 }
 
+export class RouteDistanceExceededError extends ExplorationRoutingError {
+  constructor(readonly status: number, readonly responseBody: string, readonly locations: readonly RoutePoint[]) {
+    super("This journey exceeds the routing service’s distance limit. Choose a closer destination.");
+    this.name = "RouteDistanceExceededError";
+  }
+}
+
 function coordinate(point: RoutePoint): Coordinate {
   return { ...point, recordedAt: 0 };
 }
@@ -120,6 +127,9 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       if (!response.ok) {
         const body = await response.text();
         const details: unknown = response.headers.get("content-type")?.includes("application/json") ? JSON.parse(body) : null;
+        if (response.status === 400 && object(details) && details.code === "DistanceExceeded") {
+          throw new RouteDistanceExceededError(response.status, body, locations);
+        }
         if (response.status === 400 && object(details) && (details.error_code === 442 || details.error_code === 171 || details.code === "NoRoute")) {
           console.warn("No route through requested locations", { locations, mode, status: response.status, body });
           return [];

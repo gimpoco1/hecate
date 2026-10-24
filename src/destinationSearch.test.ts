@@ -21,8 +21,8 @@ describe("destination search", () => {
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("names a map destination while preserving the exact selected point", async () => {
     const point = { lat: 41.4036, lng: 2.1744 };
     const result = await reverseGeocodeDestination(point, AbortSignal.timeout(20_000));
-    expect(result.name.length).toBeGreaterThan(0);
-    expect(result.point).toEqual(point);
+    expect(result?.name.length).toBeGreaterThan(0);
+    expect(result?.point).toEqual(point);
   }, 25_000);
 
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("finds a real destination near Barcelona", async () => {
