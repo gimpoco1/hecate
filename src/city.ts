@@ -191,7 +191,7 @@ export function cityAreaKm2(city: CityBoundary) {
   }, 0);
 }
 
-function cityBounds(city: CityBoundary) {
+export function cityBounds(city: CityBoundary): { west: number; south: number; east: number; north: number } {
   const polygons =
     city.geometry.type === "Polygon"
       ? [city.geometry.coordinates]

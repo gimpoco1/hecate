@@ -3,6 +3,7 @@ import {
   enabledActivityNotificationPreferences,
   hasSavedActivityNotificationPreferences,
   morningInviteMessage,
+  loadActivityNotificationPreferences,
   nextWeeklyRecapDate,
   weeklyRecapFromPoints,
   saveActivityNotificationPreferences,
@@ -15,21 +16,56 @@ afterEach(() => {
 });
 
 describe("activity notifications", () => {
-  it("uses progress without exposing location in the morning invite", () => {
-    expect(morningInviteMessage(0.08)).toBe(
-      "You have pioneered 0.08 km so far. Where to today?",
+  it("mentions world milestones only within a short walk and near completion", () => {
+    expect(morningInviteMessage(4.5, null)).toBe(
+      "Just 500 m to your Wayfinder milestone. Head out for a walk today!",
     );
+    expect(morningInviteMessage(99, null)).toBe(
+      "Just 1 km to your Edge of Space milestone. Head out for a walk today!",
+    );
+    const ordinary = "A new day, a new path. Where will you discover today?";
+    expect(morningInviteMessage(4, null)).toBe(ordinary);
+    expect(morningInviteMessage(98.99, null)).toBe(ordinary);
+    expect(morningInviteMessage(50, null)).toBe(ordinary);
+    expect(morningInviteMessage(5, null)).toBe(ordinary);
+    expect(morningInviteMessage(384_400, null)).toBe(ordinary);
+    expect(morningInviteMessage(null, null)).toBe(ordinary);
+  });
+
+  it("uses new ground for nearby city milestones and chooses the closest qualifying milestone", () => {
+    const city = { cityName: "Barcelona", discoveredKm: 4.5 };
+    expect(morningInviteMessage(50, city)).toBe(
+      "Just 500 m of new ground to your First Footprint milestone in Barcelona. Head out for a walk today!",
+    );
+    expect(morningInviteMessage(99, city)).toContain("First Footprint milestone in Barcelona");
+    expect(morningInviteMessage(4.75, city)).toContain("250 m to your Wayfinder milestone");
+    const ordinary = morningInviteMessage(null, null);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 4 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 24 })).toContain("1 km of new ground");
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 23.99 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 5 })).toBe(ordinary);
+    expect(morningInviteMessage(50, { ...city, discoveredKm: 100 })).toBe(ordinary);
   });
 
   it("schedules an at-risk streak for this evening or tomorrow", () => {
-    expect(streakReminderDate(new Date(2026, 9, 17, 9).getTime(), 0)).toEqual(
+    expect(streakReminderDate(new Date(2026, 9, 17, 9).getTime(), 0, "18:00")).toEqual(
       new Date(2026, 9, 17, 18),
     );
-    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 0)).toBeNull();
-    expect(streakReminderDate(new Date(2026, 9, 17, 18).getTime(), 0)).toBeNull();
-    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 1)).toEqual(
+    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 0, "18:00")).toBeNull();
+    expect(streakReminderDate(new Date(2026, 9, 17, 18).getTime(), 0, "18:00")).toBeNull();
+    expect(streakReminderDate(new Date(2026, 9, 17, 19).getTime(), 1, "18:00")).toEqual(
       new Date(2026, 9, 18, 18),
     );
+  });
+
+  it("uses the selected hour and minute and skips elapsed reminders", () => {
+    expect(streakReminderDate(new Date(2026, 9, 17, 20, 29).getTime(), 0, "20:30"))
+      .toEqual(new Date(2026, 9, 17, 20, 30));
+    expect(streakReminderDate(new Date(2026, 9, 17, 20, 30).getTime(), 0, "20:30"))
+      .toBeNull();
+    expect(streakReminderDate(new Date(2026, 11, 31, 22).getTime(), 1, "08:15"))
+      .toEqual(new Date(2027, 0, 1, 8, 15));
+    expect(() => streakReminderDate(Date.now(), 0, "24:00")).toThrow(RangeError);
   });
 
   it("keeps the weekly recap concise and motivational", () => {
@@ -78,5 +114,27 @@ describe("activity notifications", () => {
       enabledActivityNotificationPreferences(),
     );
     expect(hasSavedActivityNotificationPreferences("new-user")).toBe(true);
+    const preferences = { ...enabledActivityNotificationPreferences(), streakReminderTime: "21:45", dailyReminderTime: "08:15", discoveryReminderMinutes: 10, inactivityReminderMinutes: 30, discoveredAreaReminders: true };
+    saveActivityNotificationPreferences("new-user", preferences);
+    expect(loadActivityNotificationPreferences("new-user")).toEqual(preferences);
+    saveActivityNotificationPreferences("new-user", { ...preferences, dailyReminderTime: "09:30" });
+    expect(loadActivityNotificationPreferences("new-user")).toEqual({
+      ...preferences, dailyReminderTime: "09:30",
+    });
+    values.set("hecate:activity-notifications:v1:streak-user", JSON.stringify({
+      morningInvite: true, weeklyRecap: false, streakReminder: true, streakReminderTime: "22:15",
+    }));
+    expect(loadActivityNotificationPreferences("streak-user")).toEqual({
+      morningInvite: true, weeklyRecap: false, streakReminder: true,
+      streakReminderTime: "22:15", dailyReminderTime: "10:00",
+      discoveryReminderMinutes: 5, inactivityReminderMinutes: 15, discoveredAreaReminders: false,
+    });
+    values.set("hecate:activity-notifications:v1:legacy-user", JSON.stringify({
+      morningInvite: false, weeklyRecap: true, streakReminder: true,
+    }));
+    expect(loadActivityNotificationPreferences("legacy-user")).toEqual({
+      morningInvite: false, weeklyRecap: true, streakReminder: true, streakReminderTime: "18:00", dailyReminderTime: "10:00",
+      discoveryReminderMinutes: 5, inactivityReminderMinutes: 15, discoveredAreaReminders: false,
+    });
   });
 });
