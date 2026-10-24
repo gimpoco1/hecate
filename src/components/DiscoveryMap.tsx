@@ -27,6 +27,7 @@ type Props = {
   currentPoint?: Coordinate;
   locationState?: "idle" | "located" | "tracking";
   onMapClick?: () => void;
+  onDestinationSelect?: (point: { lng: number; lat: number }) => void;
   onFavoritePlaceRequest?: (point: {
     lng: number;
     lat: number;
@@ -146,6 +147,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   currentPoint,
   locationState = "idle",
   onMapClick,
+  onDestinationSelect,
   onFavoritePlaceRequest,
   onFavoriteSelect,
   favoritePlacementActive = false,
@@ -166,6 +168,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const currentPointRef = useRef(currentPoint);
   const locationStateRef = useRef(locationState);
   const onMapClickRef = useRef(onMapClick);
+  const onDestinationSelectRef = useRef(onDestinationSelect);
+  onDestinationSelectRef.current = onDestinationSelect;
   const onFavoritePlaceRequestRef = useRef(onFavoritePlaceRequest);
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
@@ -373,6 +377,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     map.on("rotate", handleRotate);
     map.on("dragstart", () => onUserNavigationRef.current?.());
     map.on("click", (event) => {
+      if (onDestinationSelectRef.current) {
+        onDestinationSelectRef.current({ lng: event.lngLat.lng, lat: event.lngLat.lat });
+        return;
+      }
       if (favoritePlacementActiveRef.current) {
         onFavoritePlaceRequestRef.current?.({
           lng: event.lngLat.lng,
@@ -442,7 +450,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
     };
-  }, [favoritePlaces, mapRef]);
+  }, [favoritePlaces, mapRef, mapStyle, onZoomChange]);
 
   useEffect(() => {
     favoriteMarkersRef.current.forEach((marker) => {
@@ -455,6 +463,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 
   return (
     <div
+      data-testid="discovery-map"
       className={`map-stage${favoritePlacementActive ? " map-stage--placing-favorite" : ""}`}
     >
       <div
