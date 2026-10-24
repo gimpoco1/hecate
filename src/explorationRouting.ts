@@ -38,6 +38,13 @@ export class RouteDistanceExceededError extends ExplorationRoutingError {
   }
 }
 
+class RouteRequestError extends ExplorationRoutingError {
+  constructor(readonly status: number, body: string, locations: readonly RoutePoint[]) {
+    super(`Route request failed (${status}): ${body}. Locations: ${JSON.stringify(locations)}`);
+    this.name = "RouteRequestError";
+  }
+}
+
 function coordinate(point: RoutePoint): Coordinate {
   return { ...point, recordedAt: 0 };
 }
@@ -134,7 +141,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
           console.warn("No route through requested locations", { locations, mode, status: response.status, body });
           return [];
         }
-        throw new ExplorationRoutingError(`Route request failed (${response.status}): ${body}. Locations: ${JSON.stringify(locations)}`);
+        throw new RouteRequestError(response.status, body, locations);
       }
       const routes = parsePlannedRoutes(await response.json());
       const origin = locations[0];
@@ -147,7 +154,8 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       }
       return routes;
     } catch (error) {
-      if (signal.aborted) throw error;
+      if (signal.aborted || (!timedOut && !(error instanceof TypeError) &&
+        !(error instanceof RouteRequestError && error.status >= 500))) throw error;
       const failure = timedOut
         ? new ExplorationRoutingError(`Route request timed out after 20 seconds. Check your connection and try again. Locations: ${JSON.stringify(locations)}`)
         : error instanceof TypeError

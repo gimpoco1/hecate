@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { pointToDiscoveryCell } from "./geo";
 import { calculateDirectRoute, calculateExplorationRoutes, findExplorationRoutes, estimateRouteDiscovery, parsePlannedRoutes, routesForExtraTime, DestinationTooCloseError, ExplorationRoutingError, type RoutePlan, type PlannedRoute } from "./explorationRouting";
 
@@ -11,6 +11,21 @@ function route(id: string, seconds: number, discoveredKm: number): PlannedRoute 
 }
 
 describe("exploration route planning", () => {
+  it.each([
+    { status: 400, code: "DistanceExceeded", attempts: 1, errorName: "RouteDistanceExceededError" },
+    { status: 403, code: "Forbidden", attempts: 1, errorName: "RouteRequestError" },
+    { status: 503, code: "Unavailable", attempts: 2, errorName: "RouteRequestError" },
+  ])("makes $attempts request(s) for HTTP $status $code", async ({ status, code, attempts, errorName }) => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ code }), {
+      status, headers: { "content-type": "application/json" },
+    }));
+    try {
+      await expect(calculateDirectRoute(origin, destination, [], "bicycle", new AbortController().signal)).rejects.toMatchObject({ name: errorName, status });
+      expect(fetch).toHaveBeenCalledTimes(attempts);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
   it.runIf(import.meta.env.VITE_ROUTING_INTEGRATION === "1")("finds a twenty-minute cycling detour to a nearby destination", async () => {
     const start = { lat: 41.399, lng: 2.1956 };
     const finish = { lat: 41.4012, lng: 2.1974 };
