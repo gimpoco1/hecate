@@ -4390,7 +4390,7 @@ export default function App() {
   );
 
   return (
-    <main className="app-shell" aria-busy={accountDataLoading}>
+    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px` } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
@@ -4424,6 +4424,7 @@ export default function App() {
         <ExplorationRoutePlanner
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
+          userId={accountUserId}
           onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
           destination={routeDestination}
           searchCity={activeCity}
@@ -4732,7 +4733,7 @@ export default function App() {
           </button>
         )}
 
-      <nav className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px` } as React.CSSProperties : undefined} aria-label="Map controls">
+      <nav className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}`} aria-label="Map controls">
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}

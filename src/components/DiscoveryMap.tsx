@@ -306,7 +306,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       (window as Window & { __hecateMap?: MapLibreMap }).__hecateMap = map;
     map.addControl(
       new maplibregl.AttributionControl({ compact: true }),
-      "bottom-left",
+      "bottom-right",
     );
     map.on("error", (event) =>
       console.error("Map rendering error", event.error),

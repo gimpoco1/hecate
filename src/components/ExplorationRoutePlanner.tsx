@@ -21,6 +21,7 @@ export type RouteDestination = RoutePoint & { name?: string };
 
 type Props = {
   open: boolean;
+  userId: string | null;
   destination: RouteDestination | null;
   origin: RoutePoint | null;
   searchCity: CityBoundary | null;
@@ -47,6 +48,7 @@ const LAYERS = [
 
 export function ExplorationRoutePlanner({
   open,
+  userId,
   destination,
   origin,
   searchCity,
@@ -367,7 +369,7 @@ export function ExplorationRoutePlanner({
       </div>
       {step === "destination" ? <>
         <p className="exploration-route-help">Search, tap the map, or choose a saved place.</p>
-        <DestinationSearch key={searchRevision} near={origin} city={searchCity} onSelect={(result) => {
+        <DestinationSearch key={searchRevision} userId={userId} destination={destination} near={origin} city={searchCity} onSelect={(result) => {
           setNamedDestination(result);
           onDestinationSelect(result.point);
           mapRef.current?.flyTo({ center: [result.point.lng, result.point.lat], zoom: 14, duration: 600 });

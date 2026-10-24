@@ -4508,8 +4508,8 @@ button {
   font-size: 9px !important;
   background: rgba(255, 255, 255, 0.58) !important;
 }
-.maplibregl-ctrl-bottom-left {
-  left: 14px;
+.maplibregl-ctrl-bottom-right {
+  right: 14px;
   bottom: 3px;
 }
 .maplibregl-ctrl-logo {
@@ -4576,9 +4576,9 @@ button {
   .attribution-note {
     display: none;
   }
-  .maplibregl-ctrl-bottom-left {
+  .maplibregl-ctrl-bottom-right {
     bottom: 98px;
-    left: 10px;
+    right: 10px;
   }
 }
 
@@ -6708,4 +6708,21 @@ button {
 }
 @media (max-height: 740px) {
   .map-actions--route-planner { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 28px); gap: 6px; }
+}
+
+.destination-recent { margin-top: 14px; }
+.destination-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.destination-recent-heading > strong { color: var(--muted); font-size: 11px; font-weight: 600; }
+.destination-recent-heading > button { min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 10px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.destination-recent .destination-search-results { margin-top: 2px; }
+
+.app-shell--route-planner .maplibregl-ctrl-bottom-right {
+  right: 74px;
+  bottom: calc(env(safe-area-inset-bottom) + var(--route-panel-height) + 30px);
+}
+@media (max-width: 600px) {
+  .app-shell--route-planner .maplibregl-ctrl-bottom-right { bottom: calc(env(safe-area-inset-bottom) + var(--route-panel-height) + 24px); }
+}
+@media (max-height: 740px) {
+  .app-shell--route-planner .maplibregl-ctrl-bottom-right { right: 10px; bottom: calc(env(safe-area-inset-bottom) + var(--route-panel-height) + 82px); }
 }
