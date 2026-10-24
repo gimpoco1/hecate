@@ -4826,6 +4826,17 @@ export default function App() {
           onSave={saveFavoriteDraft}
           onDelete={deleteFavoriteDraft}
           onDirections={(favorite) => void chooseFavoriteDirections(favorite)}
+          onHecateDirections={(favorite) => {
+            setFavoriteDraft(null);
+            setSavedPlacesOpen(false);
+            setFavoritePlacementActive(false);
+            setHighlightedRoutePoints([]);
+            setSelectedFavoritePlaceId(favorite.id);
+            setRouteDestination({ lng: favorite.lng, lat: favorite.lat, name: favorite.name });
+            setRoutePlannerOpen(true);
+            suspendFollowCamera();
+            if (journeyExpandedRef.current) settleJourneySheet(false);
+          }}
         />
       )}
 

@@ -2801,6 +2801,18 @@ button {
   background: #e2e8dc;
   transform: translateY(1px);
 }
+.favorite-editor__external-directions {
+  display: block;
+  min-height: 44px;
+  margin: 6px auto 0;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1.4 "Manrope", sans-serif;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .favorite-editor__actions {
   display: flex;
   justify-content: flex-end;
