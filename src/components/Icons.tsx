@@ -1,6 +1,7 @@
 import {
   mdiArrowLeft,
   mdiBellOutline,
+  mdiBike,
   mdiCityVariantOutline,
   mdiCoffeeOutline,
   mdiLogout,
@@ -8,6 +9,7 @@ import {
   mdiPodium,
   mdiVideo2d,
   mdiVideo3d,
+  mdiWalk,
 } from "@mdi/js";
 
 type IconProps = { size?: number; strokeWidth?: number }
@@ -25,6 +27,8 @@ export const UserIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size
 export const InfoIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
 export const StarIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/></svg>
 export const ArrowLeftIcon = ({ size }: IconProps) => <svg {...filledBase(size)}><path d={mdiArrowLeft}/></svg>
+export const WalkingIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiWalk}/></svg>
+export const CyclingIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiBike}/></svg>
 export const BellIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiBellOutline}/></svg>
 export const CoffeeIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiCoffeeOutline}/></svg>
 export const SignOutIcon = ({ size }: Pick<IconProps, "size">) => <svg {...filledBase(size)}><path d={mdiLogout}/></svg>
