@@ -185,11 +185,19 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let meters = call.getDouble("newGroundMeters")
         if let meters, !meters.isFinite || meters < 0 { return nil }
+        var navigation: JourneyNavigation?
+        if let value = call.getObject("navigation") {
+            guard let instruction = value["instruction"] as? String, !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let symbolValue = value["symbol"] as? String, let symbol = JourneyTurnSymbol(rawValue: symbolValue),
+                  let distance = value["distanceMeters"] as? Double, distance.isFinite, distance >= 0 else { return nil }
+            navigation = JourneyNavigation(instruction: instruction, symbol: symbol, distanceMeters: distance)
+        }
         return JourneyActivityAttributes.ContentState(
             distanceKm: distance,
             newGroundMeters: meters,
             updatedAt: Date(),
-            finishedAt: finishedAt
+            finishedAt: finishedAt,
+            navigation: finishedAt == nil ? navigation : nil
         )
     }
 }

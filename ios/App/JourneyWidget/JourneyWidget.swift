@@ -27,18 +27,25 @@ struct JourneyWidget: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    JourneyMetrics(context: context)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let turn = activeNavigation(context) { JourneyTurnRow(turn: turn) }
+                        JourneyMetrics(context: context)
+                    }
                         .foregroundStyle(.white)
                         .padding(.top, 4)
                 }
             } compactLeading: {
-                JourneyIslandMark()
+                if let turn = activeNavigation(context) {
+                    Image(systemName: turn.symbol.systemImage).foregroundStyle(JourneyPalette.lime)
+                } else { JourneyIslandMark() }
             } compactTrailing: {
-                Text(distanceLabel(context.state.distanceKm))
+                Text(activeNavigation(context).map { distanceLabel($0.distanceMeters / 1000) } ?? distanceLabel(context.state.distanceKm))
                     .monospacedDigit()
                     .foregroundStyle(JourneyPalette.lime)
             } minimal: {
-                JourneyIslandMark()
+                if let turn = activeNavigation(context) {
+                    Image(systemName: turn.symbol.systemImage).foregroundStyle(JourneyPalette.lime)
+                } else { JourneyIslandMark() }
             }
             .widgetURL(journeyURL(context.attributes.walkId, action: "open"))
             .keylineTint(JourneyPalette.lime)
@@ -67,6 +74,25 @@ private func distanceLabel(_ distance: Double) -> String {
     distance < 1 ? "\(Int((distance * 1000).rounded())) m" : String(format: "%.2f km", distance)
 }
 
+private func activeNavigation(_ context: ActivityViewContext<JourneyActivityAttributes>) -> JourneyNavigation? {
+    context.state.finishedAt == nil && !context.isStale ? context.state.navigation : nil
+}
+
+private struct JourneyTurnRow: View {
+    let turn: JourneyNavigation
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: turn.symbol.systemImage).font(.title2.bold()).frame(width: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(turn.distanceMeters <= 10 ? (turn.symbol == .arrive ? "Arrived" : "Now") : "In \(distanceLabel(turn.distanceMeters / 1000))")
+                    .font(.headline).monospacedDigit()
+                Text(turn.instruction).font(.caption).lineLimit(2)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct JourneyPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let context: ActivityViewContext<JourneyActivityAttributes>
@@ -79,6 +105,9 @@ private struct JourneyPanel: View {
                     Text(context.state.finishedAt == nil ? (context.isStale ? "OPEN HECATE TO REFRESH" : "EXPLORING…") : "JOURNEY COMPLETE")
                         .font(.caption.bold())
                         .foregroundStyle(JourneyPalette.forest)
+                }
+                if let turn = activeNavigation(context) {
+                    JourneyTurnRow(turn: turn).foregroundStyle(JourneyPalette.forest)
                 }
                 JourneyMetrics(context: context)
                     .foregroundStyle(JourneyPalette.forest)

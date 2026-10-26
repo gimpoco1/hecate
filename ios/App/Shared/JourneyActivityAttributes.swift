@@ -2,6 +2,31 @@ import ActivityKit
 import AppIntents
 import Foundation
 
+enum JourneyTurnSymbol: String, Codable, Hashable {
+    case straight, left, right, uturn, roundabout, arrive
+    case slightLeft = "slight-left", slightRight = "slight-right"
+    case sharpLeft = "sharp-left", sharpRight = "sharp-right"
+
+    var systemImage: String {
+        switch self {
+        case .straight: return "arrow.up"
+        case .left, .sharpLeft: return "arrow.turn.up.left"
+        case .right, .sharpRight: return "arrow.turn.up.right"
+        case .slightLeft: return "arrow.up.left"
+        case .slightRight: return "arrow.up.right"
+        case .uturn: return "arrow.uturn.left"
+        case .roundabout: return "arrow.clockwise"
+        case .arrive: return "flag.checkered"
+        }
+    }
+}
+
+struct JourneyNavigation: Codable, Hashable {
+    let instruction: String
+    let symbol: JourneyTurnSymbol
+    let distanceMeters: Double
+}
+
 @available(iOS 16.2, *)
 struct JourneyActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
@@ -9,6 +34,7 @@ struct JourneyActivityAttributes: ActivityAttributes {
         let newGroundMeters: Double?
         let updatedAt: Date
         let finishedAt: Date?
+        var navigation: JourneyNavigation? = nil
     }
 
     let walkId: String

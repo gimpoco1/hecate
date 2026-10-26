@@ -1,5 +1,7 @@
 import { clearRecentDestinations, loadRecentDestinations, recentDestinationFromSelection, saveRecentDestinations, withRecentDestination } from "../recentDestinations";
 import { RouteNotice } from "./RouteNotice";
+import { advanceRouteProgress, type RouteProgress } from "../routeProgress";
+import { prepareRouteGeometry, type RouteGeometry } from "../routeGeometry";
 import type { CityBoundary } from "../city";
 import {
   useCallback,
@@ -43,18 +45,21 @@ export type RouteDestination = RoutePoint & { name?: string };
 type Props = {
   open: boolean;
   keyboardInset: number;
+  previewEnabled: boolean;
+  onPreview: (route: PlannedRoute) => void;
   userId: string | null;
   destination: RouteDestination | null;
   origin: RoutePoint | null;
+  navigationPoint: RoutePoint | null;
   searchCity: CityBoundary | null;
   cells: DiscoveryCell[];
   ready: boolean;
   tracking: boolean;
+  startingJourney: boolean;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
   onDestinationSelect: (point: RoutePoint) => void;
   onPanelHeightChange: (height: number) => void;
   onClose: () => void;
-  onReturnToJourney: () => void;
   onClear: () => void;
   onLocate: () => void;
   onStart: (route: PlannedRoute) => void;
@@ -71,18 +76,21 @@ const LAYERS = [
 export function ExplorationRoutePlanner({
   open,
   keyboardInset,
+  previewEnabled,
+  onPreview,
   userId,
   destination,
   origin,
+  navigationPoint,
   searchCity,
   cells,
   ready,
   tracking,
+  startingJourney,
   mapRef,
   onDestinationSelect,
   onPanelHeightChange,
   onClose,
-  onReturnToJourney,
   onClear,
   onLocate,
   onStart,
@@ -170,6 +178,21 @@ export function ExplorationRoutePlanner({
   }, [plan, step, budget]);
   const selected =
     routes.find(({ id }) => id === selectedId) ?? routes[1] ?? routes[0];
+  const completedRef = useRef<{ route: PlannedRoute; geometry: RouteGeometry; progress: RouteProgress } | null>(null);
+  useEffect(() => {
+    if (!selected || !navigationPoint) {
+      completedRef.current = null;
+      return;
+    }
+    const previous = completedRef.current?.route === selected
+      ? completedRef.current.progress
+      : { distanceKm: 0, fraction: 0, position: selected.points[0], acceptedPosition: selected.points[0], distanceFromRouteM: 0 };
+    const geometry = completedRef.current?.route === selected ? completedRef.current.geometry : prepareRouteGeometry(selected.points);
+    const progress = advanceRouteProgress(geometry, navigationPoint, previous);
+    completedRef.current = { route: selected, geometry, progress };
+    const map = mapRef.current;
+    if (progress.fraction !== previous.fraction && map?.getLayer(LAYERS[2])) map.setPaintProperty(LAYERS[2], "line-gradient", ["step", ["line-progress"], "#b6c49b", progress.fraction, "#738f28"]);
+  }, [selected, navigationPoint, mapRef]);
   const destinationLabel =
     destination?.name ??
     (namedDestination &&
@@ -346,7 +369,7 @@ export function ExplorationRoutePlanner({
       const source = map.getSource(SOURCE) as GeoJSONSource | undefined;
       if (source) source.setData(data);
       else {
-        map.addSource(SOURCE, { type: "geojson", data });
+        map.addSource(SOURCE, { type: "geojson", data, lineMetrics: true });
         map.addLayer({
           id: LAYERS[0],
           type: "line",
@@ -373,7 +396,8 @@ export function ExplorationRoutePlanner({
           type: "line",
           source: SOURCE,
           filter: ["==", "kind", "selected"],
-          paint: { "line-color": "#738f28", "line-width": 5 },
+          paint: { "line-color": "#738f28", "line-width": 5,
+            "line-gradient": ["step", ["line-progress"], "#b6c49b", completedRef.current !== null && completedRef.current.route === selected ? completedRef.current.progress.fraction : 0, "#738f28"] },
           layout: { "line-cap": "round", "line-join": "round" },
         });
         map.addLayer({
@@ -579,8 +603,7 @@ export function ExplorationRoutePlanner({
       </div>
       <div id={infoId} className="exploration-route-info" hidden={!infoOpen}>
         <p className="exploration-route-footnote">
-          Travel times and new ground are estimates. Routes are map previews,
-          without turn-by-turn guidance.
+          Travel times and new ground are estimates. Turn guidance follows your selected route; routes do not automatically recalculate if you leave it.
         </p>
         <a
           className="exploration-route-attribution"
@@ -890,10 +913,15 @@ export function ExplorationRoutePlanner({
             <button
               className="exploration-route-primary"
               type="button"
-              disabled={!directPlans[mode]}
-              onClick={tracking ? onReturnToJourney : () => onStart(selected)}
+              disabled={!directPlans[mode] || startingJourney}
+              onClick={() => onStart(selected)}
             >
-              {tracking ? "Back to journey" : "Start journey"}
+              {tracking ? "Start navigation" : "Start journey"}
+            </button>
+          )}
+          {previewEnabled && selected && (budget === 0 || hasExploration) && (
+            <button className="exploration-route-preview" type="button" aria-label="Preview selected navigation route" onClick={() => onPreview(selected)}>
+              Preview navigation
             </button>
           )}
         </>

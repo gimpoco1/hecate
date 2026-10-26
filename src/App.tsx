@@ -1,4 +1,9 @@
-import { routeCameraBearing } from "./routeCamera";
+import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
+import { NavigationSimulation } from "./components/NavigationSimulation";
+import { NavigationTurn } from "./components/NavigationTurn";
+import { navigationCue, type NavigationCue } from "./navigationGuidance";
+import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
+import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
 import type { PlannedRoute } from "./explorationRouting";
 import { ExplorationRoutePlanner, type RouteDestination } from "./components/ExplorationRoutePlanner";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
@@ -13,7 +18,7 @@ import {
   LocalNotifications,
   type LocalNotificationSchema,
 } from "@capacitor/local-notifications";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
 import type {
   DiscoveryMetricsRequest,
@@ -820,11 +825,41 @@ export default function App() {
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
+  const simulationRouteRef = useRef<PlannedRoute | null>(null);
+  const [simulationRoute, setSimulationRoute] = useState<PlannedRoute | null>(null);
+  const [simulationPoint, setSimulationPoint] = useState<Coordinate | null>(null);
+  const simulationPanelRef = useRef<HTMLElement>(null);
+  const guidanceRef = useRef<{ route: PlannedRoute; geometry: RouteGeometry; progress: RouteProgress; cue: NavigationCue | null } | null>(null);
+  const [turnCue, setTurnCue] = useState<NavigationCue | null>(null);
+  const arrivalRef = useRef<{ route: PlannedRoute; deadline: number } | null>(null);
+  const [arrival, setArrival] = useState<{ route: PlannedRoute; deadline: number } | null>(null);
+  const lastTurnInstructionRef = useRef("");
+  const updateNavigationCue = useCallback((route: PlannedRoute, point: Coordinate): NavigationCue | null => {
+    const previous = guidanceRef.current?.route === route ? guidanceRef.current.progress : { distanceKm: 0, fraction: 0, position: route.points[0], acceptedPosition: route.points[0], distanceFromRouteM: 0 };
+    const geometry = guidanceRef.current?.route === route ? guidanceRef.current.geometry : prepareRouteGeometry(route.points);
+    const progress = advanceRouteProgress(geometry, point, previous);
+    const cue = navigationCue(route, progress);
+    guidanceRef.current = { route, geometry, progress, cue };
+    if (cue?.symbol === "arrive" && cue.distanceMeters <= 10 && arrivalRef.current?.route !== route) {
+      const reached = { route, deadline: Date.now() + 10_000 };
+      arrivalRef.current = reached;
+      setArrival(reached);
+    }
+    if (document.visibilityState === "visible") setTurnCue((current) => current?.instruction === cue?.instruction && current?.symbol === cue?.symbol && current?.distanceMeters === cue?.distanceMeters ? current : cue);
+    return cue;
+  }, []);
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
   const [routePanelHeight, setRoutePanelHeight] = useState(0);
   const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
   useEffect(() => {
     plannedJourneyRouteRef.current = null;
+    simulationRouteRef.current = null;
+    setSimulationRoute(null);
+    setSimulationPoint(null);
+    guidanceRef.current = null;
+    arrivalRef.current = null;
+    setArrival(null);
+    setTurnCue(null);
     setRoutePlannerOpen(false);
     setRouteDestination(null);
   }, [accountUserId]);
@@ -905,6 +940,8 @@ export default function App() {
   const [achievementTestPreview, setAchievementTestPreview] =
     useState<PersonalAchievementId | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const userMarkerRef = useRef<Marker | null>(null);
+  const onUserMarkerChange = useCallback((marker: Marker | null): void => { userMarkerRef.current = marker; }, []);
   const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
@@ -986,7 +1023,7 @@ export default function App() {
   }, []);
   const animateFollowCamera = useCallback((point: Coordinate) => {
     followCameraTargetRef.current = point;
-    const route = plannedJourneyRouteRef.current;
+    const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
     followCameraBearingRef.current = route ? routeCameraBearing(route.points, point) : null;
     if (
       !followCameraEnabledRef.current ||
@@ -1001,7 +1038,7 @@ export default function App() {
         followCameraTimestampRef.current = null;
         return;
       }
-      if (plannedJourneyRouteRef.current && map.isMoving()) {
+      if ((simulationRouteRef.current || plannedJourneyRouteRef.current) && map.isMoving()) {
         followCameraFrameRef.current = requestAnimationFrame(animate);
         return;
       }
@@ -1011,16 +1048,15 @@ export default function App() {
       const center = map.getCenter();
       const longitudeDelta = ((target.lng - center.lng + 540) % 360) - 180;
       const blend = 1 - Math.exp(-elapsed / 180);
-      const plannedRoute = plannedJourneyRouteRef.current;
+      const plannedRoute = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
       const targetBearing = followCameraBearingRef.current;
       const bearingDelta = targetBearing === null ? 0 : ((targetBearing - map.getBearing() + 540) % 360) - 180;
-      const next = {
-        lng: plannedRoute ? target.lng : center.lng + longitudeDelta * blend,
-        lat: plannedRoute ? target.lat : center.lat + (target.lat - center.lat) * blend,
-      };
+      const next = plannedRoute && targetBearing !== null
+        ? navigationCameraStep(center, target, map.getBearing(), targetBearing, elapsed)
+        : { lng: center.lng + longitudeDelta * blend, lat: center.lat + (target.lat - center.lat) * blend, bearing: map.getBearing() + bearingDelta * blend };
       map.jumpTo(
-        { center: [next.lng, next.lat], ...(targetBearing === null ? {} : { bearing: map.getBearing() + bearingDelta * (plannedRoute ? 1 : blend) }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
-        { hecateFollowCamera: true },
+        { center: [next.lng, next.lat], ...(targetBearing === null ? {} : { bearing: next.bearing }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
+        { hecateFollowCamera: true, ...(plannedRoute ? { hecateNavigationPoint: next } : {}) },
       );
       if (
         distanceKm(
@@ -1030,7 +1066,7 @@ export default function App() {
       ) {
         map.jumpTo(
           { center: [target.lng, target.lat], ...(targetBearing === null ? {} : { bearing: targetBearing }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
-          { hecateFollowCamera: true },
+          { hecateFollowCamera: true, ...(plannedRoute ? { hecateNavigationPoint: target } : {}) },
         );
         followCameraFrameRef.current = null;
         followCameraTimestampRef.current = null;
@@ -1040,6 +1076,14 @@ export default function App() {
     };
     followCameraFrameRef.current = requestAnimationFrame(animate);
   }, []);
+  const previewNavigationFix = useCallback((point: Coordinate): void => {
+    setSimulationPoint(point);
+    if (simulationRouteRef.current) updateNavigationCue(simulationRouteRef.current, point);
+    animateFollowCamera(point);
+  }, [animateFollowCamera, updateNavigationCue]);
+  useEffect(() => {
+    stopFollowCameraAnimation();
+  }, [accountUserId, stopFollowCameraAnimation]);
   const suspendFollowCamera = useCallback(() => {
     followCameraEnabledRef.current = false;
     stopFollowCameraAnimation();
@@ -1059,9 +1103,12 @@ export default function App() {
     setPoints([...pointsRef.current]);
   }, []);
   const centerMapOnPoint = useCallback((point: Coordinate) => {
+    const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
+    const displayPoint = simulationRouteRef.current && guidanceRef.current?.route === simulationRouteRef.current
+      ? guidanceRef.current.progress.position : point;
     followCameraEnabledRef.current = true;
     stopFollowCameraAnimation();
-    setViewCenter({ lng: point.lng, lat: point.lat });
+    setViewCenter({ lng: displayPoint.lng, lat: displayPoint.lat });
     setViewedCity(null);
     if (resumeCenterFrameRef.current !== null)
       cancelAnimationFrame(resumeCenterFrameRef.current);
@@ -1075,7 +1122,9 @@ export default function App() {
       resumeCenterFrameRef.current = requestAnimationFrame(() => {
         resumeCenterFrameRef.current = null;
         map.stop();
-        map.jumpTo({ center: [point.lng, point.lat] });
+        if (route && guidanceRef.current?.route === route) setTurnCue(guidanceRef.current.cue);
+        userMarkerRef.current?.setLngLat(displayPoint);
+        map.jumpTo({ center: [displayPoint.lng, displayPoint.lat], ...(route ? { bearing: routeCameraBearing(route.points, displayPoint) } : {}) }, { hecateFollowCamera: true, hecateNavigationPoint: displayPoint });
       });
     });
   }, [stopFollowCameraAnimation]);
@@ -1161,14 +1210,14 @@ export default function App() {
   const nativeApp = isNativeApp();
   const devToolsEnabled = DEV_TOOLS_ENABLED;
 
-  const enqueueJourneyActivity = (operation: () => Promise<void>): void => {
+  const enqueueJourneyActivity = useCallback((operation: () => Promise<void>): void => {
     if (!Capacitor.isNativePlatform()) return;
     journeyActivityQueueRef.current = journeyActivityQueueRef.current
       .then(operation)
       .catch((error: Error) => {
         console.warn("Could not synchronize journey Live Activity", { error });
       });
-  };
+  }, []);
 
   useEffect(() => {
     if (!authReady || discoveryLoading) return;
@@ -1242,7 +1291,7 @@ export default function App() {
     enqueueJourneyActivity(async () => {
       if (activeWalkRef.current?.id !== snapshot.walkId ||
           trackingUserRef.current !== accountUserId) return;
-      await JourneyActivity.start({ ...snapshot, ownerId: accountUserId });
+      await JourneyActivity.start({ ...snapshot, navigation: guidanceRef.current?.cue ?? null, ownerId: accountUserId });
     });
   }, [accountUserId, tracking, documentVisible]);
 
@@ -2798,15 +2847,15 @@ export default function App() {
     followCameraEnabledRef.current = true;
     stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
-    const route = plannedJourneyRouteRef.current;
-    if (route) setPerspectiveView(true);
+    const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
+    userMarkerRef.current?.setLngLat(point);
     mapRef.current?.flyTo({
       center: [point.lng, point.lat],
       zoom: route ? 17 : 15,
-      ...(route ? { pitch: 55, bearing: routeCameraBearing(route.points, point), padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}),
+      ...(route ? { bearing: routeCameraBearing(route.points, point), padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}),
       duration: 1400,
       essential: true,
-    });
+    }, { hecateFollowCamera: true, hecateNavigationPoint: point });
   };
 
   useEffect(() => {
@@ -2844,6 +2893,20 @@ export default function App() {
       return;
     }
     latestPassivePointRef.current = point;
+    const navigationRoute = plannedJourneyRouteRef.current;
+    if (navigationRoute && !simulationRouteRef.current) {
+      const cue = updateNavigationCue(navigationRoute, point);
+      const instruction = cue?.instruction ?? "";
+      const liveWalk = activeWalkRef.current;
+      const liveStart = explorationStartRef.current;
+      if (Capacitor.isNativePlatform() && liveWalk && liveStart &&
+          (instruction !== lastTurnInstructionRef.current || Date.now() - lastJourneyActivityUpdateRef.current >= 3000)) {
+        lastTurnInstructionRef.current = instruction;
+        lastJourneyActivityUpdateRef.current = Date.now();
+        const snapshot = { ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current), navigation: cue };
+        enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+      }
+    }
     if (focusFirstTrackingPointRef.current) {
       focusFirstTrackingPointRef.current = false;
       focusOnUserPoint(point);
@@ -2865,7 +2928,7 @@ export default function App() {
     const appVisible = document.visibilityState === "visible";
     if (appVisible) {
       setCurrentPoint(point);
-      if (plannedJourneyRouteRef.current) animateFollowCamera(point);
+      if (plannedJourneyRouteRef.current && !simulationRouteRef.current) animateFollowCamera(point);
       if (centerOnNextPassivePointRef.current) {
         centerOnNextPassivePointRef.current = false;
         centerMapOnPoint(point);
@@ -2906,7 +2969,7 @@ export default function App() {
       const snapshot = journeyActivitySnapshot(
         liveWalk, liveStart.discoveryDistance, pointsRef.current,
       );
-      enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+      enqueueJourneyActivity(() => JourneyActivity.update({ ...snapshot, navigation: guidanceRef.current?.cue ?? null }));
     }
     // Check after adding this point to the map. A newly revealed spot also
     // qualifies if the recording then stays nearby for fifteen minutes.
@@ -2915,7 +2978,7 @@ export default function App() {
     if (appVisible) {
       scheduleDiscoveryUiRefresh();
       if (discoveredNewCell) setCells([...cellsRef.current]);
-      if (!plannedJourneyRouteRef.current) animateFollowCamera(recordedPoint);
+      if (!plannedJourneyRouteRef.current && !simulationRouteRef.current) animateFollowCamera(recordedPoint);
     } else {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
@@ -3053,16 +3116,39 @@ export default function App() {
     explorationStartRef.current = null;
   };
 
-  const clearRouteDestination = (): void => {
+  const clearRouteDestination = useCallback((): void => {
+    guidanceRef.current = null;
+    arrivalRef.current = null;
+    setArrival(null);
+    setTurnCue(null);
+    lastTurnInstructionRef.current = "";
+    const liveWalk = activeWalkRef.current;
+    const liveStart = explorationStartRef.current;
+    if (Capacitor.isNativePlatform() && liveWalk && liveStart) {
+      const snapshot = { ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current), navigation: null };
+      enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+    }
+    simulationRouteRef.current = null;
+    setSimulationRoute(null);
+    setSimulationPoint(null);
+    stopFollowCameraAnimation();
     plannedJourneyRouteRef.current = null;
     setRouteDestination(null);
     setSelectedFavoritePlaceId(null);
-  };
+  }, [enqueueJourneyActivity, stopFollowCameraAnimation]);
 
-  const clearPlannedRoute = (): void => {
+  const clearPlannedRoute = useCallback((): void => {
     setRoutePlannerOpen(false);
     clearRouteDestination();
-  };
+  }, [clearRouteDestination]);
+
+  useEffect(() => {
+    if (!arrival) return;
+    const timer = window.setTimeout(() => {
+      if ((simulationRouteRef.current ?? plannedJourneyRouteRef.current) === arrival.route) clearPlannedRoute();
+    }, Math.max(0, arrival.deadline - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [arrival, clearPlannedRoute]);
 
   const finalizeRecordedWalk = (): void => {
     clearPlannedRoute();
@@ -4413,14 +4499,16 @@ export default function App() {
   );
 
   return (
-    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px`, "--route-panel-bottom": keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
+    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px`, "--route-panel-bottom": keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
         points={points}
         cells={cells}
         highlightedPoints={highlightedRoutePoints}
-        currentPoint={locationIsCurrent ? currentPoint : undefined}
+        currentPoint={simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)}
+        navigationFollowing={Boolean((simulationRoute || (tracking === "tracking" && plannedJourneyRouteRef.current)) && followCameraEnabledRef.current)}
+        onUserMarkerChange={onUserMarkerChange}
         locationState={
           tracking === "tracking"
             ? "tracking"
@@ -4448,23 +4536,65 @@ export default function App() {
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
           keyboardInset={keyboardInset}
+          previewEnabled={devToolsEnabled && tracking !== "tracking" && tracking !== "requesting"}
+          onPreview={(route) => {
+            stopFollowCameraAnimation();
+            simulationRouteRef.current = route;
+            setSimulationRoute(route);
+            setRoutePlannerOpen(false);
+            setDevToolsOpen(false);
+            focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
+          }}
           userId={accountUserId}
           onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
           destination={routeDestination}
           searchCity={activeCity}
           origin={locationIsCurrent && currentPoint ? currentPoint : null}
+          navigationPoint={simulationPoint ?? (plannedJourneyRouteRef.current && tracking === "tracking" ? currentPoint ?? null : null)}
           cells={cells}
           ready={!accountDataLoading && (!accountUserId || (citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current))}
-          tracking={tracking === "tracking" || tracking === "requesting"}
+          tracking={tracking === "tracking"}
+          startingJourney={tracking === "requesting"}
           mapRef={mapRef}
           onPanelHeightChange={setRoutePanelHeight}
           onClose={clearPlannedRoute}
-          onReturnToJourney={() => setRoutePlannerOpen(false)}
           onClear={clearRouteDestination}
           onLocate={locate}
-          onStart={(route) => { plannedJourneyRouteRef.current = route; setRoutePlannerOpen(false); void toggleTracking(); }}
+          onStart={(route) => {
+            simulationRouteRef.current = null;
+            setSimulationRoute(null);
+            setSimulationPoint(null);
+            guidanceRef.current = null;
+            arrivalRef.current = null;
+            setArrival(null);
+            lastTurnInstructionRef.current = "";
+            plannedJourneyRouteRef.current = route;
+            setRoutePlannerOpen(false);
+            if (trackingStateRef.current === "tracking") {
+              const point = latestPassivePointRef.current ?? currentPoint;
+              if (!point) throw new Error("Find your current location before starting navigation.");
+              const cue = updateNavigationCue(route, point);
+              focusOnUserPoint(point);
+              const walk = activeWalkRef.current;
+              const started = explorationStartRef.current;
+              if (Capacitor.isNativePlatform() && walk && started) {
+                const snapshot = { ...journeyActivitySnapshot(walk, started.discoveryDistance, pointsRef.current), navigation: cue };
+                enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+              }
+            } else {
+              void toggleTracking();
+            }
+          }}
         />
       )}
+      {simulationRoute && <NavigationSimulation panelRef={simulationPanelRef} route={simulationRoute} onFix={previewNavigationFix} onStop={() => {
+        simulationRouteRef.current = null;
+        setSimulationRoute(null);
+        setSimulationPoint(null);
+        clearPlannedRoute();
+        if (currentPoint) focusOnUserPoint(currentPoint);
+      }} />}
+      {turnCue && !routePlannerOpen && !citiesExpanded && (simulationRoute || tracking === "tracking") && <NavigationTurn cue={turnCue} anchor={simulationRoute ? simulationPanelRef : journeyCardRef} />}
       {devToolsEnabled && devToolsVisible && (
         <aside
           className="dev-tools"
@@ -4764,6 +4894,7 @@ export default function App() {
           aria-label="Plan a discovery route"
           aria-pressed={routePlannerOpen}
           onClick={() => {
+            if (simulationRouteRef.current) clearRouteDestination();
             if (routePlannerOpen) clearPlannedRoute();
             else setRoutePlannerOpen(true);
             setFavoritePlacementActive(false);
@@ -4799,7 +4930,7 @@ export default function App() {
               ? " location-control--requesting"
               : ""
           }`}
-          onClick={locate}
+          onClick={() => simulationPoint ? focusOnUserPoint(simulationPoint) : void locate()}
           aria-label={
             currentPoint ? "Center on my location" : "Find my location"
           }
@@ -4851,6 +4982,7 @@ export default function App() {
           onDelete={deleteFavoriteDraft}
           onDirections={(favorite) => void chooseFavoriteDirections(favorite)}
           onHecateDirections={(favorite) => {
+            if (simulationRouteRef.current) clearPlannedRoute();
             setFavoriteDraft(null);
             setSavedPlacesOpen(false);
             setFavoritePlacementActive(false);
@@ -4865,7 +4997,7 @@ export default function App() {
       )}
 
 
-      {isCityScale && !routePlannerOpen && (
+      {isCityScale && !routePlannerOpen && !simulationRoute && (
         <section
           ref={journeyCardRef}
           className="journey-card"
@@ -5165,6 +5297,7 @@ export default function App() {
             <h2 id="exploration-recap-title">You made new ground yours.</h2>
             <div className="exploration-recap__map">
               <DiscoveryMap
+                navigationFollowing={false}
                 mode="discover"
                 points={explorationSummary.points}
                 cells={explorationSummary.cells}

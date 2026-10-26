@@ -6406,6 +6406,19 @@ button {
 .exploration-route-options + .exploration-route-primary {
   margin-top: 16px;
 }
+.exploration-route-preview { display: block; min-height: 44px; margin: 8px auto 0; padding: 0 12px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.navigation-simulation { position: absolute; z-index: 7; left: 12px; bottom: max(8px, env(safe-area-inset-bottom)); width: min(400px, calc(100% - 24px)); padding: 14px 16px; border: 1px solid #dce4d6; border-radius: 18px; background: var(--paper); color: var(--forest); box-shadow: 0 8px 24px #183c2f20; }
+.navigation-simulation > strong, .navigation-simulation > small { display: block; }
+.navigation-simulation > small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.navigation-simulation > div { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.navigation-simulation button, .navigation-simulation select { min-height: 44px; border: 1px solid #dce4d6; border-radius: 9px; padding: 0 10px; background: transparent; color: var(--forest); font: inherit; font-size: 12px; cursor: pointer; }
+.navigation-simulation label { font-size: 12px; }
+.app-shell--navigation-preview .map-actions { top: auto; bottom: calc(env(safe-area-inset-bottom) + 160px); transform: none; }
+.navigation-turn { position: absolute; z-index: 5; left: 12px; display: flex; align-items: center; gap: 10px; max-width: min(290px, calc(100% - 100px)); padding: 10px 12px; border: 1px solid #dce4d6; border-radius: 16px; background: var(--paper); color: var(--forest); box-shadow: 0 4px 18px #183c2f18; pointer-events: none; }
+.navigation-turn > svg { flex-shrink: 0; }
+.navigation-turn > div { min-width: 0; }
+.navigation-turn strong { display: block; font-size: 16px; line-height: 1.2; }
+.navigation-turn span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 3px; font-size: 11px; line-height: 1.4; }
 .exploration-route-options + .route-notice { margin-top: 12px; }
 .exploration-route-panel .route-notice + .exploration-route-primary { margin-top: 16px; }
 .exploration-route-options button {

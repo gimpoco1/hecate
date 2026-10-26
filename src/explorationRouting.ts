@@ -1,12 +1,16 @@
 import { backtrackedDistanceKm, closedRouteLoops } from "./routeQuality";
 import { discoveredDistanceForFootprints, discoveryCellKey, discoveryFootprintCells, distanceKm, pointToDiscoveryCell } from "./geo";
 import type { Coordinate, DiscoveryCell } from "./types";
+import { maneuverSymbol, routeContinuesStraight, type RouteManeuver } from "./navigationGuidance";
+import { combineCrossingManeuvers, type JunctionManeuver } from "./junctionManeuvers";
+import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
 
 export type TransportMode = "pedestrian" | "bicycle";
 export type RoutePoint = { lng: number; lat: number };
 export type PlannedRoute = {
   id: string;
   points: RoutePoint[];
+  maneuvers: RouteManeuver[];
   distanceKm: number;
   durationSeconds: number;
   newGroundKm: number;
@@ -86,6 +90,44 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function parseManeuvers(legs: unknown, distanceMeters: number, geometry: RouteGeometry): RouteManeuver[] {
+  if (!Array.isArray(legs) || legs.length === 0) throw new ExplorationRoutingError("Routing service returned no maneuver legs.");
+  let offsetMeters = 0;
+  const steps = legs.flatMap((leg: unknown) => {
+    if (!object(leg) || !Array.isArray(leg.steps) || leg.steps.length === 0) throw new ExplorationRoutingError("Routing service returned no maneuver steps.");
+    return leg.steps.map((step: unknown): JunctionManeuver => {
+      if (!object(step) || typeof step.distance !== "number" || !Number.isFinite(step.distance) || step.distance < 0 ||
+        !object(step.maneuver) || typeof step.maneuver.instruction !== "string" || !step.maneuver.instruction.trim() || typeof step.maneuver.type !== "string" ||
+        (step.maneuver.modifier !== undefined && typeof step.maneuver.modifier !== "string") ||
+        (step.name !== undefined && typeof step.name !== "string")) {
+        throw new ExplorationRoutingError(`Routing service returned an invalid maneuver: ${JSON.stringify(step)}`);
+      }
+      const roadName = (step.name ?? "").trim();
+      const keepOnRoad = /^Keep (?:left|right) to stay on /i.test(step.maneuver.instruction);
+      const maneuver: RouteManeuver = { roadName,
+        instruction: keepOnRoad ? step.maneuver.instruction.replace(/^Keep (?:left|right) to stay on /i, "Stay on ") : step.maneuver.instruction,
+        symbol: maneuverSymbol(step.maneuver.type, step.maneuver.modifier ?? ""), fraction: Math.min(1, offsetMeters / distanceMeters) };
+      offsetMeters += step.distance;
+      const bearings = [step.maneuver.bearing_before, step.maneuver.bearing_after].map((value: unknown): number | null => {
+        if (value === undefined) return null;
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 360) throw new ExplorationRoutingError(`Invalid maneuver bearing: ${JSON.stringify(value)}`);
+        return value;
+      });
+      return { maneuver, type: step.maneuver.type, bearingBefore: bearings[0], bearingAfter: bearings[1] };
+    });
+  });
+  const combined = combineCrossingManeuvers(steps, distanceMeters);
+  return combined.map(({ maneuver, type, bearingBefore, bearingAfter }, index): RouteManeuver => {
+    const junctionTurn = ["turn", "continue", "end of road"].includes(type) &&
+      ["left", "right", "slight-left", "slight-right"].includes(maneuver.symbol);
+    const sameStreet = maneuver.roadName !== "" && maneuver.roadName === combined[index - 1]?.maneuver.roadName;
+    const locallyStraight = bearingBefore !== null && bearingAfter !== null && Math.abs(((bearingAfter - bearingBefore + 540) % 360) - 180) < 25;
+    return maneuver.endFraction === undefined && junctionTurn && (sameStreet || locallyStraight) && routeContinuesStraight(geometry, maneuver.fraction)
+      ? { ...maneuver, symbol: "straight", instruction: maneuver.roadName ? `Stay on ${maneuver.roadName}.` : "Continue straight." }
+      : maneuver;
+  });
+}
+
 /** Parses only fields needed for previews; invalid provider data fails explicitly. */
 export function parsePlannedRoutes(value: unknown): Omit<PlannedRoute, "newGroundKm" | "unproductiveLoopKm">[] {
   if (!object(value) || value.code !== "Ok" || !Array.isArray(value.routes) || value.routes.length === 0) {
@@ -106,7 +148,7 @@ export function parsePlannedRoutes(value: unknown): Omit<PlannedRoute, "newGroun
       }
       return { lng: position[0], lat: position[1] };
     });
-    return { id: `route-${index}`, points, distanceKm: route.distance / 1_000, durationSeconds: route.duration, backtrackedKm: backtrackedDistanceKm(points) };
+    return { id: `route-${index}`, points, maneuvers: parseManeuvers(route.legs, route.distance, prepareRouteGeometry(points)), distanceKm: route.distance / 1_000, durationSeconds: route.duration, backtrackedKm: backtrackedDistanceKm(points) };
   });
 }
 
@@ -115,7 +157,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
     locations: locations.map(({ lat, lng }, index) => ({
       lat, lon: lng, radius: 50, type: index === 0 || index === locations.length - 1 ? "break" : "through",
     })),
-    costing: mode, format: "osrm", shape_format: "geojson", alternates: locations.length === 2 ? 2 : 0,
+    costing: mode, format: "osrm", shape_format: "geojson", directions_type: "instructions", language: "en-US", alternates: locations.length === 2 ? 2 : 0,
     costing_options: mode === "pedestrian"
       ? { pedestrian: { walking_speed: 5.1 } }
       : { bicycle: { bicycle_type: "hybrid" } },
