@@ -2,6 +2,18 @@ import type { RoutePoint } from "./explorationRouting";
 
 type RouteProjection = { index: number; progress: number; distanceSquared: number };
 
+/** Smooths navigation on the shortest longitude and rotation arcs using frame elapsed time. */
+export function navigationCameraStep(center: RoutePoint, target: RoutePoint, bearing: number, targetBearing: number, elapsedMs: number): RoutePoint & { bearing: number } {
+  const elapsed = Math.max(0, Math.min(50, elapsedMs));
+  const positionBlend = 1 - Math.exp(-elapsed / 450);
+  const rotationBlend = 1 - Math.exp(-elapsed / 550);
+  return {
+    lng: center.lng + (((target.lng - center.lng + 540) % 360) - 180) * positionBlend,
+    lat: center.lat + (target.lat - center.lat) * positionBlend,
+    bearing: bearing + (((targetBearing - bearing + 540) % 360) - 180) * rotationBlend,
+  };
+}
+
 /** Faces the next meaningful forward stretch, skipping short access connectors and junction geometry. */
 export function routeCameraBearing(points: readonly RoutePoint[], origin: RoutePoint): number {
   if (points.length < 2) throw new RangeError("A journey camera needs at least two route points.");

@@ -7,10 +7,44 @@ const destination = { lat: 41.4036, lng: 2.1744 };
 const points = Array.from({ length: 31 }, (_, index) => ({ lat: origin.lat, lng: origin.lng + index * 0.0002 }));
 
 function route(id: string, seconds: number, discoveredKm: number): PlannedRoute {
-  return { id, points, distanceKm: 2, durationSeconds: seconds, newGroundKm: discoveredKm, backtrackedKm: 0, unproductiveLoopKm: 0 };
+  return { id, points, maneuvers: [], distanceKm: 2, durationSeconds: seconds, newGroundKm: discoveredKm, backtrackedKm: 0, unproductiveLoopKm: 0 };
 }
 
 describe("exploration route planning", () => {
+  it("normalizes keep-right wording while preserving the actual fork direction", () => {
+    const parsed = parsePlannedRoutes({ code: "Ok", routes: [{ distance: 200, duration: 100,
+      geometry: { type: "LineString", coordinates: [[2, 0], [2.001, 0], [2.002, 0]] }, legs: [{ steps: [
+        { name: "Oak Street", distance: 100, maneuver: { instruction: "Head east.", type: "depart" } },
+        { name: "Oak Street", distance: 100, maneuver: { instruction: "Keep right to stay on Oak Street.", type: "fork", modifier: "slight right" } },
+        { name: "Oak Street", distance: 0, maneuver: { instruction: "You have arrived.", type: "arrive" } },
+      ] }] }] });
+    expect(parsed[0].maneuvers[1]).toMatchObject({ instruction: "Stay on Oak Street.", symbol: "slight-right", roadName: "Oak Street" });
+  });
+  it.each([
+    { name: "straight continuation", coordinates: [[2, 0], [2.001, 0], [2.002, 0]], road: "Main Street", type: "continue", modifier: "left", expected: ["straight", "straight", "arrive"] },
+    { name: "real same-street turn", coordinates: [[2, 0], [2.001, 0], [2.001, 0.001]], road: "Main Street", type: "turn", modifier: "left", expected: ["straight", "left", "arrive"] },
+    { name: "street-name change without local bearing evidence", coordinates: [[2, 0], [2.001, 0], [2.002, 0]], road: "Other Street", type: "turn", modifier: "right", expected: ["straight", "right", "arrive"] },
+    { name: "real turn onto another street", coordinates: [[2, 0], [2.001, 0], [2.001, -0.001]], road: "Cross Street", type: "turn", modifier: "right", expected: ["straight", "right", "arrive"] },
+    { name: "fork requiring a choice", coordinates: [[2, 0], [2.001, 0], [2.002, 0]], road: "Main Street", type: "fork", modifier: "slight left", expected: ["straight", "slight-left", "arrive"] },
+  ])("handles $name using the route geometry", ({ coordinates, road, type, modifier, expected }) => {
+    const parsed = parsePlannedRoutes({ code: "Ok", routes: [{ distance: 200, duration: 100,
+      geometry: { type: "LineString", coordinates }, legs: [{ steps: [
+        { name: "Main Street", distance: 100, maneuver: { instruction: "Head east.", type: "depart" } },
+        { name: road, distance: 100, maneuver: { instruction: "Turn left to stay on Main Street.", type, modifier } },
+        { name: road, distance: 0, maneuver: { instruction: "You have arrived.", type: "arrive" } },
+      ] }] }] });
+    expect(parsed[0].maneuvers.map(({ symbol }) => symbol)).toEqual(expected);
+  });
+  it("preserves both real turns through a short named connector between parallel streets", () => {
+    const parsed = parsePlannedRoutes({ code: "Ok", routes: [{ distance: 233, duration: 200,
+      geometry: { type: "LineString", coordinates: [[0, 0], [0.001, 0], [0.001, 0.00009], [0.002, 0.00009]] }, legs: [{ steps: [
+        { name: "A", distance: 111, maneuver: { instruction: "Head east on A.", type: "depart", bearing_before: 0, bearing_after: 90 } },
+        { name: "Link Street", distance: 10, maneuver: { instruction: "Turn left onto Link Street.", type: "turn", modifier: "left", bearing_before: 90, bearing_after: 0 } },
+        { name: "B", distance: 112, maneuver: { instruction: "Turn right onto B.", type: "turn", modifier: "right", bearing_before: 0, bearing_after: 90 } },
+        { name: "B", distance: 0, maneuver: { instruction: "You have arrived.", type: "arrive", bearing_before: 90, bearing_after: 0 } },
+      ] }] }] });
+    expect(parsed[0].maneuvers.map(({ symbol }) => symbol)).toEqual(["straight", "left", "right", "arrive"]);
+  });
   it.each([
     { status: 400, code: "DistanceExceeded", attempts: 1, errorName: "RouteDistanceExceededError" },
     { status: 403, code: "Forbidden", attempts: 1, errorName: "RouteRequestError" },
@@ -103,7 +137,17 @@ describe("exploration route planning", () => {
   it("rejects invalid provider geometry and returns structured routes", () => {
     expect(() => parsePlannedRoutes({ code: "Ok", routes: [] })).toThrow(ExplorationRoutingError);
     expect(() => parsePlannedRoutes({ code: "Ok", routes: [{ distance: 1, duration: 1, geometry: { type: "LineString", coordinates: [[2, 41], [NaN, 41]] } }] })).toThrow(ExplorationRoutingError);
-    expect(parsePlannedRoutes({ code: "Ok", routes: [{ distance: 1_000, duration: 600, geometry: { type: "LineString", coordinates: [[2, 41], [2.01, 41]] } }] })[0].distanceKm).toBe(1);
+    const parsed = parsePlannedRoutes({ code: "Ok", routes: [{ distance: 1_000, duration: 600, geometry: { type: "LineString", coordinates: [[2, 41], [2.005, 41], [2.005, 41.0037735]] }, legs: [{ steps: [
+      { distance: 500, maneuver: { instruction: "Head east.", type: "depart" } },
+      { distance: 500, maneuver: { instruction: "Turn left.", type: "turn", modifier: "left" } },
+      { distance: 0, maneuver: { instruction: "You have arrived.", type: "arrive" } },
+    ] }] }] })[0];
+    expect(parsed.distanceKm).toBe(1);
+    expect(parsed.maneuvers).toEqual([
+      { instruction: "Head east.", symbol: "straight", fraction: 0, roadName: "" },
+      { instruction: "Turn left.", symbol: "left", fraction: 0.5, roadName: "" },
+      { instruction: "You have arrived.", symbol: "arrive", fraction: 1, roadName: "" },
+    ]);
   });
 
   it("rejects destinations too close before contacting the router", async () => {

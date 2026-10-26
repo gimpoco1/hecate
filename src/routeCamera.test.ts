@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { routeCameraBearing } from "./routeCamera";
+import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
 
 describe("planned journey camera", () => {
+  it("moves and turns gradually along the shortest rotation arc", () => {
+    const target = { lng: 2.001, lat: 41.001 };
+    let frame = { lng: 2, lat: 41, bearing: 359 };
+    const first = navigationCameraStep(frame, target, frame.bearing, 1, 16);
+    expect(first.lng).toBeGreaterThan(frame.lng);
+    expect(first.lng).toBeLessThan(target.lng);
+    expect(first.bearing).toBeGreaterThan(359);
+    expect(first.bearing).toBeLessThan(360);
+    for (let index = 0; index < 240; index += 1) frame = navigationCameraStep(frame, target, frame.bearing, 1, 16);
+    expect(frame.lng).toBeCloseTo(target.lng, 6);
+    expect(frame.bearing).toBeCloseTo(361, 2);
+  });
+  it("smooths navigation consistently at different frame rates", () => {
+    const target = { lng: 2.001, lat: 41.001 };
+    const run = (elapsed: number, frames: number): ReturnType<typeof navigationCameraStep> => {
+      let frame = { lng: 2, lat: 41, bearing: 0 };
+      for (let index = 0; index < frames; index += 1) frame = navigationCameraStep(frame, target, frame.bearing, 90, elapsed);
+      return frame;
+    };
+    expect(run(10, 100).bearing).toBeCloseTo(run(20, 50).bearing, 8);
+    expect(run(10, 100).lng).toBeCloseTo(run(20, 50).lng, 8);
+  });
   it("ignores duplicate route points", () => {
     const origin = { lng: 2, lat: 41 };
     const route = [origin, origin, { lng: 2, lat: 41.001 }];

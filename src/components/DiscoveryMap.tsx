@@ -25,6 +25,8 @@ type Props = {
   cells: DiscoveryCell[];
   highlightedPoints: Coordinate[];
   currentPoint?: Coordinate;
+  navigationFollowing: boolean;
+  onUserMarkerChange?: (marker: maplibregl.Marker | null) => void;
   locationState?: "idle" | "located" | "tracking";
   onMapClick?: () => void;
   onDestinationSelect?: (point: { lng: number; lat: number }) => void;
@@ -48,6 +50,7 @@ type Props = {
 
 type FollowCameraEvent = maplibregl.MapLibreEvent & {
   hecateFollowCamera?: boolean;
+  hecateNavigationPoint?: { lng: number; lat: number };
 };
 
 function userMarkerClassName(
@@ -145,6 +148,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   cells,
   highlightedPoints,
   currentPoint,
+  navigationFollowing,
+  onUserMarkerChange,
   locationState = "idle",
   onMapClick,
   onDestinationSelect,
@@ -163,6 +168,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const onUserMarkerChangeRef = useRef(onUserMarkerChange);
+  useEffect(() => { onUserMarkerChangeRef.current = onUserMarkerChange; }, [onUserMarkerChange]);
   const favoriteMarkersRef = useRef<maplibregl.Marker[]>([]);
   const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const currentPointRef = useRef(currentPoint);
@@ -338,6 +345,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         markerRef.current = new maplibregl.Marker({ element, anchor: "center" })
           .setLngLat([point.lng, point.lat])
           .addTo(map);
+        onUserMarkerChangeRef.current?.(markerRef.current);
       }
     });
 
@@ -371,6 +379,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         settledZoom,
       );
     };
+    const handleNavigationMove = (event: FollowCameraEvent): void => {
+      if (event.hecateNavigationPoint) markerRef.current?.setLngLat(event.hecateNavigationPoint);
+    };
+    map.on("move", handleNavigationMove);
     map.on("touchstart", handleTouchStart);
     map.on("touchend", handleTouchEnd);
     map.on("touchcancel", handleTouchCancel);
@@ -396,6 +408,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = null;
       if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();
+      markerRef.current = null;
+      onUserMarkerChangeRef.current?.(null);
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
       map.remove();
@@ -408,6 +422,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     if (!currentPoint) {
       markerRef.current?.remove();
       markerRef.current = null;
+      onUserMarkerChangeRef.current?.(null);
       compassHeadingRef.current = undefined;
       return;
     }
@@ -422,15 +437,16 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       markerRef.current = new maplibregl.Marker({ element, anchor: "center" })
         .setLngLat([currentPoint.lng, currentPoint.lat])
         .addTo(map);
+      onUserMarkerChangeRef.current?.(markerRef.current);
     } else {
-      markerRef.current.setLngLat([currentPoint.lng, currentPoint.lat]);
+      if (!navigationFollowing) markerRef.current.setLngLat([currentPoint.lng, currentPoint.lat]);
       updateUserMarkerHeading(
         markerRef.current.getElement(),
         compassHeadingRef.current ?? currentPoint.heading,
         map.getBearing(),
       );
     }
-  }, [currentPoint, mapRef]);
+  }, [currentPoint, mapRef, navigationFollowing]);
 
   useEffect(() => {
     const map = mapRef.current;

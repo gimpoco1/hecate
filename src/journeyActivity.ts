@@ -1,12 +1,14 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 import type { Coordinate } from "./types";
+import type { NavigationCue } from "./navigationGuidance";
 
 export type JourneyActivitySnapshot = {
   walkId: string;
   startedAt: number;
   distanceKm: number;
   newGroundMeters: number;
+  navigation?: NavigationCue | null;
 };
 
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
