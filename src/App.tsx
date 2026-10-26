@@ -1,6 +1,7 @@
 import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { NavigationTurn } from "./components/NavigationTurn";
+import { FeedbackForm } from "./components/FeedbackForm";
 import { navigationCue, type NavigationCue } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
@@ -142,6 +143,7 @@ import {
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
 import { JourneyActivity, journeyActivitySnapshot, journeyNewGroundMeters, journeyActionFromUrl, type JourneyStopRequest } from "./journeyActivity";
+import { assertFreshJourneyControlRequest, parseJourneyControlRequest, type JourneyControlRequest } from "./journeyControl";
 import { replaceNotificationSchedules } from "./notificationScheduling";
 import {
   defaultActivityNotificationPreferences,
@@ -797,6 +799,7 @@ export default function App() {
     }
   });
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
+  const [accountUserEmail, setAccountUserEmail] = useState("");
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   const [tracking, setTracking] = useState<TrackingState>("idle");
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
@@ -810,10 +813,15 @@ export default function App() {
   const [documentVisible, setDocumentVisible] = useState(
     () => document.visibilityState === "visible",
   );
+  const [iosAppActive, setIosAppActive] = useState(false);
   const trackingStateRef = useRef<TrackingState>(tracking);
   trackingStateRef.current = tracking;
   const [zoom, setZoom] = useState(1.35);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  useEffect(() => {
+    if (feedbackOpen && authReady && !accountUserId) setSyncOpen(true);
+  }, [feedbackOpen, authReady, accountUserId]);
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
@@ -968,6 +976,14 @@ export default function App() {
   const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastJourneyActivityUpdateRef = useRef(0);
   const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<string | null>(null);
+  const [requestedJourneyControl, setRequestedJourneyControl] = useState<JourneyControlRequest | null>(null);
+  const [journeyControlBusy, setJourneyControlBusy] = useState(false);
+  const handledJourneyControlRef = useRef<JourneyControlRequest | null>(null);
+  const controlMountedRef = useRef(true);
+  useEffect(() => {
+    controlMountedRef.current = true;
+    return () => { controlMountedRef.current = false; };
+  }, []);
   const widgetStopRef = useRef<JourneyStopRequest | null>(null);
   const trackingUserRef = useRef<string | null>(null);
   const pendingWalksRef = useRef<PendingWalk[]>([]);
@@ -1235,6 +1251,10 @@ export default function App() {
     let active = true;
     const handleUrl = (value: string): void => {
       if (!active) return;
+      if (value === "hecate://feedback") {
+        setFeedbackOpen(true);
+        return;
+      }
       const action = journeyActionFromUrl(value);
       if (!action) return;
       if (action.action === "stop") setRequestedJourneyStopId(action.walkId);
@@ -1261,6 +1281,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+    let active = true;
+    let subscription: { remove: () => Promise<void> } | undefined;
+    const load = async (): Promise<void> => {
+      try {
+        const result = await JourneyActivity.getControlRequest();
+        const request = parseJourneyControlRequest(result.request);
+        if (!active || !request || (handledJourneyControlRef.current && request.requestedAt <= handledJourneyControlRef.current.requestedAt)) return;
+        setRequestedJourneyControl((current) => current && current.requestedAt > request.requestedAt ? current : request);
+      } catch (error) {
+        if (!active) return;
+        console.error("Could not read iOS journey control", { error });
+        setJourneyStopMessage(error instanceof Error ? error.message : "Could not read the iOS journey control request.");
+      }
+    };
+    // Read the persisted request after registration so cold-launch taps cannot fall between the two.
+    void JourneyActivity.addListener("controlRequested", () => { void load(); })
+      .then((handle) => {
+        if (!active) { void handle.remove(); return; }
+        subscription = handle;
+        void load();
+      })
+      .catch((error) => {
+        if (!active) return;
+        console.error("Could not register iOS journey control", { error });
+        setJourneyStopMessage(error instanceof Error ? error.message : "Could not connect the iOS journey control.");
+      });
+    return () => { active = false; void subscription?.remove(); };
+  }, []);
+
+  useEffect(() => {
     const walk = activeWalkRef.current;
     if (!Capacitor.isNativePlatform() || !accountUserId || !walk || !documentVisible) return;
     let active = true;
@@ -1282,7 +1333,7 @@ export default function App() {
       enqueueJourneyActivity(() => JourneyActivity.clear());
       return;
     }
-    if (!Capacitor.isNativePlatform() || (Capacitor.getPlatform() === "ios" && !documentVisible)) return;
+    if (!Capacitor.isNativePlatform() || (Capacitor.getPlatform() === "ios" && !iosAppActive)) return;
     if (!accountUserId || tracking !== "tracking" || !walk || !started ||
         trackingUserRef.current !== accountUserId) return;
     const snapshot = journeyActivitySnapshot(
@@ -1293,7 +1344,7 @@ export default function App() {
           trackingUserRef.current !== accountUserId) return;
       await JourneyActivity.start({ ...snapshot, navigation: guidanceRef.current?.cue ?? null, ownerId: accountUserId });
     });
-  }, [accountUserId, tracking, documentVisible]);
+  }, [accountUserId, tracking, iosAppActive]);
 
   const setDevToolsOpen = (visible: boolean) => {
     setDevToolsVisible(visible);
@@ -1397,6 +1448,26 @@ export default function App() {
   useEffect(() => {
     pointsRef.current = points;
   }, [points]);
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== "ios") return;
+    let active = true;
+    let receivedStateChange = false;
+    let subscription: { remove: () => Promise<void> } | undefined;
+    // WebView visibility can precede native activation when launched from a Lock Screen control.
+    void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      receivedStateChange = true;
+      if (active) setIosAppActive(isActive);
+    }).then(async (handle) => {
+      if (!active) { await handle.remove(); return; }
+      subscription = handle;
+      const state = await CapacitorApp.getState();
+      if (active && !receivedStateChange) setIosAppActive(state.isActive);
+    }).catch((error) => {
+      console.error("Could not observe iOS foreground state for journey Live Activities", { error });
+      if (active) setJourneyStopMessage("Could not check whether Hecate is active. Reopen Hecate to start the journey Live Activity.");
+    });
+    return () => { active = false; void subscription?.remove(); };
+  }, []);
   useEffect(() => {
     const updateDocumentVisibility = (): void =>
       setDocumentVisible(document.visibilityState === "visible");
@@ -1683,6 +1754,7 @@ export default function App() {
       if (nextUserId !== accountUserIdRef.current)
         setDiscoveryLoading(Boolean(nextUserId));
       setAccountUserId(nextUserId);
+      setAccountUserEmail(data.session?.user.email ?? "");
       setAuthReady(true);
     });
     const {
@@ -1693,6 +1765,7 @@ export default function App() {
       if (nextUserId !== accountUserIdRef.current)
         setDiscoveryLoading(Boolean(nextUserId));
       setAccountUserId(nextUserId);
+      setAccountUserEmail(session?.user.email ?? "");
       setAuthReady(true);
     });
     return () => {
@@ -3700,6 +3773,34 @@ export default function App() {
   }, [requestedJourneyStopId, accountUserId, authReady, discoveryLoading, tracking, walkFinalizing]);
 
   useEffect(() => {
+    const request = requestedJourneyControl;
+    if (!request || !authReady || !documentVisible || discoveryLoading || walkFinalizing || journeyControlBusy || tracking === "requesting" || handledJourneyControlRef.current?.id === request.id) return;
+    handledJourneyControlRef.current = request;
+    setJourneyControlBusy(true);
+    const ownerId = accountUserId;
+    const expectedTracking = tracking;
+    const perform = async (): Promise<void> => {
+      try {
+        await JourneyActivity.acknowledgeControlRequest({ id: request.id });
+        if (!controlMountedRef.current || accountUserIdRef.current !== ownerId) return;
+        assertFreshJourneyControlRequest(request, Date.now());
+        if (trackingStateRef.current !== expectedTracking) throw new Error("Your journey changed while Hecate was opening. Tap the control again.");
+        setSyncOpen(false);
+        await toggleTracking();
+      } catch (error) {
+        console.error("Could not perform iOS journey control", { requestId: request.id, error });
+        if (controlMountedRef.current) setJourneyStopMessage(error instanceof Error ? error.message : "Could not start or stop the journey from the iOS control.");
+      } finally {
+        if (controlMountedRef.current) {
+          setRequestedJourneyControl((current) => current?.id === request.id ? null : current);
+          setJourneyControlBusy(false);
+        }
+      }
+    };
+    void perform();
+  }, [requestedJourneyControl, authReady, documentVisible, discoveryLoading, walkFinalizing, journeyControlBusy, tracking, accountUserId]);
+
+  useEffect(() => {
     const requestedUserId = pendingMorningWalkStartUserIdRef.current;
     if (authReady && requestedUserId && requestedUserId !== accountUserId) {
       pendingMorningWalkStartUserIdRef.current = null;
@@ -4410,6 +4511,7 @@ export default function App() {
   };
 
   const closeProfileDialog = () => {
+    if (!accountUserId) setFeedbackOpen(false);
     setGlobalMilestonesOpen(false);
     setSavedPlacesOpen(false);
     setCitiesOpen(false);
@@ -5210,6 +5312,7 @@ export default function App() {
           open={syncOpen}
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
+          onFeedbackOpen={() => setFeedbackOpen(true)}
           reminderEnabled={reminderEnabled}
           notificationPermissionReady={notificationPermissionReady}
           keyboardInset={keyboardInset}
@@ -5364,6 +5467,7 @@ export default function App() {
           </section>
         </div>
       )}
+      {feedbackOpen && accountUserId && <FeedbackForm key={accountUserId} userId={accountUserId} accountEmail={accountUserEmail} keyboardInset={keyboardInset} onClose={() => setFeedbackOpen(false)} />}
       {activeAchievementCelebration && !explorationSummary && (
         <AchievementCelebration
           achievement={activeAchievementCelebration}

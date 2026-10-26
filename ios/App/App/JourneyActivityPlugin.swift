@@ -14,15 +14,48 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStopRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeStop", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "reconcile", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "reconcile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getControlRequest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgeControlRequest", returnType: CAPPluginReturnPromise)
     ]
 
     override func load() {
         NotificationCenter.default.addObserver(self, selector: #selector(journeyStopped(_:)),
                                                name: JourneyStopStore.notification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(journeyControlRequested(_:)),
+                                               name: JourneyControlStore.notification, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc private func journeyControlRequested(_ notification: Notification) {
+        notifyListeners("controlRequested", data: [:])
+    }
+
+    @objc func getControlRequest(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            do {
+                guard let request = try JourneyControlStore.read(defaults: .standard) else {
+                    call.resolve(["request": NSNull()])
+                    return
+                }
+                call.resolve(["request": ["id": request.id, "requestedAt": request.requestedAt]])
+            } catch { call.reject("Could not read the journey control request.", nil, error) }
+        }
+    }
+
+    @objc func acknowledgeControlRequest(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), UUID(uuidString: id) != nil else {
+            call.reject("Acknowledging a journey control requires its valid request ID.")
+            return
+        }
+        Task { @MainActor in
+            do {
+                try JourneyControlStore.acknowledge(id: id, defaults: .standard)
+                call.resolve()
+            } catch { call.reject("Could not acknowledge the journey control request.", nil, error) }
+        }
+    }
 
     @objc private func journeyStopped(_ notification: Notification) {
         guard let request = notification.object as? JourneyStopRequest else { return }

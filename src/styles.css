@@ -4470,6 +4470,17 @@ button {
   color: var(--forest);
   font-size: 14px;
 }
+.account-project-support__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.account-project-support .account-feedback-button {
+  color: var(--forest);
+  background: rgba(24, 60, 47, 0.06);
+  border-color: rgba(24, 60, 47, 0.18);
+}
 .account-project-support p {
   max-width: 320px;
   margin: 8px auto 14px;
@@ -6749,3 +6760,52 @@ button {
 .app-shell--route-planner .maplibregl-ctrl-bottom-right {
   visibility: hidden;
 }
+
+.feedback-dialog {
+  position: fixed;
+  inset: auto 0 0;
+  box-sizing: border-box;
+  width: min(460px, calc(100% - 16px));
+  max-width: none;
+  margin: 0 auto;
+  padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+  border: 1px solid #d8dfd3;
+  border-radius: 26px 26px 0 0;
+  background: var(--paper);
+  color: var(--forest);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.feedback-dialog::backdrop { background: rgba(18, 34, 28, 0.35); backdrop-filter: blur(4px); }
+.feedback-header { display: flex; align-items: center; gap: 10px; }
+.feedback-header__icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 12px; background: #e7edda; }
+.feedback-header h2 { flex: 1; min-width: 0; margin: 0; font-size: 21px; letter-spacing: -0.4px; }
+.feedback-header button { flex-shrink: 0; width: 36px; height: 36px; box-shadow: none; }
+.feedback-dialog p { color: var(--muted); line-height: 1.45; }
+.feedback-dialog .feedback-intro { margin: 8px 0 18px; font-size: 13px; }
+.feedback-dialog fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.feedback-dialog legend { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+.feedback-reasons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.feedback-reasons label { position: relative; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 10px; border: 1px solid #d8dfd3; border-radius: 12px; cursor: pointer; font-size: 13px; line-height: 1.25; }
+.feedback-reasons label > svg { flex-shrink: 0; color: #78886c; }
+.feedback-reasons label:has(input:checked) { background: #e7edda; border-color: #7c9844; font-weight: 600; }
+.feedback-reasons label:has(input:checked) > svg { color: var(--forest); }
+.feedback-reasons label:has(input:focus-visible) { outline: 2px solid var(--forest); outline-offset: 2px; }
+.feedback-reasons input { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.feedback-choice-check { position: absolute; top: 3px; right: 3px; display: flex; opacity: 0; }
+.feedback-reasons input:checked ~ .feedback-choice-check { opacity: 1; }
+.feedback-field { display: grid; gap: 7px; margin-top: 16px; font-size: 14px; font-weight: 600; }
+.feedback-field__label { display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.feedback-field small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.feedback-field__hint { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.4; }
+.feedback-field textarea, .feedback-field input { width: 100%; box-sizing: border-box; min-width: 0; padding: 11px 12px; border: 1px solid #d8dfd3; border-radius: 12px; background: #fffdf8; color: inherit; font: inherit; font-size: 16px; font-weight: 400; }
+.feedback-field textarea { min-height: 76px; resize: vertical; }
+.feedback-field textarea::placeholder, .feedback-field input::placeholder { color: #88938c; font-size: 13px; }
+.feedback-dialog .feedback-privacy { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; margin: 14px 0; }
+.feedback-privacy svg { flex-shrink: 0; }
+.feedback-dialog .feedback-error { background: #f3e8dc; border-radius: 12px; padding: 12px; color: #773d2f; font-size: 13px; }
+.feedback-dialog .primary-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 48px; padding: 13px; border: 0; border-radius: 14px; background: var(--forest); color: var(--paper); font-weight: 700; cursor: pointer; }
+.feedback-dialog .primary-button:disabled { opacity: 0.5; cursor: default; }
+.feedback-success { padding-top: 24px; text-align: center; }
+.feedback-success > svg { color: #718c35; }
+@media (max-width: 340px) { .feedback-dialog { padding-inline: 16px; } .feedback-reasons label { font-size: 12px; gap: 6px; } }

@@ -43,6 +43,7 @@ type Props = {
   open: boolean;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
+  onFeedbackOpen: () => void;
   reminderEnabled: boolean;
   notificationPermissionReady: boolean | null;
   keyboardInset: number;
@@ -147,6 +148,7 @@ export function SyncSheet({
   open,
   initialAuthIntent = "signin",
   onClose,
+  onFeedbackOpen,
   reminderEnabled,
   notificationPermissionReady,
   keyboardInset,
@@ -1523,13 +1525,18 @@ export function SyncSheet({
             If Hecate adds a little discovery to your day, consider buying me a
             coffee to support its development.
           </p>
-          <button
-            type="button"
-            onClick={() => void openCoffeeSupport()}
-          >
-            <CoffeeIcon size={18} />
-            Buy me a coffee
-          </button>
+          <div className="account-project-support__actions">
+            <button
+              type="button"
+              onClick={() => void openCoffeeSupport()}
+            >
+              <CoffeeIcon size={18} />
+              Buy me a coffee
+            </button>
+            <button type="button" className="account-feedback-button" data-testid="profile-feedback" onClick={onFeedbackOpen}>
+              Share feedback
+            </button>
+          </div>
         </section>}
         <nav className="account-legal-links" aria-label="Legal and support">
           <a href="/privacy-policy.html">Privacy Policy</a>

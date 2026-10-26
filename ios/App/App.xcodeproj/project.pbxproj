@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
+		CE2600010000000000000002 /* JourneyControlIntent.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
 		D88B31D74E80497781B0B003 /* JourneyTopographyBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */; };
 		D88B31D74E80497781B0B001 /* Widget Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D88B31D74E80497781B0B002 /* Widget Assets.xcassets */; };
 		151AF5051FE9502B87F933EC /* JourneyWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 84EDFF724485884BCD6FF78D /* JourneyWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -52,6 +54,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CE2600010000000000000003 /* JourneyControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyControlIntent.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTopographyBackground.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B002 /* Widget Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		07B20ECB286D77B84C036BC3 /* JourneyWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JourneyWidget.swift; sourceTree = "<group>"; };
@@ -177,6 +180,7 @@
 			isa = PBXGroup;
 			children = (
 				489A514BDD91CD85EE689B6A /* JourneyActivityAttributes.swift */,
+				CE2600010000000000000003 /* JourneyControlIntent.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -324,6 +328,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1E5ABFE45991B94C1D9931E6 /* JourneyActivityAttributes.swift in Sources */,
+				CE2600010000000000000002 /* JourneyControlIntent.swift in Widget Sources */,
 				9921851749D2F71DEAE37F93 /* JourneyWidget.swift in Sources */,
 				D88B31D74E80497781B0B003 /* JourneyTopographyBackground.swift in Sources */,
 			);
@@ -336,6 +341,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A2C4E7A12DB6000100A2C4E7 /* SceneDelegate.swift in Sources */,
 				7F6A14860EC6F620138594F9 /* JourneyActivityAttributes.swift in Sources */,
+				CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */,
 				B0CF8717134E5F788E967348 /* JourneyActivityPlugin.swift in Sources */,
 				C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */,
 			);

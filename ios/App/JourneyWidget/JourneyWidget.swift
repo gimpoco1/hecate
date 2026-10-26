@@ -3,6 +3,26 @@ import SwiftUI
 import WidgetKit
 
 @main
+struct HecateWidgets: WidgetBundle {
+    var body: some Widget {
+        JourneyWidget()
+        if #available(iOS 18.0, *) { JourneyControl() }
+    }
+}
+
+@available(iOS 18.0, *)
+struct JourneyControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.gimpoco.hecate.journey-control") {
+            ControlWidgetButton(action: JourneyControlIntent()) {
+                Label("Hecate journey", systemImage: "figure.walk")
+            }
+        }
+        .displayName("Hecate journey")
+        .description("Open Hecate to start or stop a journey.")
+    }
+}
+
 struct JourneyWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: JourneyActivityAttributes.self) { context in

@@ -2,6 +2,7 @@ import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 import type { Coordinate } from "./types";
 import type { NavigationCue } from "./navigationGuidance";
+import type { JourneyControlRequest } from "./journeyControl";
 
 export type JourneyActivitySnapshot = {
   walkId: string;
@@ -21,7 +22,10 @@ interface JourneyActivityPlugin {
   reconcile(options: { ownerId: string; walkId: string | null }): Promise<void>;
   getStopRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyStopRequest | null }>;
   acknowledgeStop(options: { ownerId: string; walkId: string }): Promise<void>;
+  getControlRequest(): Promise<{ request: JourneyControlRequest | null }>;
+  acknowledgeControlRequest(options: { id: string }): Promise<void>;
   addListener(event: "stopRequested", listener: (request: JourneyStopRequest) => void): Promise<PluginListenerHandle>;
+  addListener(event: "controlRequested", listener: () => void): Promise<PluginListenerHandle>;
 }
 
 export const JourneyActivity = registerPlugin<JourneyActivityPlugin>("JourneyActivity");
