@@ -35,7 +35,7 @@ export function AppIconSettings() {
   if (!Capacitor.isNativePlatform() || state?.supported === false) return null;
   return <section className="app-icon-settings" aria-labelledby="app-icon-title">
     <h3 id="app-icon-title">App icon</h3>
-    <p>Choose your Home Screen icon, independently of the app theme.</p>
+    <p>Choose how Hecate looks on your Home Screen.</p>
     <div className="app-icon-options" role="group" aria-label="App icon">
       {(["original", "dark"] as const).map((icon) => <button type="button" key={icon}
         className="app-icon-choice" data-testid={`app-icon-${icon}`} aria-pressed={state?.icon === icon}

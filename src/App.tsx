@@ -2,7 +2,7 @@ import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
-import { useAppearance } from "./appearance";
+import { setAppearancePreference, useAppearance } from "./appearance";
 import { navigationCue, type NavigationCue } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
@@ -2033,8 +2033,9 @@ export default function App() {
     });
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
       if (!active) return;
+      if (event === "SIGNED_OUT") setAppearancePreference("system");
       const nextUserId = session?.user.id ?? null;
       if (nextUserId !== accountUserIdRef.current)
         setDiscoveryLoading(Boolean(nextUserId));

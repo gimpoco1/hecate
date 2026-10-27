@@ -13,7 +13,7 @@ export function AppearanceSettings() {
   const { preference } = useAppearance();
   const [error, setError] = useState("");
   return <section className="appearance-settings" aria-label="App appearance">
-    <p>Match your device, or choose your own.</p>
+    <p>Choose light, dark, or follow your device settings.</p>
     <fieldset className="appearance-options" aria-label="App appearance">
       {choices.map((choice) => <label key={choice.value}>
         <input type="radio" name="appearance" value={choice.value} checked={preference === choice.value} data-testid={`appearance-${choice.value}`} onChange={() => {
