@@ -4,6 +4,9 @@ import { Capacitor } from '@capacitor/core'
 import { initializeNativeAuthLinks } from './auth'
 import { isLeaderboardPath, shouldRedirectBrowserToLeaderboard } from './routes'
 import './styles.css'
+import { initializeAppearance } from './appearance'
+
+initializeAppearance()
 
 const nativePlatform = Capacitor.isNativePlatform()
 const redirectingBrowser = shouldRedirectBrowserToLeaderboard(

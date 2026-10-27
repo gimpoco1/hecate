@@ -3,6 +3,7 @@ import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 import type { Coordinate } from "./types";
 import type { NavigationCue } from "./navigationGuidance";
 import type { JourneyControlRequest } from "./journeyControl";
+import type { AppearancePreference, ColorTheme } from "./appearance";
 
 export type JourneyActivitySnapshot = {
   walkId: string;
@@ -15,6 +16,7 @@ export type JourneyActivitySnapshot = {
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
 
 interface JourneyActivityPlugin {
+  setAppearance(options: { preference: AppearancePreference; theme: ColorTheme }): Promise<void>;
   start(snapshot: JourneyActivitySnapshot & { ownerId: string }): Promise<void>;
   update(snapshot: JourneyActivitySnapshot): Promise<void>;
   end(snapshot: JourneyActivitySnapshot & { finishedAt: number }): Promise<void>;

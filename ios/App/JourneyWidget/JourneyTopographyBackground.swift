@@ -27,6 +27,7 @@ import SwiftUI
 
 /// A static slice of the leaderboard's wave field, rendered as vector contours rather than a WebGL loop.
 struct JourneyTopographyBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
     var body: some View {
         Canvas { context, size in
             let columns = max(1, Int(ceil(size.width / 2)))
@@ -70,7 +71,7 @@ struct JourneyTopographyBackground: View {
                         }
                     }
                 }
-                context.stroke(path, with: .color(contourColor(level: level)), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
+                context.stroke(path, with: .color(colorScheme == .dark ? Color(red: 0.72, green: 0.83, blue: 0.64) : contourColor(level: level)), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
             }
         }
     }

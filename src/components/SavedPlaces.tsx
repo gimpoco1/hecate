@@ -9,6 +9,8 @@ import {
   type FavoritePlaceIcon,
 } from "../favoritePlaces";
 import { loadMapStyle } from "../mapStyle";
+import { useAppearance } from "../appearance";
+import { applyMapAppearance } from "../mapAppearance";
 import { ArrowLeftIcon, ChevronIcon, SaveIcon, XIcon } from "./Icons";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -68,9 +70,16 @@ function collapseMapAttribution(container: HTMLDivElement): void {
 }
 
 function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
+  const { theme } = useAppearance();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const baseStyleRef = useRef<maplibregl.StyleSpecification | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme);
+  }, [theme]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -94,6 +103,8 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
           fadeDuration: 0,
         });
         mapRef.current = map;
+        baseStyleRef.current = style;
+        map.once("style.load", () => applyMapAppearance(map, style, themeRef.current));
         map.addControl(
           new maplibregl.AttributionControl({ compact: true }),
           "bottom-left",
@@ -117,6 +128,7 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
 
     return () => {
       controller.abort();
+      baseStyleRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };

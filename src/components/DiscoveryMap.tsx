@@ -15,6 +15,8 @@ import {
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
+import { useAppearance } from "../appearance";
+import { applyMapAppearance } from "../mapAppearance";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -187,6 +189,14 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const [mapStyle, setMapStyle] = useState<
     Awaited<ReturnType<typeof loadMapStyle>> | string | null
   >(null);
+  const { theme } = useAppearance();
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+  const baseStyleRef = useRef<maplibregl.StyleSpecification | null>(null);
+  useEffect(() => {
+    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme);
+    fogLayerRef.current?.setTheme(theme);
+  }, [theme, mapRef]);
   const geometry = useMemo<FogGeometry>(
     () => ({
       routeSegments: splitRoute(points),
@@ -319,11 +329,14 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       console.error("Map rendering error", event.error),
     );
     map.on("style.load", () => {
+      baseStyleRef.current = map.getStyle();
+      applyMapAppearance(map, baseStyleRef.current, themeRef.current);
       map.setProjection({ type: "globe" });
       const fogLayer = new DiscoveryFogLayer(
         stateRef.current.geometry,
         stateRef.current.mode,
       );
+      fogLayer.setTheme(themeRef.current);
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
@@ -405,6 +418,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     });
     map.on("moveend", handleMoveEnd);
     return () => {
+      baseStyleRef.current = null;
       fogLayerRef.current = null;
       if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();

@@ -9,6 +9,8 @@ PODS:
     - Capacitor
   - CapacitorBrowser (8.0.5):
     - Capacitor
+  - CapacitorClipboard (8.0.1):
+    - Capacitor
   - CapacitorCommunityBackgroundGeolocation (1.2.26):
     - Capacitor
   - CapacitorCordova (8.5.3)
@@ -23,6 +25,7 @@ DEPENDENCIES:
   - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
   - "CapacitorAppLauncher (from `../../node_modules/@capacitor/app-launcher`)"
   - "CapacitorBrowser (from `../../node_modules/@capacitor/browser`)"
+  - "CapacitorClipboard (from `../../node_modules/@capacitor/clipboard`)"
   - "CapacitorCommunityBackgroundGeolocation (from `../../node_modules/@capacitor-community/background-geolocation`)"
   - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
   - "CapacitorKeyboard (from `../../node_modules/@capacitor/keyboard`)"
@@ -39,6 +42,8 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/app-launcher"
   CapacitorBrowser:
     :path: "../../node_modules/@capacitor/browser"
+  CapacitorClipboard:
+    :path: "../../node_modules/@capacitor/clipboard"
   CapacitorCommunityBackgroundGeolocation:
     :path: "../../node_modules/@capacitor-community/background-geolocation"
   CapacitorCordova:
@@ -54,11 +59,12 @@ SPEC CHECKSUMS:
   CapacitorApp: 7b7e43debe505bc61beedb83796aa1368c86078b
   CapacitorAppLauncher: 43949ccc5aaa5139a1ebe27a98c0a4d76c883fa7
   CapacitorBrowser: f94f92654e92a97981bf346b3681af76527dace0
+  CapacitorClipboard: c75fdaa6e622111119f35e7914ecfc67b05efecb
   CapacitorCommunityBackgroundGeolocation: 750523ec6dd1cc94cf4e2bf7787605106753f73c
   CapacitorCordova: 0b7326439c7a09fc5d20eced5e0dab986327a493
   CapacitorKeyboard: f9e85e685082e9f63404de15db4a4291448b0912
   CapacitorLocalNotifications: e0747a329ddde3074d52dc74a003688af90e42be
 
-PODFILE CHECKSUM: 505e5c8894f19bd8a643ff543e7383e12a717c4c
+PODFILE CHECKSUM: ba01d36076f64d2732fbd4809cc1ed86837b00a9
 
 COCOAPODS: 1.17.0

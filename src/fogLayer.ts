@@ -31,6 +31,7 @@ type CompositeProgram = {
   program: WebGLProgram;
   mask: WebGLUniformLocation | null;
   fogOpacity: WebGLUniformLocation | null;
+  darkMode: WebGLUniformLocation | null;
 };
 
 const FOG_LAYER_ID = "hecate-discovery-fog";
@@ -358,6 +359,7 @@ void main() {
 precision highp float;
 uniform sampler2D u_mask;
 uniform float u_fog_opacity;
+uniform float u_dark_mode;
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -381,15 +383,15 @@ void main() {
     contourLine * contourRange * contourStrength * u_fog_opacity;
   float edgeHazeAlpha =
     (1.0 - smoothstep(0.0, 0.62, abs(distanceInRadii - 1.28))) *
-    0.08 * u_fog_opacity;
+    mix(0.08, 0.14, u_dark_mode) * u_fog_opacity;
   float glowAlpha =
     (1.0 - smoothstep(0.0, 0.24, abs(distanceInRadii - 0.98))) *
-    0.16 * u_fog_opacity;
+    mix(0.16, 0.32, u_dark_mode) * u_fog_opacity;
 
-  vec3 fogColor = vec3(0.855, 0.878, 0.855);
-  vec3 edgeHazeColor = vec3(0.490, 0.541, 0.510);
-  vec3 contourColor = vec3(0.259, 0.318, 0.290);
-  vec3 glowColor = vec3(0.745, 0.878, 0.290);
+  vec3 fogColor = mix(vec3(0.855, 0.878, 0.855), vec3(0.075, 0.115, 0.175), u_dark_mode);
+  vec3 edgeHazeColor = mix(vec3(0.490, 0.541, 0.510), vec3(0.58, 0.72, 0.43), u_dark_mode);
+  vec3 contourColor = mix(vec3(0.259, 0.318, 0.290), vec3(0.35, 0.46, 0.60), u_dark_mode);
+  vec3 glowColor = mix(vec3(0.745, 0.878, 0.290), vec3(0.74, 0.89, 0.49), u_dark_mode);
   vec3 color = fogColor * fogAlpha;
   float alpha = fogAlpha;
   color = edgeHazeColor * edgeHazeAlpha + color * (1.0 - edgeHazeAlpha);
@@ -410,6 +412,7 @@ void main() {
     program,
     mask: gl.getUniformLocation(program, "u_mask"),
     fogOpacity: gl.getUniformLocation(program, "u_fog_opacity"),
+    darkMode: gl.getUniformLocation(program, "u_dark_mode"),
   };
 }
 
@@ -419,6 +422,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   readonly renderingMode = "2d" as const;
 
   private map: MapLibreMap | null = null;
+  private darkMode = false;
   private gl: WebGL2RenderingContext | null = null;
   private geometry: FogGeometry;
   private revealBuckets = new Map<string, FogBucket>();
@@ -500,6 +504,11 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.transitionFrom = this.modeOpacity;
     this.transitionTo = targetOpacity;
     this.transitionStartedAt = now;
+    this.map?.triggerRepaint();
+  }
+
+  setTheme(theme: "light" | "dark"): void {
+    this.darkMode = theme === "dark";
     this.map?.triggerRepaint();
   }
 
@@ -620,6 +629,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
     gl.uniform1i(this.compositeProgram.mask, 0);
     gl.uniform1f(this.compositeProgram.fogOpacity, fogOpacity);
+    gl.uniform1f(this.compositeProgram.darkMode, this.darkMode ? 1 : 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
