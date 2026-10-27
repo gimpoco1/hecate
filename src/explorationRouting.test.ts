@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { pointToDiscoveryCell } from "./geo";
-import { calculateDirectRoute, calculateExplorationRoutes, findExplorationRoutes, estimateRouteDiscovery, parsePlannedRoutes, routesForExtraTime, DestinationTooCloseError, ExplorationRoutingError, type RoutePlan, type PlannedRoute } from "./explorationRouting";
+import { calculateNavigationRoute, calculateDirectRoute, calculateExplorationRoutes, findExplorationRoutes, estimateRouteDiscovery, parsePlannedRoutes, routesForExtraTime, DestinationTooCloseError, ExplorationRoutingError, type RoutePlan, type PlannedRoute } from "./explorationRouting";
 
 const origin = { lat: 41.3874, lng: 2.1686 };
 const destination = { lat: 41.4036, lng: 2.1744 };
@@ -56,6 +56,30 @@ describe("exploration route planning", () => {
     try {
       await expect(calculateDirectRoute(origin, destination, [], "bicycle", new AbortController().signal)).rejects.toMatchObject({ name: errorName, status });
       expect(fetch).toHaveBeenCalledTimes(attempts);
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+  it("recalculates a cycling journey within 100 m while preserving the new origin and destination", async () => {
+    const start = { lng: 2, lat: 0 };
+    const finish = { lng: 2.0006, lat: 0 };
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ code: "Ok", routes: [{
+      distance: 67, duration: 20, geometry: { type: "LineString", coordinates: [[start.lng, start.lat], [finish.lng, finish.lat]] },
+      legs: [{ steps: [
+        { distance: 67, maneuver: { instruction: "Head east.", type: "depart" } },
+        { distance: 0, maneuver: { instruction: "You have arrived.", type: "arrive" } },
+      ] }],
+    }] })));
+    try {
+      await expect(calculateDirectRoute(start, finish, [], "bicycle", new AbortController().signal)).rejects.toBeInstanceOf(DestinationTooCloseError);
+      const plan = await calculateNavigationRoute(start, finish, [], "bicycle", new AbortController().signal);
+      expect(plan.routes[0].points).toEqual([start, finish]);
+      expect(plan.routes[0].maneuvers.at(-1)?.symbol).toBe("arrive");
+      const request = new URL(String(fetch.mock.calls[0][0]));
+      expect(JSON.parse(request.searchParams.get("json")!)).toMatchObject({ costing: "bicycle", locations: [
+        { lat: start.lat, lon: start.lng }, { lat: finish.lat, lon: finish.lng },
+      ] });
+      expect(fetch).toHaveBeenCalledTimes(1);
     } finally {
       fetch.mockRestore();
     }

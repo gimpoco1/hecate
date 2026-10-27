@@ -1,6 +1,6 @@
 import { prepareRouteGeometry } from "./routeGeometry";
 import { describe, expect, it } from "vitest";
-import { navigationCue, routeContinuesStraight } from "./navigationGuidance";
+import { hasReachedRouteDestination, navigationCue, routeContinuesStraight } from "./navigationGuidance";
 import type { PlannedRoute } from "./explorationRouting";
 import { distanceKm } from "./geo";
 
@@ -53,6 +53,12 @@ describe("turn guidance", () => {
   it("skips straight continuation cues when a real turn is farther ahead", () => {
     const withContinuation: PlannedRoute = { ...route, maneuvers: [route.maneuvers[0], { instruction: "Stay on Main Street.", symbol: "straight", fraction: 0.2, roadName: "Main Street" }, ...route.maneuvers.slice(1)] };
     expect(navigationCue(withContinuation, { ...progress, fraction: 0 })).toEqual({ instruction: "Turn left onto High Street.", symbol: "left", distanceMeters: 400 });
+  });
+  it("recognizes arrival by another route without depending on completed route progress", () => {
+    const endpoint = route.points[route.points.length - 1];
+    expect(hasReachedRouteDestination(route, endpoint)).toBe(true);
+    expect(hasReachedRouteDestination(route, { ...endpoint, lat: endpoint.lat + 0.00005 })).toBe(true);
+    expect(hasReachedRouteDestination(route, { ...endpoint, lat: endpoint.lat + 0.0002 })).toBe(false);
   });
   it("hides turn instructions when the user leaves the route", () => {
     expect(navigationCue(route, { ...progress, distanceFromRouteM: 80 })).toBeNull();

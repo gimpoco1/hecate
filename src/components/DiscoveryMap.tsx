@@ -44,6 +44,8 @@ type Props = {
   onZoomChange: (zoom: number) => void;
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void;
   onUserNavigation?: () => void;
+  onHeadingChange?: (heading: number) => void;
+  onUserCenteredChange?: (centered: boolean) => void;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
   fogLayerRef?: React.MutableRefObject<DiscoveryFogLayer | null>;
   initialCenter?: [number, number];
@@ -54,6 +56,13 @@ type FollowCameraEvent = maplibregl.MapLibreEvent & {
   hecateFollowCamera?: boolean;
   hecateNavigationPoint?: { lng: number; lat: number };
 };
+
+function isUserCentered(map: MapLibreMap, point: Coordinate | undefined): boolean {
+  if (!point) return false;
+  const marker = map.project(point);
+  const center = map.project(map.getCenter());
+  return Math.hypot(marker.x - center.x, marker.y - center.y) <= 12;
+}
 
 function userMarkerClassName(
   locationState: NonNullable<Props["locationState"]>,
@@ -163,6 +172,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   onZoomChange,
   onViewChange,
   onUserNavigation,
+  onHeadingChange,
+  onUserCenteredChange,
   mapRef,
   fogLayerRef: externalFogLayerRef,
   initialCenter = [7, 24],
@@ -185,6 +196,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const highlightedPointsRef = useRef(highlightedPoints);
   const onViewChangeRef = useRef(onViewChange);
   const onUserNavigationRef = useRef(onUserNavigation);
+  const onHeadingChangeRef = useRef(onHeadingChange);
+  onHeadingChangeRef.current = onHeadingChange;
+  const onUserCenteredChangeRef = useRef(onUserCenteredChange);
+  onUserCenteredChangeRef.current = onUserCenteredChange;
   const compassHeadingRef = useRef<number | undefined>(undefined);
   const [mapStyle, setMapStyle] = useState<
     Awaited<ReturnType<typeof loadMapStyle>> | string | null
@@ -281,6 +296,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       headingFrame = requestAnimationFrame(() => {
         headingFrame = null;
         compassHeadingRef.current = pendingHeading;
+        if (pendingHeading !== undefined) onHeadingChangeRef.current?.(pendingHeading);
         const element = markerRef.current?.getElement();
         const map = mapRef.current;
         if (element && map)
@@ -382,11 +398,23 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const handleTouchCancel = (): void => {
       touchGestureActive = false;
     };
+    const interruptCamera = (): void => {
+      onUserNavigationRef.current?.();
+    };
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (event.pointerType === "touch") touchGestureActive = true;
+      interruptCamera();
+    };
+    const canvas = map.getCanvas();
+    canvas.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    canvas.addEventListener("wheel", interruptCamera, { capture: true, passive: true });
     const handleMoveEnd = (event: FollowCameraEvent) => {
-      if (event.hecateFollowCamera || touchGestureActive) return;
-      const center = map.getCenter();
+      onUserCenteredChangeRef.current?.(isUserCentered(map, currentPointRef.current));
+      if (touchGestureActive) return;
       const settledZoom = map.getZoom();
       onZoomChange(settledZoom);
+      if (event.hecateFollowCamera) return;
+      const center = map.getCenter();
       onViewChangeRef.current?.(
         { lng: center.lng, lat: center.lat },
         settledZoom,
@@ -400,7 +428,12 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     map.on("touchend", handleTouchEnd);
     map.on("touchcancel", handleTouchCancel);
     map.on("rotate", handleRotate);
-    map.on("dragstart", () => onUserNavigationRef.current?.());
+    const handleUserNavigation = (event: maplibregl.MapMovementEvent): void => {
+      if (event.originalEvent) onUserNavigationRef.current?.();
+    };
+    map.on("movestart", handleUserNavigation);
+    map.on("rotatestart", handleUserNavigation);
+    map.on("zoomstart", handleUserNavigation);
     map.on("click", (event) => {
       if (onDestinationSelectRef.current) {
         onDestinationSelectRef.current({ lng: event.lngLat.lng, lat: event.lngLat.lat });
@@ -418,11 +451,14 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     });
     map.on("moveend", handleMoveEnd);
     return () => {
+      canvas.removeEventListener("pointerdown", handlePointerDown, true);
+      canvas.removeEventListener("wheel", interruptCamera, true);
       baseStyleRef.current = null;
       fogLayerRef.current = null;
       if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
+      onUserCenteredChangeRef.current?.(false);
       onUserMarkerChangeRef.current?.(null);
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
@@ -434,6 +470,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!currentPoint) {
+      onUserCenteredChangeRef.current?.(false);
       markerRef.current?.remove();
       markerRef.current = null;
       onUserMarkerChangeRef.current?.(null);
@@ -441,6 +478,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       return;
     }
     if (!map) return;
+    onUserCenteredChangeRef.current?.(isUserCentered(map, currentPoint));
     if (!markerRef.current) {
       const element = createUserMarkerElement(locationStateRef.current);
       updateUserMarkerHeading(

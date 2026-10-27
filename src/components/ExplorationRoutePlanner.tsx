@@ -51,6 +51,7 @@ type Props = {
   destination: RouteDestination | null;
   origin: RoutePoint | null;
   navigationPoint: RoutePoint | null;
+  activeRoute: PlannedRoute | null;
   searchCity: CityBoundary | null;
   cells: DiscoveryCell[];
   ready: boolean;
@@ -62,7 +63,7 @@ type Props = {
   onClose: () => void;
   onClear: () => void;
   onLocate: () => void;
-  onStart: (route: PlannedRoute) => void;
+  onStart: (route: PlannedRoute, mode: TransportMode) => void;
 };
 
 const SOURCE = "hecate-exploration-plan";
@@ -82,6 +83,7 @@ export function ExplorationRoutePlanner({
   destination,
   origin,
   navigationPoint,
+  activeRoute,
   searchCity,
   cells,
   ready,
@@ -176,7 +178,7 @@ export function ExplorationRoutePlanner({
       ? [plan.routes[0]]
       : routesForExtraTime(plan);
   }, [plan, step, budget]);
-  const selected =
+  const selected = (open ? null : activeRoute) ??
     routes.find(({ id }) => id === selectedId) ?? routes[1] ?? routes[0];
   const completedRef = useRef<{ route: PlannedRoute; geometry: RouteGeometry; progress: RouteProgress } | null>(null);
   useEffect(() => {
@@ -340,7 +342,7 @@ export function ExplorationRoutePlanner({
       if (rendered || !map.isStyleLoaded()) return;
       rendered = true;
       const features: GeoJSON.Feature[] = [];
-      if (destination && (open || plan))
+      if (destination && (open || selected))
         features.push({
           type: "Feature",
           properties: { kind: "destination" },
@@ -349,8 +351,8 @@ export function ExplorationRoutePlanner({
             coordinates: [destination.lng, destination.lat],
           },
         });
-      if (plan && selected) {
-        for (const route of !open || plan.routes[0] === selected
+      if (selected) {
+        for (const route of !open || !plan || plan.routes[0] === selected
           ? [selected]
           : [plan.routes[0], selected])
           features.push({
@@ -603,7 +605,7 @@ export function ExplorationRoutePlanner({
       </div>
       <div id={infoId} className="exploration-route-info" hidden={!infoOpen}>
         <p className="exploration-route-footnote">
-          Travel times and new ground are estimates. Turn guidance follows your selected route; routes do not automatically recalculate if you leave it.
+          Travel times and new ground are estimates. Turn guidance follows your selected route; routes automatically recalculate if you leave them, until you reach your destination.
         </p>
         <a
           className="exploration-route-attribution"
@@ -914,7 +916,7 @@ export function ExplorationRoutePlanner({
               className="exploration-route-primary"
               type="button"
               disabled={!directPlans[mode] || startingJourney}
-              onClick={() => onStart(selected)}
+              onClick={() => onStart(selected, mode)}
             >
               {tracking ? "Start navigation" : "Start journey"}
             </button>

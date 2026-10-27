@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
+import { cameraNeedsUpdate, mapCameraBearing, movementBearing, navigationCameraStep, routeCameraBearing, userCameraBearing } from "./routeCamera";
 
 describe("planned journey camera", () => {
+  it("keeps north at the top until heading-up is selected", () => {
+    const point = { lng: 2, lat: 41, recordedAt: 0, heading: 90 };
+    expect(mapCameraBearing("north-up", point, 180)).toBe(0);
+    expect(mapCameraBearing("heading-up", point, 180)).toBe(180);
+    expect(mapCameraBearing("heading-up", point, null)).toBe(90);
+    expect(mapCameraBearing("north-up", point, 270)).toBe(0);
+  });
+  it("skips settled camera updates and small compass jitter while responding to movement and turns", () => {
+    const point = { lng: 2, lat: 41, recordedAt: 0 };
+    expect(cameraNeedsUpdate(point, point, 0, 0)).toBe(false);
+    expect(cameraNeedsUpdate(point, point, 359.8, 0.2)).toBe(false);
+    expect(cameraNeedsUpdate(point, point, 0, null)).toBe(false);
+    expect(cameraNeedsUpdate(point, { ...point, lat: 41.000001 }, 0, 0)).toBe(false);
+    expect(cameraNeedsUpdate(point, { ...point, lat: 41.0001 }, 0, 0)).toBe(true);
+    expect(cameraNeedsUpdate(point, point, 359, 2)).toBe(true);
+  });
+  it("follows measured user direction even when it differs from the route and changes while stationary", () => {
+    const point = { lng: 2, lat: 41, recordedAt: 0, heading: 90 };
+    expect(userCameraBearing(point, null)).toBe(90);
+    expect(userCameraBearing(point, 180)).toBe(180);
+    expect(userCameraBearing(point, 270)).toBe(270);
+    expect(userCameraBearing({ ...point, heading: -1 }, null)).toBeNull();
+    expect(userCameraBearing({ ...point, heading: NaN }, null)).toBeNull();
+    expect(userCameraBearing({ lng: 2, lat: 41, recordedAt: 0 }, null)).toBeNull();
+  });
+  it("measures actual travel through a deviation independently of the planned route", () => {
+    const start = { lng: 2, lat: 41 };
+    expect(movementBearing(start, { lng: 2.001, lat: 41 })).toBeCloseTo(90);
+    expect(movementBearing(start, { lng: 2, lat: 40.999 })).toBeCloseTo(180);
+    expect(() => movementBearing(start, start)).toThrow(RangeError);
+  });
   it("moves and turns gradually along the shortest rotation arc", () => {
     const target = { lng: 2.001, lat: 41.001 };
     let frame = { lng: 2, lat: 41, bearing: 359 };

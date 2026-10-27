@@ -319,6 +319,17 @@ export async function calculateDirectRoute(
   signal: AbortSignal,
 ): Promise<RoutePlan> {
   validateDestination(origin, destination);
+  return calculateNavigationRoute(origin, destination, cells, mode, signal);
+}
+
+/** Recalculates an active journey even when less than 100 m remains. */
+export async function calculateNavigationRoute(
+  origin: RoutePoint,
+  destination: RoutePoint,
+  cells: readonly DiscoveryCell[],
+  mode: TransportMode,
+  signal: AbortSignal,
+): Promise<RoutePlan> {
   const routes = await requestRoutes([origin, destination], mode, signal);
   if (routes.length === 0) throw new ExplorationRoutingError("No accessible direct route found for this transport mode.");
   const fastest = [...routes].sort((a, b) => a.durationSeconds - b.durationSeconds)[0];
