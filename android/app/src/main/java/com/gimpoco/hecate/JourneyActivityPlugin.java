@@ -19,6 +19,16 @@ import org.json.JSONObject;
 public class JourneyActivityPlugin extends Plugin {
     private JourneyNotifications notifications;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final BroadcastReceiver appearanceReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            if (!"system".equals(notifications.appearance()) || notifications.active() == null) return;
+            JourneyNotifications.withService(context, service -> {
+                JourneyState active = notifications.active();
+                if (active != null && !service.updateJourneyNotification(active.walkId(), notifications.ongoing(active)))
+                    throw new IllegalStateException("Could not refresh the active journey notification after a system appearance change.");
+            }, error -> Log.e("HecateJourney", "Could not refresh journey appearance after a configuration change", error));
+        }
+    };
     private final BroadcastReceiver stoppedReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             String walkId = intent.getStringExtra("walkId");
@@ -31,11 +41,13 @@ public class JourneyActivityPlugin extends Plugin {
     @Override public void load() {
         notifications = new JourneyNotifications(getContext());
         ContextCompat.registerReceiver(getContext(), stoppedReceiver, new IntentFilter(JourneyNotifications.STOPPED), ContextCompat.RECEIVER_NOT_EXPORTED);
+        ContextCompat.registerReceiver(getContext(), appearanceReceiver, new IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     @Override protected void handleOnDestroy() {
         handler.removeCallbacksAndMessages(null);
         getContext().unregisterReceiver(stoppedReceiver);
+        getContext().unregisterReceiver(appearanceReceiver);
     }
 
     private static String requiredString(PluginCall call, String name) {
@@ -66,6 +78,18 @@ public class JourneyActivityPlugin extends Plugin {
     @PluginMethod public void reconcile(PluginCall call) { getActivity().runOnUiThread(() -> reconcileOnMain(call)); }
     @PluginMethod public void getStopRequest(PluginCall call) { getActivity().runOnUiThread(() -> getStopRequestOnMain(call)); }
     @PluginMethod public void acknowledgeStop(PluginCall call) { getActivity().runOnUiThread(() -> acknowledgeStopOnMain(call)); }
+    @PluginMethod public void setAppearance(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                String theme = requiredString(call, "theme");
+                if (!"light".equals(theme) && !"dark".equals(theme)) throw new IllegalArgumentException("A resolved light or dark journey theme is required.");
+                notifications.setAppearance(requiredString(call, "preference"));
+                JourneyState active = notifications.active();
+                if (active == null) call.resolve();
+                else publish(call, active, 0);
+            } catch (IllegalArgumentException | IllegalStateException | SecurityException error) { reject(call, error); }
+        });
+    }
 
     private void startOnMain(PluginCall call) {
         try {

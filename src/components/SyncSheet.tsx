@@ -1,4 +1,7 @@
 import { ReminderDuration } from "./ReminderDuration";
+import { AppearanceSettings } from "./AppearanceSettings";
+import { useAppearance } from "../appearance";
+import { mdiPaletteOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
 import { useEffect, useState } from "react";
@@ -190,6 +193,8 @@ export function SyncSheet({
   const [reminderError, setReminderError] = useState("");
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
+  const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
+  const { preference: appearancePreference } = useAppearance();
   const [notificationSettingsSheetOpen, setNotificationSettingsSheetOpen] =
     useState(false);
   const [notificationPending, setNotificationPending] = useState(false);
@@ -290,6 +295,7 @@ export function SyncSheet({
     if (!open) {
       setConfirmingDelete(false);
       setNotificationSettingsSheetOpen(false);
+      setAppearanceSheetOpen(false);
       return;
     }
     if (!supabase) {
@@ -800,6 +806,22 @@ export function SyncSheet({
                 <button
                   type="button"
                   className="account-settings-link"
+                  data-testid="appearance-open"
+                  aria-label="Open appearance settings"
+                  onClick={() => setAppearanceSheetOpen(true)}
+                >
+                  <span className="account-settings-link__mark" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiPaletteOutline} /></svg>
+                  </span>
+                  <span>
+                    <strong>Appearance</strong>
+                    <small>{appearancePreference === "system" ? "System · follows your device" : appearancePreference === "dark" ? "Dark mode" : "Light mode"}</small>
+                  </span>
+                  <ChevronIcon size={16} strokeWidth={2.3} />
+                </button>
+                <button
+                  type="button"
+                  className="account-settings-link"
                   aria-label="Open notification settings"
                   onClick={() => setNotificationSettingsSheetOpen(true)}
                 >
@@ -899,6 +921,29 @@ export function SyncSheet({
                 </div>
               )}
             </div>
+            {appearanceSheetOpen && (
+              <div className="sheet-backdrop gpx-import-backdrop" onClick={(event) => {
+                event.stopPropagation();
+                setAppearanceSheetOpen(false);
+              }}>
+                <section className="sheet profile-collection-sheet appearance-settings-sheet"
+                  data-testid="appearance-panel" onClick={(event) => event.stopPropagation()}
+                  aria-modal="true" role="dialog" aria-labelledby="appearance-settings-title">
+                  <button className="icon-button walking-stats-back" type="button"
+                    data-testid="appearance-back" aria-label="Back to profile" onClick={() => setAppearanceSheetOpen(false)}>
+                    <ArrowLeftIcon />
+                  </button>
+                  <button className="icon-button sheet__close" type="button"
+                    data-testid="appearance-close" aria-label="Close appearance settings" onClick={() => {
+                      setAppearanceSheetOpen(false);
+                      onClose();
+                    }}><XIcon /></button>
+                  <div className="eyebrow">Make it yours</div>
+                  <h2 id="appearance-settings-title">Appearance</h2>
+                  <AppearanceSettings />
+                </section>
+              </div>
+            )}
             {gpxImportSheetOpen && (
               <div
                 className="sheet-backdrop gpx-import-backdrop"

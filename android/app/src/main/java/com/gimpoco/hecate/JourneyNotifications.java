@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -49,6 +50,22 @@ final class JourneyNotifications {
 
     JourneyState active() { return read("active"); }
     JourneyState stopped(String walkId) { return read("stop." + walkId); }
+
+    void setAppearance(String preference) {
+        if (!"system".equals(preference) && !"light".equals(preference) && !"dark".equals(preference))
+            throw new IllegalArgumentException("Journey appearance must be system, light, or dark.");
+        commit(preferences.edit().putString("appearance", preference));
+    }
+
+    String appearance() { return preferences.getString("appearance", "system"); }
+
+    boolean usesDarkAppearance() {
+        String preference = appearance();
+        if ("dark".equals(preference)) return true;
+        if ("light".equals(preference)) return false;
+        if (!"system".equals(preference)) throw new IllegalStateException("Saved Android journey appearance is invalid.");
+        return (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
 
     private JourneyState read(String key) {
         String stored = preferences.getString(key, null);
@@ -147,14 +164,20 @@ final class JourneyNotifications {
         Bitmap logo = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(logo);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(0xfff7f4ed);
+        boolean dark = usesDarkAppearance();
+        paint.setColor(dark ? 0xff20292e : 0xfff7f4ed);
         canvas.drawCircle(48, 48, 48, paint);
-        android.graphics.drawable.Drawable artwork = context.getDrawable(R.mipmap.ic_launcher_foreground);
+        android.graphics.drawable.Drawable artwork = context.getDrawable(dark ? R.drawable.ic_launcher_dark_foreground : R.mipmap.ic_launcher_foreground);
         if (artwork == null) throw new IllegalStateException("Hecate's Android logo resource is missing.");
-        artwork.setBounds(8, 8, 88, 88);
+        android.graphics.Path clip = new android.graphics.Path();
+        clip.addCircle(48, 48, 48, android.graphics.Path.Direction.CW);
+        canvas.clipPath(clip);
+        if (dark) artwork.setBounds(0, 0, 96, 96);
+        else artwork.setBounds(8, 8, 88, 88);
         artwork.draw(canvas);
         return new NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_journey).setLargeIcon(logo).setColor(0xff183c2f)
+            // A colorized background would make this ineligible for Android Live Updates.
+            .setSmallIcon(R.drawable.ic_journey).setLargeIcon(logo).setColor(dark ? 0xffd9f26a : 0xff183c2f)
             .setContentIntent(content).setOnlyAlertOnce(true).setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE);

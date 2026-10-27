@@ -29,7 +29,6 @@ struct JourneyWidget: Widget {
             JourneyPanel(context: context)
                 // The panel draws its own opaque paper background; a system tint can show through during dismissal.
                 .activityBackgroundTint(.clear)
-                .activitySystemActionForegroundColor(JourneyPalette.forest)
                 .widgetURL(journeyURL(context.attributes.walkId, action: "open"))
         } dynamicIsland: { context in
             DynamicIsland {
@@ -79,6 +78,31 @@ private enum JourneyPalette {
     static let moss = Color(red: 0.48, green: 0.58, blue: 0.23)
     static let lime = Color(red: 217 / 255, green: 242 / 255, blue: 106 / 255)
     static let stop = Color(red: 0.43, green: 0.22, blue: 0.16)
+
+    static func foreground(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 230 / 255, green: 238 / 255, blue: 231 / 255) : forest
+    }
+
+    static func background(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 32 / 255, green: 41 / 255, blue: 46 / 255) : paper
+    }
+
+    static func accent(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? lime : moss
+    }
+}
+
+private func journeyColorScheme(_ appearance: JourneyAppearance?, theme: JourneyColorTheme?, system: ColorScheme) -> ColorScheme {
+    switch appearance {
+    case .light: return .light
+    case .dark: return .dark
+    case .system, .none:
+        switch theme {
+        case .dark: return .dark
+        case .light: return .light
+        case .none: return system
+        }
+    }
 }
 
 private func journeyURL(_ walkId: String, action: String) -> URL {
@@ -115,34 +139,38 @@ private struct JourneyTurnRow: View {
 
 private struct JourneyPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var systemColorScheme
     let context: ActivityViewContext<JourneyActivityAttributes>
+
+    private var scheme: ColorScheme { journeyColorScheme(context.state.appearance, theme: context.state.colorTheme, system: systemColorScheme) }
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     HecateJourneyMark().frame(width: 28, height: 28)
+                        .background(JourneyPalette.paper, in: Circle())
                     Text(context.state.finishedAt == nil ? (context.isStale ? "OPEN HECATE TO REFRESH" : "EXPLORING…") : "JOURNEY COMPLETE")
                         .font(.caption.bold())
-                        .foregroundStyle(JourneyPalette.forest)
+                        .foregroundStyle(JourneyPalette.foreground(scheme))
                 }
                 if let turn = activeNavigation(context) {
-                    JourneyTurnRow(turn: turn).foregroundStyle(JourneyPalette.forest)
+                    JourneyTurnRow(turn: turn).foregroundStyle(JourneyPalette.foreground(scheme))
                 }
                 JourneyMetrics(context: context)
-                    .foregroundStyle(JourneyPalette.forest)
+                    .foregroundStyle(JourneyPalette.foreground(scheme))
             }
             if context.state.finishedAt == nil {
                 StopJourneyButton(walkId: context.attributes.walkId)
             } else {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title)
-                    .foregroundStyle(JourneyPalette.moss)
+                    .foregroundStyle(JourneyPalette.accent(scheme))
             }
         }
         .padding(18)
         .background {
-            JourneyPalette.paper
+            JourneyPalette.background(scheme)
                 .overlay {
                     JourneyTopographyBackground()
                         .padding(-4)
@@ -155,6 +183,8 @@ private struct JourneyPanel: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
+        .environment(\.colorScheme, scheme)
+        .activitySystemActionForegroundColor(JourneyPalette.foreground(scheme))
     }
 }
 

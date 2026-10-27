@@ -8,6 +8,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { personalAchievementDefinition } from "../achievements";
 import { authRedirectUrl } from "../auth";
+import { setAppearancePreference } from "../appearance";
 import {
   leaderboardCityHash,
   leaderboardCitySlug,
@@ -853,8 +854,10 @@ export function WebLeaderboard() {
     });
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (active) setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (event === "SIGNED_OUT") setAppearancePreference("system");
+      setUser(session?.user ?? null);
     });
     return () => {
       active = false;

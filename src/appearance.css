@@ -1,0 +1,105 @@
+:root[data-theme="dark"] {
+  --forest: #e6edf0;
+  --lime: #d9f26a;
+  --paper: #20292e;
+  --muted: #bac7ce;
+  --theme-text: #e8edf0;
+  --theme-text-rgb: 232, 237, 240;
+  --theme-text-muted: #bac7ce;
+  --theme-text-muted-rgb: 186, 199, 206;
+  --theme-text-accent: #bdd78e;
+  --theme-text-accent-rgb: 189, 215, 142;
+  --theme-text-danger: #f0aa98;
+  --theme-text-danger-rgb: 240, 170, 152;
+  --theme-text-warm: #e1c591;
+  --theme-text-warm-rgb: 225, 197, 145;
+  --theme-on-accent: #151f27;
+  --theme-on-strong: #f0f4eb;
+  --theme-on-strong-rgb: 240, 244, 235;
+  --theme-surface: #20292e;
+  --theme-surface-rgb: 32, 41, 46;
+  --theme-surface-alt: #2c383f;
+  --theme-surface-alt-rgb: 44, 56, 63;
+  --theme-surface-strong: #213c3b;
+  --theme-surface-strong-rgb: 33, 60, 59;
+  --theme-surface-danger: #412d28;
+  --theme-surface-danger-rgb: 65, 45, 40;
+  --theme-surface-warm: #253036;
+  --theme-surface-warm-rgb: 37, 48, 54;
+  --theme-surface-blue: #233c48;
+  --theme-surface-blue-rgb: 35, 60, 72;
+  --theme-accent: #91ac54;
+  --theme-accent-rgb: 145, 172, 84;
+  --theme-border: #475961;
+  --theme-border-rgb: 118, 140, 148;
+  background: #151f27;
+  color: #e8edf0;
+}
+
+.appearance-settings { padding: 18px 16px; }
+.appearance-settings-sheet { min-height: calc(100dvh - env(safe-area-inset-top) - 12px); }
+.appearance-settings-sheet > .appearance-settings { padding: 18px 0; }
+.appearance-settings strong { color: var(--forest); font-size: 14px; }
+.appearance-settings p { margin: 5px 0 12px; color: var(--muted); font-size: 12px; }
+.appearance-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 5px; border: 0; border-radius: 16px; background: var(--theme-surface-alt, #e9ede3); }
+.appearance-settings .appearance-options label { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 44px; margin: 0; padding: 10px 6px; border-radius: 12px; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1; }
+.appearance-options label > svg { display: block; flex: 0 0 18px; width: 18px; height: 18px; }
+.appearance-options label > span { white-space: nowrap; }
+.appearance-settings .appearance-options input { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.appearance-options label:has(input:checked) { color: var(--paper); background: var(--forest); }
+.appearance-options label:has(input:focus-visible) { outline: 2px solid var(--forest); outline-offset: 2px; }
+:root[data-theme="dark"] .maplibregl-ctrl-attrib { background: rgba(32, 41, 46, 0.85); color: #a4b4aa; }
+:root[data-theme="dark"] .maplibregl-ctrl-attrib a { color: #c9dfab; }
+:root[data-theme="dark"] .maplibregl-ctrl-attrib-button { filter: invert(1); }
+:root[data-theme="dark"] .favorite-marker { --forest: #213c3b; --paper: #20292e; }
+
+:root[data-theme="dark"] .map-actions button,
+:root[data-theme="dark"] .avatar-button,
+:root[data-theme="dark"] .icon-button {
+  color: #eef4ef;
+  background: #243139;
+  border: 1px solid #526875;
+}
+:root[data-theme="dark"] .map-actions button.active,
+:root[data-theme="dark"] .favorite-editor__icon-picker button.active,
+:root[data-theme="dark"] .account-favorites__categories > button.active {
+  color: #15232b;
+  background: #d9f26a;
+  border-color: #d9f26a;
+}
+:root[data-theme="dark"] .discovery-control { color: #15232b; }
+:root[data-theme="dark"] .discovery-control--tracking { color: #fff4ec; background: #804936; }
+:root[data-theme="dark"] .saved-place-map-preview__marker,
+:root[data-theme="dark"] .walking-stats-overview__icon,
+:root[data-theme="dark"] .favorite-editor__place-icon,
+:root[data-theme="dark"] .account-card__avatar,
+:root[data-theme="dark"] .account-favorites__category-icon { background: #244440; color: #e1f28b; }
+:root[data-theme="dark"] .user-marker { background: #ffffff; }
+:root[data-theme="dark"] .user-marker--located .user-marker__dot,
+:root[data-theme="dark"] .user-marker--tracking .user-marker__dot { background: #0a84ff; border-color: #d9efff; }
+
+:root[data-theme="dark"] .map-stage > .map.maplibregl-map { background: #131f30; }
+:root[data-theme="dark"] .achievement-card__progress { background: rgba(240, 244, 235, 0.18); }
+:root[data-theme="dark"] .achievement-card__progress span { background: var(--lime); }
+
+.app-icon-settings { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--theme-border, #d8dfd3); }
+.app-icon-settings h3 { margin: 0; color: var(--forest); font-size: 15px; }
+.app-icon-settings p { max-width: 320px; line-height: 1.5; }
+.app-icon-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.app-icon-options .app-icon-choice { position: relative; display: grid; justify-items: center; gap: 10px; width: 100%; padding: 16px 12px; border: 1px solid var(--theme-border, #d8dfd3); border-radius: 18px; color: var(--forest); background: var(--paper); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.app-icon-choice img { display: block; width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12); }
+.app-icon-choice .app-icon-choice__check { position: absolute; top: 10px; right: 10px; opacity: 0; }
+.app-icon-choice[aria-pressed="true"] { border-color: var(--forest); background: var(--theme-surface-alt, #e9ede3); }
+.app-icon-choice[aria-pressed="true"] .app-icon-choice__check { opacity: 1; }
+.app-icon-choice:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.app-icon-choice:disabled { cursor: default; opacity: 0.55; }
+
+:root[data-theme="dark"] .hecate-mark { filter: drop-shadow(0 0 3px rgba(128, 171, 199, 0.16)); }
+:root[data-theme="dark"] .hecate-mark__flame { stroke: #6f91a5; fill: #d9f26a; }
+:root[data-theme="dark"] .hecate-mark__bowl { fill: #a4becc; }
+:root[data-theme="dark"] .hecate-mark__handle { fill: #6f91a5; }
+:root[data-theme="dark"] .brand__mark { background: radial-gradient(circle at 50% 40%, #30404d, #1c2935); border-color: #566e7e; }
+
+.hecate-mark--image { object-fit: cover; border-radius: 50%; }
+:root[data-theme="dark"] .hecate-mark--image { filter: none; }
+.brand__mark .hecate-mark--image { width: 100%; height: 100%; border-radius: 50%; }

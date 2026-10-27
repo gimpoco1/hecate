@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Clipboard } from "@capacitor/clipboard";
 import {
   FAVORITE_PLACE_ICONS,
   fetchFavoritePlaceName,
@@ -47,7 +48,15 @@ export function FavoritePlaceEditor({
   const [draft, setDraft] = useState(favorite);
   const [mode, setMode] = useState(initialMode);
   const [dateKind, setDateKind] = useState<"created" | "updated">("created");
+  const [coordinatesCopied, setCoordinatesCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const coordinates = `${draft.lat.toFixed(5)}, ${draft.lng.toFixed(5)}`;
   const shownAt = dateKind === "created" ? draft.createdAt : draft.updatedAt;
+  useEffect(() => {
+    if (!coordinatesCopied) return;
+    const timer = window.setTimeout(() => setCoordinatesCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [coordinatesCopied]);
 
   useEffect(() => {
     if (existing) return;
@@ -91,11 +100,24 @@ export function FavoritePlaceEditor({
               </span>
               <div className="eyebrow">{existing ? "Saved place" : "New place"}</div>
             </div>
-            <span>{draft.lat.toFixed(5)}, {draft.lng.toFixed(5)}</span>
+            <button type="button" className="favorite-editor__coordinates" data-testid="favorite-copy-coordinates"
+              aria-label={`Copy coordinates ${coordinates}`} title="Copy coordinates" onClick={() => {
+                void Clipboard.write({ string: coordinates }).then(() => {
+                  setCoordinatesCopied(true);
+                  setCopyError("");
+                }).catch((error) => {
+                  console.error("Could not copy saved place coordinates", { error });
+                  setCopyError("Could not copy coordinates. Please try again.");
+                });
+              }}>
+              <span style={{ visibility: coordinatesCopied ? "hidden" : "visible" }} aria-hidden="true">{coordinates}</span>
+              <span role="status" aria-live="polite">{coordinatesCopied ? "Copied" : ""}</span>
+            </button>
           </div>
           <h2 id="favorite-editor-title">
             {draft.name.trim() || "Save a place"}
           </h2>
+          {copyError && <p className="form-message form-message--error" role="alert">{copyError}</p>}
         </header>
         <div className="favorite-editor__body">
           {mode === "view" ? (

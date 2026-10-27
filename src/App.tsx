@@ -2,13 +2,28 @@ import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
+import { setAppearancePreference, useAppearance } from "./appearance";
 import { navigationCue, type NavigationCue } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
 import type { PlannedRoute } from "./explorationRouting";
-import { ExplorationRoutePlanner, type RouteDestination } from "./components/ExplorationRoutePlanner";
-import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  ExplorationRoutePlanner,
+  type RouteDestination,
+} from "./components/ExplorationRoutePlanner";
+import {
+  DISCOVERY_REMINDER_DURATIONS,
+  INACTIVITY_REMINDER_DURATIONS,
+} from "./reminderDurations";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
@@ -112,7 +127,11 @@ import {
   routeDistanceKm,
   shouldRecordPoint,
 } from "./geo";
-import { emptyWalkingStats, walkingStatsFromJourneys, type WalkingStats } from "./walkingStats";
+import {
+  emptyWalkingStats,
+  walkingStatsFromJourneys,
+  type WalkingStats,
+} from "./walkingStats";
 import {
   ExplorationReminder,
   isUnmappedArea,
@@ -142,8 +161,18 @@ import {
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
 import { ensureNotificationPermission } from "./notificationPermissions";
-import { JourneyActivity, journeyActivitySnapshot, journeyNewGroundMeters, journeyActionFromUrl, type JourneyStopRequest } from "./journeyActivity";
-import { assertFreshJourneyControlRequest, parseJourneyControlRequest, type JourneyControlRequest } from "./journeyControl";
+import {
+  JourneyActivity,
+  journeyActivitySnapshot,
+  journeyNewGroundMeters,
+  journeyActionFromUrl,
+  type JourneyStopRequest,
+} from "./journeyActivity";
+import {
+  assertFreshJourneyControlRequest,
+  parseJourneyControlRequest,
+  type JourneyControlRequest,
+} from "./journeyControl";
 import { replaceNotificationSchedules } from "./notificationScheduling";
 import {
   defaultActivityNotificationPreferences,
@@ -196,7 +225,11 @@ import type {
   PendingWalk,
   TrackingState,
 } from "./types";
-import { completeWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
+import {
+  completeWalkJournal,
+  loadWalkJournalState,
+  saveWalkJournal,
+} from "./walkJournal";
 import {
   compactImportedRoute,
   parseGpx,
@@ -238,7 +271,8 @@ const MORNING_INVITE_TEST_NOTIFICATION_ID = 1210;
 const WEEKLY_RECAP_TEST_NOTIFICATION_ID = 1211;
 const STREAK_REMINDER_TEST_NOTIFICATION_ID = 1212;
 const DEV_TOOLS_VISIBILITY_KEY = "hecate:dev-tools-visible";
-const DEV_TOOLS_ENABLED = import.meta.env.VITE_ENABLE_DEV_TOOLS === "1" ||
+const DEV_TOOLS_ENABLED =
+  import.meta.env.VITE_ENABLE_DEV_TOOLS === "1" ||
   (import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEV_TOOLS !== "0");
 const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
@@ -332,7 +366,9 @@ type CachedDiscoveryProgress = Omit<
 const DISCOVERY_PROGRESS_CACHE_PREFIX = "hecate:discovery-progress:v5";
 
 function isNullableFiniteNumber(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isFinite(value));
+  return (
+    value === null || (typeof value === "number" && Number.isFinite(value))
+  );
 }
 
 function isWalkingStats(value: unknown): value is WalkingStats {
@@ -532,7 +568,10 @@ const JourneyDetails = memo(function JourneyDetails({
                 <dd>
                   <span>{formatElapsedDuration(weekActiveTimeMs)}</span>
                   <small
-                    className={weekDeltaClassName(weekActiveDeltaTimeMs, 30_000)}
+                    className={weekDeltaClassName(
+                      weekActiveDeltaTimeMs,
+                      30_000,
+                    )}
                   >
                     {formatWeekTimeDelta(weekActiveDeltaTimeMs)}
                   </small>
@@ -619,10 +658,7 @@ function decimalCounterPlaces(
   return [
     ...integerCounterPlaces(value),
     ".",
-    ...Array.from(
-      { length: decimalCount },
-      (_, index) => 10 ** -(index + 1),
-    ),
+    ...Array.from({ length: decimalCount }, (_, index) => 10 ** -(index + 1)),
   ];
 }
 
@@ -661,14 +697,20 @@ export function journeyNewGroundCounter(meters: number): JourneyCounterDisplay {
   };
 }
 
-export function journeyTimeCounter(elapsedMs: number): { text: string; label: string } {
+export function journeyTimeCounter(elapsedMs: number): {
+  text: string;
+  label: string;
+} {
   const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1_000));
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor(totalSeconds / 60) % 60;
   const seconds = totalSeconds % 60;
   const pad = (value: number): string => String(value).padStart(2, "0");
   return {
-    text: hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`,
+    text:
+      hours > 0
+        ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+        : `${minutes}:${pad(seconds)}`,
     label: `${hours > 0 ? `${hours} ${hours === 1 ? "hour" : "hours"}, ` : ""}${minutes} ${minutes === 1 ? "minute" : "minutes"}, ${seconds} ${seconds === 1 ? "second" : "seconds"}`,
   };
 }
@@ -754,8 +796,12 @@ async function retryGpxImportOperation(
 }
 
 export default function App() {
-  const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(null);
-  const [pendingSpeedStopReport, setPendingSpeedStopReport] = useState<JourneySpeedStopReport | null>(null);
+  const { preference: appearancePreference, theme: appearanceTheme } = useAppearance();
+  const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(
+    null,
+  );
+  const [pendingSpeedStopReport, setPendingSpeedStopReport] =
+    useState<JourneySpeedStopReport | null>(null);
   const [mode, setMode] = useState<MapMode>("discover");
   const [points, setPoints] = useState<Coordinate[]>([]);
   const [cells, setCells] = useState<DiscoveryCell[]>([]);
@@ -790,8 +836,7 @@ export default function App() {
     useState("");
   const [achievementTestMessage, setAchievementTestMessage] = useState("");
   const [devToolsVisible, setDevToolsVisible] = useState(() => {
-    if (!DEV_TOOLS_ENABLED)
-      return false;
+    if (!DEV_TOOLS_ENABLED) return false;
     try {
       return localStorage.getItem(DEV_TOOLS_VISIBILITY_KEY) !== "false";
     } catch {
@@ -834,31 +879,72 @@ export default function App() {
   const [perspectiveView, setPerspectiveView] = useState(false);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
   const simulationRouteRef = useRef<PlannedRoute | null>(null);
-  const [simulationRoute, setSimulationRoute] = useState<PlannedRoute | null>(null);
-  const [simulationPoint, setSimulationPoint] = useState<Coordinate | null>(null);
+  const [simulationRoute, setSimulationRoute] = useState<PlannedRoute | null>(
+    null,
+  );
+  const [simulationPoint, setSimulationPoint] = useState<Coordinate | null>(
+    null,
+  );
   const simulationPanelRef = useRef<HTMLElement>(null);
-  const guidanceRef = useRef<{ route: PlannedRoute; geometry: RouteGeometry; progress: RouteProgress; cue: NavigationCue | null } | null>(null);
+  const guidanceRef = useRef<{
+    route: PlannedRoute;
+    geometry: RouteGeometry;
+    progress: RouteProgress;
+    cue: NavigationCue | null;
+  } | null>(null);
   const [turnCue, setTurnCue] = useState<NavigationCue | null>(null);
-  const arrivalRef = useRef<{ route: PlannedRoute; deadline: number } | null>(null);
-  const [arrival, setArrival] = useState<{ route: PlannedRoute; deadline: number } | null>(null);
+  const arrivalRef = useRef<{ route: PlannedRoute; deadline: number } | null>(
+    null,
+  );
+  const [arrival, setArrival] = useState<{
+    route: PlannedRoute;
+    deadline: number;
+  } | null>(null);
   const lastTurnInstructionRef = useRef("");
-  const updateNavigationCue = useCallback((route: PlannedRoute, point: Coordinate): NavigationCue | null => {
-    const previous = guidanceRef.current?.route === route ? guidanceRef.current.progress : { distanceKm: 0, fraction: 0, position: route.points[0], acceptedPosition: route.points[0], distanceFromRouteM: 0 };
-    const geometry = guidanceRef.current?.route === route ? guidanceRef.current.geometry : prepareRouteGeometry(route.points);
-    const progress = advanceRouteProgress(geometry, point, previous);
-    const cue = navigationCue(route, progress);
-    guidanceRef.current = { route, geometry, progress, cue };
-    if (cue?.symbol === "arrive" && cue.distanceMeters <= 10 && arrivalRef.current?.route !== route) {
-      const reached = { route, deadline: Date.now() + 10_000 };
-      arrivalRef.current = reached;
-      setArrival(reached);
-    }
-    if (document.visibilityState === "visible") setTurnCue((current) => current?.instruction === cue?.instruction && current?.symbol === cue?.symbol && current?.distanceMeters === cue?.distanceMeters ? current : cue);
-    return cue;
-  }, []);
+  const updateNavigationCue = useCallback(
+    (route: PlannedRoute, point: Coordinate): NavigationCue | null => {
+      const previous =
+        guidanceRef.current?.route === route
+          ? guidanceRef.current.progress
+          : {
+              distanceKm: 0,
+              fraction: 0,
+              position: route.points[0],
+              acceptedPosition: route.points[0],
+              distanceFromRouteM: 0,
+            };
+      const geometry =
+        guidanceRef.current?.route === route
+          ? guidanceRef.current.geometry
+          : prepareRouteGeometry(route.points);
+      const progress = advanceRouteProgress(geometry, point, previous);
+      const cue = navigationCue(route, progress);
+      guidanceRef.current = { route, geometry, progress, cue };
+      if (
+        cue?.symbol === "arrive" &&
+        cue.distanceMeters <= 10 &&
+        arrivalRef.current?.route !== route
+      ) {
+        const reached = { route, deadline: Date.now() + 10_000 };
+        arrivalRef.current = reached;
+        setArrival(reached);
+      }
+      if (document.visibilityState === "visible")
+        setTurnCue((current) =>
+          current?.instruction === cue?.instruction &&
+          current?.symbol === cue?.symbol &&
+          current?.distanceMeters === cue?.distanceMeters
+            ? current
+            : cue,
+        );
+      return cue;
+    },
+    [],
+  );
   const [routePlannerOpen, setRoutePlannerOpen] = useState(false);
   const [routePanelHeight, setRoutePanelHeight] = useState(0);
-  const [routeDestination, setRouteDestination] = useState<RouteDestination | null>(null);
+  const [routeDestination, setRouteDestination] =
+    useState<RouteDestination | null>(null);
   useEffect(() => {
     plannedJourneyRouteRef.current = null;
     simulationRouteRef.current = null;
@@ -879,8 +965,12 @@ export default function App() {
   const [highlightedRoutePoints, setHighlightedRoutePoints] = useState<
     Coordinate[]
   >([]);
-  const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(null);
-  const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">("view");
+  const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(
+    null,
+  );
+  const [favoriteEditorMode, setFavoriteEditorMode] = useState<"view" | "edit">(
+    "view",
+  );
   const [keyboardInset, setKeyboardInset] = useState(0);
   const topbarRef = useRef<HTMLElement>(null);
   const mapActionsRef = useRef<HTMLElement>(null);
@@ -891,8 +981,16 @@ export default function App() {
     if (!routePlannerOpen || !topbar || !actions) return;
     const measure = (): void => {
       const buttons = Array.from(actions.children);
-      const columnHeight = buttons.reduce((height, button) => height + button.getBoundingClientRect().height, 0) + Math.max(0, buttons.length - 1) * 8;
-      const availableHeight = actions.getBoundingClientRect().bottom - topbar.getBoundingClientRect().bottom - 12;
+      const columnHeight =
+        buttons.reduce(
+          (height, button) => height + button.getBoundingClientRect().height,
+          0,
+        ) +
+        Math.max(0, buttons.length - 1) * 8;
+      const availableHeight =
+        actions.getBoundingClientRect().bottom -
+        topbar.getBoundingClientRect().bottom -
+        12;
       setCompactMapActions(columnHeight > availableHeight);
     };
     measure();
@@ -949,7 +1047,9 @@ export default function App() {
     useState<PersonalAchievementId | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const userMarkerRef = useRef<Marker | null>(null);
-  const onUserMarkerChange = useCallback((marker: Marker | null): void => { userMarkerRef.current = marker; }, []);
+  const onUserMarkerChange = useCallback((marker: Marker | null): void => {
+    userMarkerRef.current = marker;
+  }, []);
   const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const trackerRef = useRef<LocationTracker | null>(null);
   const foregroundTrackerRef = useRef<LocationTracker | null>(null);
@@ -975,14 +1075,19 @@ export default function App() {
   const activeWalkRef = useRef<ActiveWalk | null>(null);
   const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastJourneyActivityUpdateRef = useRef(0);
-  const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<string | null>(null);
-  const [requestedJourneyControl, setRequestedJourneyControl] = useState<JourneyControlRequest | null>(null);
+  const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<
+    string | null
+  >(null);
+  const [requestedJourneyControl, setRequestedJourneyControl] =
+    useState<JourneyControlRequest | null>(null);
   const [journeyControlBusy, setJourneyControlBusy] = useState(false);
   const handledJourneyControlRef = useRef<JourneyControlRequest | null>(null);
   const controlMountedRef = useRef(true);
   useEffect(() => {
     controlMountedRef.current = true;
-    return () => { controlMountedRef.current = false; };
+    return () => {
+      controlMountedRef.current = false;
+    };
   }, []);
   const widgetStopRef = useRef<JourneyStopRequest | null>(null);
   const trackingUserRef = useRef<string | null>(null);
@@ -1040,7 +1145,9 @@ export default function App() {
   const animateFollowCamera = useCallback((point: Coordinate) => {
     followCameraTargetRef.current = point;
     const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
-    followCameraBearingRef.current = route ? routeCameraBearing(route.points, point) : null;
+    followCameraBearingRef.current = route
+      ? routeCameraBearing(route.points, point)
+      : null;
     if (
       !followCameraEnabledRef.current ||
       followCameraFrameRef.current !== null
@@ -1054,7 +1161,10 @@ export default function App() {
         followCameraTimestampRef.current = null;
         return;
       }
-      if ((simulationRouteRef.current || plannedJourneyRouteRef.current) && map.isMoving()) {
+      if (
+        (simulationRouteRef.current || plannedJourneyRouteRef.current) &&
+        map.isMoving()
+      ) {
         followCameraFrameRef.current = requestAnimationFrame(animate);
         return;
       }
@@ -1064,25 +1174,57 @@ export default function App() {
       const center = map.getCenter();
       const longitudeDelta = ((target.lng - center.lng + 540) % 360) - 180;
       const blend = 1 - Math.exp(-elapsed / 180);
-      const plannedRoute = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
+      const plannedRoute =
+        simulationRouteRef.current ?? plannedJourneyRouteRef.current;
       const targetBearing = followCameraBearingRef.current;
-      const bearingDelta = targetBearing === null ? 0 : ((targetBearing - map.getBearing() + 540) % 360) - 180;
-      const next = plannedRoute && targetBearing !== null
-        ? navigationCameraStep(center, target, map.getBearing(), targetBearing, elapsed)
-        : { lng: center.lng + longitudeDelta * blend, lat: center.lat + (target.lat - center.lat) * blend, bearing: map.getBearing() + bearingDelta * blend };
+      const bearingDelta =
+        targetBearing === null
+          ? 0
+          : ((targetBearing - map.getBearing() + 540) % 360) - 180;
+      const next =
+        plannedRoute && targetBearing !== null
+          ? navigationCameraStep(
+              center,
+              target,
+              map.getBearing(),
+              targetBearing,
+              elapsed,
+            )
+          : {
+              lng: center.lng + longitudeDelta * blend,
+              lat: center.lat + (target.lat - center.lat) * blend,
+              bearing: map.getBearing() + bearingDelta * blend,
+            };
       map.jumpTo(
-        { center: [next.lng, next.lat], ...(targetBearing === null ? {} : { bearing: next.bearing }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
-        { hecateFollowCamera: true, ...(plannedRoute ? { hecateNavigationPoint: next } : {}) },
+        {
+          center: [next.lng, next.lat],
+          ...(targetBearing === null ? {} : { bearing: next.bearing }),
+          ...(plannedRoute
+            ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } }
+            : {}),
+        },
+        {
+          hecateFollowCamera: true,
+          ...(plannedRoute ? { hecateNavigationPoint: next } : {}),
+        },
       );
       if (
-        distanceKm(
-          { ...next, recordedAt: target.recordedAt },
-          target,
-        ) < 0.0005 && Math.abs(bearingDelta) < 0.5
+        distanceKm({ ...next, recordedAt: target.recordedAt }, target) <
+          0.0005 &&
+        Math.abs(bearingDelta) < 0.5
       ) {
         map.jumpTo(
-          { center: [target.lng, target.lat], ...(targetBearing === null ? {} : { bearing: targetBearing }), ...(plannedRoute ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}) },
-          { hecateFollowCamera: true, ...(plannedRoute ? { hecateNavigationPoint: target } : {}) },
+          {
+            center: [target.lng, target.lat],
+            ...(targetBearing === null ? {} : { bearing: targetBearing }),
+            ...(plannedRoute
+              ? { padding: { top: 0, bottom: 0, left: 0, right: 0 } }
+              : {}),
+          },
+          {
+            hecateFollowCamera: true,
+            ...(plannedRoute ? { hecateNavigationPoint: target } : {}),
+          },
         );
         followCameraFrameRef.current = null;
         followCameraTimestampRef.current = null;
@@ -1092,11 +1234,15 @@ export default function App() {
     };
     followCameraFrameRef.current = requestAnimationFrame(animate);
   }, []);
-  const previewNavigationFix = useCallback((point: Coordinate): void => {
-    setSimulationPoint(point);
-    if (simulationRouteRef.current) updateNavigationCue(simulationRouteRef.current, point);
-    animateFollowCamera(point);
-  }, [animateFollowCamera, updateNavigationCue]);
+  const previewNavigationFix = useCallback(
+    (point: Coordinate): void => {
+      setSimulationPoint(point);
+      if (simulationRouteRef.current)
+        updateNavigationCue(simulationRouteRef.current, point);
+      animateFollowCamera(point);
+    },
+    [animateFollowCamera, updateNavigationCue],
+  );
   useEffect(() => {
     stopFollowCameraAnimation();
   }, [accountUserId, stopFollowCameraAnimation]);
@@ -1118,32 +1264,48 @@ export default function App() {
     discoveryUiRefreshTimerRef.current = null;
     setPoints([...pointsRef.current]);
   }, []);
-  const centerMapOnPoint = useCallback((point: Coordinate) => {
-    const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
-    const displayPoint = simulationRouteRef.current && guidanceRef.current?.route === simulationRouteRef.current
-      ? guidanceRef.current.progress.position : point;
-    followCameraEnabledRef.current = true;
-    stopFollowCameraAnimation();
-    setViewCenter({ lng: displayPoint.lng, lat: displayPoint.lat });
-    setViewedCity(null);
-    if (resumeCenterFrameRef.current !== null)
-      cancelAnimationFrame(resumeCenterFrameRef.current);
-    resumeCenterFrameRef.current = requestAnimationFrame(() => {
-      const map = mapRef.current;
-      if (!map) {
-        resumeCenterFrameRef.current = null;
-        return;
-      }
-      map.resize();
+  const centerMapOnPoint = useCallback(
+    (point: Coordinate) => {
+      const route =
+        simulationRouteRef.current ?? plannedJourneyRouteRef.current;
+      const displayPoint =
+        simulationRouteRef.current &&
+        guidanceRef.current?.route === simulationRouteRef.current
+          ? guidanceRef.current.progress.position
+          : point;
+      followCameraEnabledRef.current = true;
+      stopFollowCameraAnimation();
+      setViewCenter({ lng: displayPoint.lng, lat: displayPoint.lat });
+      setViewedCity(null);
+      if (resumeCenterFrameRef.current !== null)
+        cancelAnimationFrame(resumeCenterFrameRef.current);
       resumeCenterFrameRef.current = requestAnimationFrame(() => {
-        resumeCenterFrameRef.current = null;
-        map.stop();
-        if (route && guidanceRef.current?.route === route) setTurnCue(guidanceRef.current.cue);
-        userMarkerRef.current?.setLngLat(displayPoint);
-        map.jumpTo({ center: [displayPoint.lng, displayPoint.lat], ...(route ? { bearing: routeCameraBearing(route.points, displayPoint) } : {}) }, { hecateFollowCamera: true, hecateNavigationPoint: displayPoint });
+        const map = mapRef.current;
+        if (!map) {
+          resumeCenterFrameRef.current = null;
+          return;
+        }
+        map.resize();
+        resumeCenterFrameRef.current = requestAnimationFrame(() => {
+          resumeCenterFrameRef.current = null;
+          map.stop();
+          if (route && guidanceRef.current?.route === route)
+            setTurnCue(guidanceRef.current.cue);
+          userMarkerRef.current?.setLngLat(displayPoint);
+          map.jumpTo(
+            {
+              center: [displayPoint.lng, displayPoint.lat],
+              ...(route
+                ? { bearing: routeCameraBearing(route.points, displayPoint) }
+                : {}),
+            },
+            { hecateFollowCamera: true, hecateNavigationPoint: displayPoint },
+          );
+        });
       });
-    });
-  }, [stopFollowCameraAnimation]);
+    },
+    [stopFollowCameraAnimation],
+  );
   // A cell is a revealed area, not a piece of route. The saved walks preserve
   // the real route boundaries, then this function credits only portions that
   // unlock new cells.
@@ -1188,11 +1350,12 @@ export default function App() {
   ]);
 
   const summaryCityProgress = summaryCity
-    ? discoveryProgress.cityMetrics.find(
+    ? (discoveryProgress.cityMetrics.find(
         ({ cityId }) => cityId === summaryCity.id,
-      ) ?? null
+      ) ?? null)
     : null;
-  const currentCityDistance = summaryCityProgress?.distance ?? discoveryDistance;
+  const currentCityDistance =
+    summaryCityProgress?.distance ?? discoveryDistance;
   const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
   const currentCityMilestoneRemaining = currentCityMilestone.next
     ? Math.max(0, currentCityMilestone.next.thresholdKm - currentCityDistance)
@@ -1221,19 +1384,33 @@ export default function App() {
       ? journeyNewGroundMeters(points, started.discoveryDistance)
       : 0;
   }, [points, tracking]);
-  const displayedNewGroundCounter = journeyNewGroundCounter(activeWalkNewGroundMeters);
+  const displayedNewGroundCounter = journeyNewGroundCounter(
+    activeWalkNewGroundMeters,
+  );
   const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
   const nativeApp = isNativeApp();
   const devToolsEnabled = DEV_TOOLS_ENABLED;
 
-  const enqueueJourneyActivity = useCallback((operation: () => Promise<void>): void => {
+  const enqueueJourneyActivity = useCallback(
+    (operation: () => Promise<void>): void => {
+      if (!Capacitor.isNativePlatform()) return;
+      journeyActivityQueueRef.current = journeyActivityQueueRef.current
+        .then(operation)
+        .catch((error: Error) => {
+          console.warn("Could not synchronize journey Live Activity", {
+            error,
+          });
+        });
+    },
+    [],
+  );
+
+  useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    journeyActivityQueueRef.current = journeyActivityQueueRef.current
-      .then(operation)
-      .catch((error: Error) => {
-        console.warn("Could not synchronize journey Live Activity", { error });
-      });
-  }, []);
+    enqueueJourneyActivity(() =>
+      JourneyActivity.setAppearance({ preference: appearancePreference, theme: appearanceTheme }),
+    );
+  }, [appearancePreference, appearanceTheme, enqueueJourneyActivity]);
 
   useEffect(() => {
     if (!authReady || discoveryLoading) return;
@@ -1241,9 +1418,13 @@ export default function App() {
       enqueueJourneyActivity(() => JourneyActivity.clear());
       return;
     }
-    const walkId = trackingUserRef.current === accountUserId
-      ? activeWalkRef.current?.id ?? null : null;
-    enqueueJourneyActivity(() => JourneyActivity.reconcile({ ownerId: accountUserId, walkId }));
+    const walkId =
+      trackingUserRef.current === accountUserId
+        ? (activeWalkRef.current?.id ?? null)
+        : null;
+    enqueueJourneyActivity(() =>
+      JourneyActivity.reconcile({ ownerId: accountUserId, walkId }),
+    );
   }, [accountUserId, authReady, discoveryLoading, tracking]);
 
   useEffect(() => {
@@ -1259,10 +1440,16 @@ export default function App() {
       if (!action) return;
       if (action.action === "stop") setRequestedJourneyStopId(action.walkId);
     };
-    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) => handleUrl(url));
-    void CapacitorApp.getLaunchUrl().then((result) => {
-      if (result) handleUrl(result.url);
-    }).catch((error: Error) => console.warn("Could not read journey launch URL", { error }));
+    const listener = CapacitorApp.addListener("appUrlOpen", ({ url }) =>
+      handleUrl(url),
+    );
+    void CapacitorApp.getLaunchUrl()
+      .then((result) => {
+        if (result) handleUrl(result.url);
+      })
+      .catch((error: Error) =>
+        console.warn("Could not read journey launch URL", { error }),
+      );
     return () => {
       active = false;
       void listener.then((handle) => handle.remove());
@@ -1272,12 +1459,17 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = JourneyActivity.addListener("stopRequested", (request) => {
-      if (request.ownerId !== accountUserIdRef.current ||
-          request.walkId !== activeWalkRef.current?.id) return;
+      if (
+        request.ownerId !== accountUserIdRef.current ||
+        request.walkId !== activeWalkRef.current?.id
+      )
+        return;
       widgetStopRef.current = request;
       setRequestedJourneyStopId(request.walkId);
     });
-    return () => { void listener.then(handle => handle.remove()); };
+    return () => {
+      void listener.then((handle) => handle.remove());
+    };
   }, []);
 
   useEffect(() => {
@@ -1288,42 +1480,89 @@ export default function App() {
       try {
         const result = await JourneyActivity.getControlRequest();
         const request = parseJourneyControlRequest(result.request);
-        if (!active || !request || (handledJourneyControlRef.current && request.requestedAt <= handledJourneyControlRef.current.requestedAt)) return;
-        setRequestedJourneyControl((current) => current && current.requestedAt > request.requestedAt ? current : request);
+        if (
+          !active ||
+          !request ||
+          (handledJourneyControlRef.current &&
+            request.requestedAt <= handledJourneyControlRef.current.requestedAt)
+        )
+          return;
+        setRequestedJourneyControl((current) =>
+          current && current.requestedAt > request.requestedAt
+            ? current
+            : request,
+        );
       } catch (error) {
         if (!active) return;
         console.error("Could not read iOS journey control", { error });
-        setJourneyStopMessage(error instanceof Error ? error.message : "Could not read the iOS journey control request.");
+        setJourneyStopMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not read the iOS journey control request.",
+        );
       }
     };
     // Read the persisted request after registration so cold-launch taps cannot fall between the two.
-    void JourneyActivity.addListener("controlRequested", () => { void load(); })
+    void JourneyActivity.addListener("controlRequested", () => {
+      void load();
+    })
       .then((handle) => {
-        if (!active) { void handle.remove(); return; }
+        if (!active) {
+          void handle.remove();
+          return;
+        }
         subscription = handle;
         void load();
       })
       .catch((error) => {
         if (!active) return;
         console.error("Could not register iOS journey control", { error });
-        setJourneyStopMessage(error instanceof Error ? error.message : "Could not connect the iOS journey control.");
+        setJourneyStopMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not connect the iOS journey control.",
+        );
       });
-    return () => { active = false; void subscription?.remove(); };
+    return () => {
+      active = false;
+      void subscription?.remove();
+    };
   }, []);
 
   useEffect(() => {
     const walk = activeWalkRef.current;
-    if (!Capacitor.isNativePlatform() || !accountUserId || !walk || !documentVisible) return;
+    if (
+      !Capacitor.isNativePlatform() ||
+      !accountUserId ||
+      !walk ||
+      !documentVisible
+    )
+      return;
     let active = true;
-    void JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: walk.id })
+    void JourneyActivity.getStopRequest({
+      ownerId: accountUserId,
+      walkId: walk.id,
+    })
       .then(({ request }) => {
-        if (!active || !request || activeWalkRef.current?.id !== request.walkId ||
-            accountUserIdRef.current !== request.ownerId) return;
+        if (
+          !active ||
+          !request ||
+          activeWalkRef.current?.id !== request.walkId ||
+          accountUserIdRef.current !== request.ownerId
+        )
+          return;
         widgetStopRef.current = request;
         setRequestedJourneyStopId(request.walkId);
       })
-      .catch((error: Error) => console.error("Could not read widget journey stop", { error, walkId: walk.id }));
-    return () => { active = false; };
+      .catch((error: Error) =>
+        console.error("Could not read widget journey stop", {
+          error,
+          walkId: walk.id,
+        }),
+      );
+    return () => {
+      active = false;
+    };
   }, [accountUserId, documentVisible, tracking]);
 
   useEffect(() => {
@@ -1333,16 +1572,35 @@ export default function App() {
       enqueueJourneyActivity(() => JourneyActivity.clear());
       return;
     }
-    if (!Capacitor.isNativePlatform() || (Capacitor.getPlatform() === "ios" && !iosAppActive)) return;
-    if (!accountUserId || tracking !== "tracking" || !walk || !started ||
-        trackingUserRef.current !== accountUserId) return;
+    if (
+      !Capacitor.isNativePlatform() ||
+      (Capacitor.getPlatform() === "ios" && !iosAppActive)
+    )
+      return;
+    if (
+      !accountUserId ||
+      tracking !== "tracking" ||
+      !walk ||
+      !started ||
+      trackingUserRef.current !== accountUserId
+    )
+      return;
     const snapshot = journeyActivitySnapshot(
-      walk, started.discoveryDistance, pointsRef.current,
+      walk,
+      started.discoveryDistance,
+      pointsRef.current,
     );
     enqueueJourneyActivity(async () => {
-      if (activeWalkRef.current?.id !== snapshot.walkId ||
-          trackingUserRef.current !== accountUserId) return;
-      await JourneyActivity.start({ ...snapshot, navigation: guidanceRef.current?.cue ?? null, ownerId: accountUserId });
+      if (
+        activeWalkRef.current?.id !== snapshot.walkId ||
+        trackingUserRef.current !== accountUserId
+      )
+        return;
+      await JourneyActivity.start({
+        ...snapshot,
+        navigation: guidanceRef.current?.cue ?? null,
+        ownerId: accountUserId,
+      });
     });
   }, [accountUserId, tracking, iosAppActive]);
 
@@ -1457,16 +1715,30 @@ export default function App() {
     void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
       receivedStateChange = true;
       if (active) setIosAppActive(isActive);
-    }).then(async (handle) => {
-      if (!active) { await handle.remove(); return; }
-      subscription = handle;
-      const state = await CapacitorApp.getState();
-      if (active && !receivedStateChange) setIosAppActive(state.isActive);
-    }).catch((error) => {
-      console.error("Could not observe iOS foreground state for journey Live Activities", { error });
-      if (active) setJourneyStopMessage("Could not check whether Hecate is active. Reopen Hecate to start the journey Live Activity.");
-    });
-    return () => { active = false; void subscription?.remove(); };
+    })
+      .then(async (handle) => {
+        if (!active) {
+          await handle.remove();
+          return;
+        }
+        subscription = handle;
+        const state = await CapacitorApp.getState();
+        if (active && !receivedStateChange) setIosAppActive(state.isActive);
+      })
+      .catch((error) => {
+        console.error(
+          "Could not observe iOS foreground state for journey Live Activities",
+          { error },
+        );
+        if (active)
+          setJourneyStopMessage(
+            "Could not check whether Hecate is active. Reopen Hecate to start the journey Live Activity.",
+          );
+      });
+    return () => {
+      active = false;
+      void subscription?.remove();
+    };
   }, []);
   useEffect(() => {
     const updateDocumentVisibility = (): void =>
@@ -1575,7 +1847,8 @@ export default function App() {
             cityMetrics: event.data.cityMetrics,
           };
           setDiscoveryProgress(progress);
-          if (accountUserId) saveCachedDiscoveryProgress(accountUserId, progress);
+          if (accountUserId)
+            saveCachedDiscoveryProgress(accountUserId, progress);
           setDiscoveryProgressReady(true);
           return;
         }
@@ -1620,13 +1893,17 @@ export default function App() {
   const activeCityProgress = activeCity
     ? cityProgresses.find(({ city }) => city.id === activeCity.id)
     : null;
-  const accountCityProgress = useMemo(() => activeCity && activeCityProgress
-    ? {
-        cityId: activeCity.id,
-        cityName: activeCity.name,
-        discoveredKm: activeCityProgress.distance,
-      }
-    : null, [activeCity, activeCityProgress]);
+  const accountCityProgress = useMemo(
+    () =>
+      activeCity && activeCityProgress
+        ? {
+            cityId: activeCity.id,
+            cityName: activeCity.name,
+            discoveredKm: activeCityProgress.distance,
+          }
+        : null,
+    [activeCity, activeCityProgress],
+  );
   const earnedAchievementIds = useMemo(
     () =>
       achievementEvaluations
@@ -1661,10 +1938,7 @@ export default function App() {
       earnedAchievementIds,
     );
     setAchievementCelebrations(
-      confirmedPendingAchievementIds(
-        unlocks.pending,
-        earnedAchievementIds,
-      ),
+      confirmedPendingAchievementIds(unlocks.pending, earnedAchievementIds),
     );
     void syncAchievementUnlocks(
       accountUserId,
@@ -1759,8 +2033,9 @@ export default function App() {
     });
     const {
       data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
       if (!active) return;
+      if (event === "SIGNED_OUT") setAppearancePreference("system");
       const nextUserId = session?.user.id ?? null;
       if (nextUserId !== accountUserIdRef.current)
         setDiscoveryLoading(Boolean(nextUserId));
@@ -1787,24 +2062,35 @@ export default function App() {
     const refreshPermission = (): void => {
       if (document.visibilityState !== "visible") return;
       if (nativeApp) {
-        void readLocationAuthorization().then((status) => {
-          if (active) setDiscoveryLocationAllowed(status === "always");
-        }).catch((error) => {
-          if (active) setDiscoveryLocationAllowed(false);
-          console.warn("Could not refresh background location permission", { error });
-        });
+        void readLocationAuthorization()
+          .then((status) => {
+            if (active) setDiscoveryLocationAllowed(status === "always");
+          })
+          .catch((error) => {
+            if (active) setDiscoveryLocationAllowed(false);
+            console.warn("Could not refresh background location permission", {
+              error,
+            });
+          });
       }
       setNotificationClock(Date.now());
-      void LocalNotifications.checkPermissions().then((permission) => {
-        if (active)
-          setNotificationPermissionReady(permission.display === "granted");
-      }).catch((error) => console.warn("Could not refresh notification permission", { error }));
+      void LocalNotifications.checkPermissions()
+        .then((permission) => {
+          if (active)
+            setNotificationPermissionReady(permission.display === "granted");
+        })
+        .catch((error) =>
+          console.warn("Could not refresh notification permission", { error }),
+        );
     };
     refreshPermission();
     document.addEventListener("visibilitychange", refreshPermission);
-    const appListener = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
-      if (isActive) refreshPermission();
-    });
+    const appListener = CapacitorApp.addListener(
+      "appStateChange",
+      ({ isActive }) => {
+        if (isActive) refreshPermission();
+      },
+    );
     const clockTimer = window.setInterval(refreshPermission, 60_000);
     return () => {
       active = false;
@@ -1817,20 +2103,26 @@ export default function App() {
   useEffect(() => {
     if (!pendingSpeedStopReport || !authReady) return;
     if (pendingSpeedStopReport.userId !== accountUserId) {
-      setJourneyStopMessage("Sign in to the account associated with this journey to report the incorrect speed stop.");
+      setJourneyStopMessage(
+        "Sign in to the account associated with this journey to report the incorrect speed stop.",
+      );
       setSyncOpen(true);
       return;
     }
     setPendingSpeedStopReport(null);
-    void openJourneySpeedStopReport(AppLauncher, pendingSpeedStopReport)
-      .catch((error: Error) => {
+    void openJourneySpeedStopReport(AppLauncher, pendingSpeedStopReport).catch(
+      (error: Error) => {
         console.error("Could not open journey speed-stop report", {
-          walkId: pendingSpeedStopReport.walkId, error,
+          walkId: pendingSpeedStopReport.walkId,
+          error,
         });
         if (accountUserIdRef.current === pendingSpeedStopReport.userId) {
-          setJourneyStopMessage(`Could not open your email app. Contact supporthecate@gmail.com and include journey ID ${pendingSpeedStopReport.walkId}.`);
+          setJourneyStopMessage(
+            `Could not open your email app. Contact supporthecate@gmail.com and include journey ID ${pendingSpeedStopReport.walkId}.`,
+          );
         }
-      });
+      },
+    );
   }, [pendingSpeedStopReport, authReady, accountUserId]);
 
   useEffect(() => {
@@ -1841,26 +2133,43 @@ export default function App() {
       preference.promptedAt,
       preference.pausedUntil,
       activityNotificationPreferences.discoveryReminderMinutes,
-      activityNotificationPreferences.discoveredAreaReminders ? "all" : "unmapped",
+      activityNotificationPreferences.discoveredAreaReminders
+        ? "all"
+        : "unmapped",
     );
-    const enabled = preference.enabled &&
-      notificationPermissionReady === true && discoveryLocationAllowed;
+    const enabled =
+      preference.enabled &&
+      notificationPermissionReady === true &&
+      discoveryLocationAllowed;
     setReminderEnabled(enabled);
     reminderEnabledRef.current = enabled;
     if (!enabled) resetInactivityReminder();
     setReminderPrompt(null);
-  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, resetInactivityReminder, activityNotificationPreferences.discoveryReminderMinutes, activityNotificationPreferences.discoveredAreaReminders]);
+  }, [
+    accountUserId,
+    notificationPermissionReady,
+    discoveryLocationAllowed,
+    resetInactivityReminder,
+    activityNotificationPreferences.discoveryReminderMinutes,
+    activityNotificationPreferences.discoveredAreaReminders,
+  ]);
 
   useEffect(() => {
     resetInactivityReminder();
     inactivityReminderRef.current = new InactivityReminder(
       activityNotificationPreferences.inactivityReminderMinutes,
     );
-  }, [accountUserId, activityNotificationPreferences.inactivityReminderMinutes, resetInactivityReminder]);
+  }, [
+    accountUserId,
+    activityNotificationPreferences.inactivityReminderMinutes,
+    resetInactivityReminder,
+  ]);
 
   useEffect(() => {
     if (!accountUserId) {
-      setActivityNotificationPreferences(defaultActivityNotificationPreferences());
+      setActivityNotificationPreferences(
+        defaultActivityNotificationPreferences(),
+      );
       return;
     }
     setActivityNotificationPreferences(
@@ -1884,27 +2193,35 @@ export default function App() {
   useEffect(() => {
     if (!nativeApp) return;
     const generation = ++activityNotificationGenerationRef.current;
-    const preferences = accountUserId && notificationPermissionReady === true
-      ? loadActivityNotificationPreferences(accountUserId)
-      : defaultActivityNotificationPreferences();
+    const preferences =
+      accountUserId && notificationPermissionReady === true
+        ? loadActivityNotificationPreferences(accountUserId)
+        : defaultActivityNotificationPreferences();
     const journeys = discoveryJourneyMetrics(points);
     const now = Date.now();
     const stats = walkingStatsFromJourneys(journeys, now);
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
-    const todayDistance = journeys.filter((journey) => journey.finishedAt >= today.getTime())
+    const todayDistance = journeys
+      .filter((journey) => journey.finishedAt >= today.getTime())
       .reduce((total, journey) => total + journey.travelledKm, 0);
     const notifications: LocalNotificationSchema[] = [];
     if (preferences.morningInvite) {
-      const [hour, minute] = preferences.dailyReminderTime.split(":").map(Number);
+      const [hour, minute] = preferences.dailyReminderTime
+        .split(":")
+        .map(Number);
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
         title: "Heading out today?",
         body: morningInviteMessage(
-          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
-            ? discoveryProgress.travelledDistance : null,
-          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
-            ? accountCityProgress : null,
+          citiesLoadedUserId === accountUserId &&
+            discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance
+            : null,
+          citiesLoadedUserId === accountUserId &&
+            discoveryHistoryReadyRef.current
+            ? accountCityProgress
+            : null,
         ),
         schedule: {
           on: { hour, minute, second: 0 },
@@ -1915,7 +2232,11 @@ export default function App() {
         extra: { kind: "morning-invite", userId: accountUserId },
       });
     }
-    if (preferences.weeklyRecap && citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current) {
+    if (
+      preferences.weeklyRecap &&
+      citiesLoadedUserId === accountUserId &&
+      discoveryHistoryReadyRef.current
+    ) {
       notifications.push({
         id: WEEKLY_RECAP_NOTIFICATION_ID,
         title: "Your weekly walking summary",
@@ -1928,7 +2249,11 @@ export default function App() {
         extra: { kind: "weekly-recap", userId: accountUserId },
       });
     }
-    const streakDate = streakReminderDate(now, todayDistance, preferences.streakReminderTime);
+    const streakDate = streakReminderDate(
+      now,
+      todayDistance,
+      preferences.streakReminderTime,
+    );
     if (
       preferences.streakReminder &&
       citiesLoadedUserId === accountUserId &&
@@ -1939,9 +2264,7 @@ export default function App() {
       notifications.push({
         id: STREAK_REMINDER_NOTIFICATION_ID,
         title: "Your walking streak is at risk",
-        body: streakReminderMessage(
-          stats.currentStreakDays,
-        ),
+        body: streakReminderMessage(stats.currentStreakDays),
         schedule: {
           at: streakDate,
           allowWhileIdle: false,
@@ -1959,18 +2282,22 @@ export default function App() {
         MORNING_INVITE_NOTIFICATION_ID,
         WEEKLY_RECAP_NOTIFICATION_ID,
         STREAK_REMINDER_NOTIFICATION_ID,
-        ...(!accountUserId || accountChanged || notificationPermissionReady === false ? [
-          REMINDER_NOTIFICATION_ID,
-          REMINDER_TEST_NOTIFICATION_ID,
-          JOURNEY_SPEED_STOP_NOTIFICATION_ID,
-          MORNING_INVITE_TEST_NOTIFICATION_ID,
-          WEEKLY_RECAP_TEST_NOTIFICATION_ID,
-          STREAK_REMINDER_TEST_NOTIFICATION_ID,
-          ...Array.from(
-            { length: PERSONAL_ACHIEVEMENTS.length + 1 },
-            (_, index) => ACHIEVEMENT_NOTIFICATION_ID_START + index,
-          ),
-        ] : []),
+        ...(!accountUserId ||
+        accountChanged ||
+        notificationPermissionReady === false
+          ? [
+              REMINDER_NOTIFICATION_ID,
+              REMINDER_TEST_NOTIFICATION_ID,
+              JOURNEY_SPEED_STOP_NOTIFICATION_ID,
+              MORNING_INVITE_TEST_NOTIFICATION_ID,
+              WEEKLY_RECAP_TEST_NOTIFICATION_ID,
+              STREAK_REMINDER_TEST_NOTIFICATION_ID,
+              ...Array.from(
+                { length: PERSONAL_ACHIEVEMENTS.length + 1 },
+                (_, index) => ACHIEVEMENT_NOTIFICATION_ID_START + index,
+              ),
+            ]
+          : []),
       ];
       await replaceNotificationSchedules(
         LocalNotifications,
@@ -1981,10 +2308,16 @@ export default function App() {
       scheduledNotificationUserRef.current = accountUserId;
     };
     activityNotificationQueueRef.current = activityNotificationQueueRef.current
-      .catch((error) => console.warn("Previous notification update failed", { error }))
+      .catch((error) =>
+        console.warn("Previous notification update failed", { error }),
+      )
       .then(update)
-      .catch((error) => console.warn("Could not update activity notifications", { error }));
-    return () => { activityNotificationGenerationRef.current += 1; };
+      .catch((error) =>
+        console.warn("Could not update activity notifications", { error }),
+      );
+    return () => {
+      activityNotificationGenerationRef.current += 1;
+    };
   }, [
     accountUserId,
     activityNotificationPreferences,
@@ -2011,9 +2344,15 @@ export default function App() {
         if (event.notification.extra?.kind === "journey-speed-stop") {
           if (event.actionId === REPORT_JOURNEY_SPEED_STOP_ACTION_ID) {
             const { userId, walkId } = event.notification.extra;
-            if (typeof userId !== "string" || !userId.trim() ||
-                typeof walkId !== "string" || !walkId.trim()) {
-              setJourneyStopMessage("This notification is missing its journey details. Contact supporthecate@gmail.com to report the incorrect speed stop.");
+            if (
+              typeof userId !== "string" ||
+              !userId.trim() ||
+              typeof walkId !== "string" ||
+              !walkId.trim()
+            ) {
+              setJourneyStopMessage(
+                "This notification is missing its journey details. Contact supporthecate@gmail.com to report the incorrect speed stop.",
+              );
               return;
             }
             setPendingSpeedStopReport({ userId, walkId });
@@ -2074,9 +2413,7 @@ export default function App() {
           );
           return;
         }
-        if (
-          event.notification.id === INACTIVITY_NOTIFICATION_ID
-        ) {
+        if (event.notification.id === INACTIVITY_NOTIFICATION_ID) {
           if (trackingStateRef.current === "tracking") {
             inactivityReminderRef.current.markReminded();
             setInactivityPrompt(true);
@@ -2190,9 +2527,7 @@ export default function App() {
     const recoveredWalks = journal.active
       ? [...journal.pending, journal.active]
       : journal.pending;
-    const recoveredPoints = recoveredWalks.flatMap(
-      (walk) => walk.points,
-    );
+    const recoveredPoints = recoveredWalks.flatMap((walk) => walk.points);
     const baselinePoints = journal.pending.flatMap((walk) => walk.points);
     const baselineCells = discoveryCellsFromPoints(baselinePoints);
     explorationStartRef.current = journal.active
@@ -2471,11 +2806,7 @@ export default function App() {
   }, [accountUserId, citiesLoadedUserId]);
 
   useEffect(() => {
-    if (
-      !accountUserId ||
-      cells.length === 0
-    )
-      return;
+    if (!accountUserId || cells.length === 0) return;
     const timer = window.setTimeout(
       () => syncDiscoveryCells(cells, accountUserId).catch(() => undefined),
       1200,
@@ -2574,8 +2905,7 @@ export default function App() {
     let trackerMode: "foreground" | "reminder" | null = null;
     let retryTimer: number | null = null;
     let acquisitionTimer: number | null = null;
-    let wasForeground =
-      nativeActive && document.visibilityState === "visible";
+    let wasForeground = nativeActive && document.visibilityState === "visible";
     const clearTimers = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (acquisitionTimer !== null) window.clearTimeout(acquisitionTimer);
@@ -2652,7 +2982,11 @@ export default function App() {
               reminderRef.current.pausedUntil,
             );
             if (nativeApp)
-              void sendReminderNotification(accountUserId, reminderRef.current.durationMinutes, kind).catch((error) =>
+              void sendReminderNotification(
+                accountUserId,
+                reminderRef.current.durationMinutes,
+                kind,
+              ).catch((error) =>
                 console.warn("Could not show discovery reminder", error),
               );
             else if (visible) setReminderPrompt(kind);
@@ -2909,7 +3243,7 @@ export default function App() {
 
   const onZoomChange = useCallback((nextZoom: number) => {
     setZoom((currentZoom) =>
-      (currentZoom >= 6) === (nextZoom >= 6) ? currentZoom : nextZoom,
+      currentZoom >= 6 === nextZoom >= 6 ? currentZoom : nextZoom,
     );
   }, []);
   const onViewChange = useCallback((center: { lng: number; lat: number }) => {
@@ -2922,21 +3256,26 @@ export default function App() {
     setViewCenter({ lng: point.lng, lat: point.lat });
     const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
     userMarkerRef.current?.setLngLat(point);
-    mapRef.current?.flyTo({
-      center: [point.lng, point.lat],
-      zoom: route ? 17 : 15,
-      ...(route ? { bearing: routeCameraBearing(route.points, point), padding: { top: 0, bottom: 0, left: 0, right: 0 } } : {}),
-      duration: 1400,
-      essential: true,
-    }, { hecateFollowCamera: true, hecateNavigationPoint: point });
+    mapRef.current?.flyTo(
+      {
+        center: [point.lng, point.lat],
+        zoom: route ? 17 : 15,
+        ...(route
+          ? {
+              bearing: routeCameraBearing(route.points, point),
+              padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            }
+          : {}),
+        duration: 1400,
+        essential: true,
+      },
+      { hecateFollowCamera: true, hecateNavigationPoint: point },
+    );
   };
 
   useEffect(() => {
     const focusIdentity = accountUserId ?? "__anonymous__";
-    if (
-      initialMapFocusUserRef.current === focusIdentity ||
-      !currentPoint
-    )
+    if (initialMapFocusUserRef.current === focusIdentity || !currentPoint)
       return;
     initialMapFocusUserRef.current = focusIdentity;
     const targetZoom = 14;
@@ -2952,7 +3291,11 @@ export default function App() {
   }, [accountUserId, currentPoint]);
 
   const addPoint = (point: Coordinate) => {
-    if (widgetStopRef.current && widgetStopRef.current.walkId === activeWalkRef.current?.id) return;
+    if (
+      widgetStopRef.current &&
+      widgetStopRef.current.walkId === activeWalkRef.current?.id
+    )
+      return;
     if (!isUsableGpsPoint(point)) {
       if (
         reminderEnabledRef.current &&
@@ -2972,11 +3315,23 @@ export default function App() {
       const instruction = cue?.instruction ?? "";
       const liveWalk = activeWalkRef.current;
       const liveStart = explorationStartRef.current;
-      if (Capacitor.isNativePlatform() && liveWalk && liveStart &&
-          (instruction !== lastTurnInstructionRef.current || Date.now() - lastJourneyActivityUpdateRef.current >= 3000)) {
+      if (
+        Capacitor.isNativePlatform() &&
+        liveWalk &&
+        liveStart &&
+        (instruction !== lastTurnInstructionRef.current ||
+          Date.now() - lastJourneyActivityUpdateRef.current >= 3000)
+      ) {
         lastTurnInstructionRef.current = instruction;
         lastJourneyActivityUpdateRef.current = Date.now();
-        const snapshot = { ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current), navigation: cue };
+        const snapshot = {
+          ...journeyActivitySnapshot(
+            liveWalk,
+            liveStart.discoveryDistance,
+            pointsRef.current,
+          ),
+          navigation: cue,
+        };
         enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
       }
     }
@@ -3001,7 +3356,8 @@ export default function App() {
     const appVisible = document.visibilityState === "visible";
     if (appVisible) {
       setCurrentPoint(point);
-      if (plannedJourneyRouteRef.current && !simulationRouteRef.current) animateFollowCamera(point);
+      if (plannedJourneyRouteRef.current && !simulationRouteRef.current)
+        animateFollowCamera(point);
       if (centerOnNextPassivePointRef.current) {
         centerOnNextPassivePointRef.current = false;
         centerMapOnPoint(point);
@@ -3036,13 +3392,24 @@ export default function App() {
     }
     const liveWalk = activeWalkRef.current;
     const liveStart = explorationStartRef.current;
-    if (Capacitor.isNativePlatform() && liveWalk && liveStart &&
-        Date.now() - lastJourneyActivityUpdateRef.current >= 10_000) {
+    if (
+      Capacitor.isNativePlatform() &&
+      liveWalk &&
+      liveStart &&
+      Date.now() - lastJourneyActivityUpdateRef.current >= 10_000
+    ) {
       lastJourneyActivityUpdateRef.current = Date.now();
       const snapshot = journeyActivitySnapshot(
-        liveWalk, liveStart.discoveryDistance, pointsRef.current,
+        liveWalk,
+        liveStart.discoveryDistance,
+        pointsRef.current,
       );
-      enqueueJourneyActivity(() => JourneyActivity.update({ ...snapshot, navigation: guidanceRef.current?.cue ?? null }));
+      enqueueJourneyActivity(() =>
+        JourneyActivity.update({
+          ...snapshot,
+          navigation: guidanceRef.current?.cue ?? null,
+        }),
+      );
     }
     // Check after adding this point to the map. A newly revealed spot also
     // qualifies if the recording then stays nearby for fifteen minutes.
@@ -3051,7 +3418,8 @@ export default function App() {
     if (appVisible) {
       scheduleDiscoveryUiRefresh();
       if (discoveredNewCell) setCells([...cellsRef.current]);
-      if (!plannedJourneyRouteRef.current && !simulationRouteRef.current) animateFollowCamera(recordedPoint);
+      if (!plannedJourneyRouteRef.current && !simulationRouteRef.current)
+        animateFollowCamera(recordedPoint);
     } else {
       // Native callbacks still record and persist the route in the background,
       // but React and MapLibre do not need to redraw for every GPS update.
@@ -3074,18 +3442,32 @@ export default function App() {
     }
     const active = activeWalkRef.current;
     const walkOwner = trackingUserRef.current;
-    const widgetStop = widgetStopRef.current?.walkId === active?.id ? widgetStopRef.current : null;
-    const finishedAt = Math.max(active?.startedAt ?? 0, widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now());
+    const widgetStop =
+      widgetStopRef.current?.walkId === active?.id
+        ? widgetStopRef.current
+        : null;
+    const finishedAt = Math.max(
+      active?.startedAt ?? 0,
+      widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now(),
+    );
     if (active && walkOwner) journeyFinishedAtRef.current = finishedAt;
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && active && liveStart) {
       const snapshot = journeyActivitySnapshot(
-        active, liveStart.discoveryDistance, pointsRef.current,
+        active,
+        liveStart.discoveryDistance,
+        pointsRef.current,
       );
-      enqueueJourneyActivity(() => JourneyActivity.end({ ...snapshot, finishedAt }));
+      enqueueJourneyActivity(() =>
+        JourneyActivity.end({ ...snapshot, finishedAt }),
+      );
     }
     if (active && walkOwner) {
-      pendingWalksRef.current = completeWalkJournal(walkOwner, pendingWalksRef.current, { ...active, finishedAt });
+      pendingWalksRef.current = completeWalkJournal(
+        walkOwner,
+        pendingWalksRef.current,
+        { ...active, finishedAt },
+      );
     }
     journeyFinishedAtRef.current = null;
     setJourneySaveError(null);
@@ -3101,7 +3483,12 @@ export default function App() {
         setAutomaticUpdatePending(walkOwner, true);
       }
       if (widgetStop) {
-        enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
+        enqueueJourneyActivity(() =>
+          JourneyActivity.acknowledgeStop({
+            ownerId: walkOwner,
+            walkId: widgetStop.walkId,
+          }),
+        );
         widgetStopRef.current = null;
       }
       await flushPendingWalks(walkOwner);
@@ -3115,7 +3502,7 @@ export default function App() {
         /* The existing debounced sync retries if this request fails. */
       }
       const completedWalkSynced = !pendingWalksRef.current.some(
-        walk => walk.id === completed.id,
+        (walk) => walk.id === completed.id,
       );
       if (completedWalkSynced && discoverySynced) {
         await refreshLiveLeaderboard(walkOwner);
@@ -3182,7 +3569,12 @@ export default function App() {
       }
     } else if (active && walkOwner) {
       if (widgetStop) {
-        enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({ ownerId: walkOwner, walkId: widgetStop.walkId }));
+        enqueueJourneyActivity(() =>
+          JourneyActivity.acknowledgeStop({
+            ownerId: walkOwner,
+            walkId: widgetStop.walkId,
+          }),
+        );
         widgetStopRef.current = null;
       }
     }
@@ -3198,7 +3590,14 @@ export default function App() {
     const liveWalk = activeWalkRef.current;
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && liveWalk && liveStart) {
-      const snapshot = { ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current), navigation: null };
+      const snapshot = {
+        ...journeyActivitySnapshot(
+          liveWalk,
+          liveStart.discoveryDistance,
+          pointsRef.current,
+        ),
+        navigation: null,
+      };
       enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
     }
     simulationRouteRef.current = null;
@@ -3217,9 +3616,16 @@ export default function App() {
 
   useEffect(() => {
     if (!arrival) return;
-    const timer = window.setTimeout(() => {
-      if ((simulationRouteRef.current ?? plannedJourneyRouteRef.current) === arrival.route) clearPlannedRoute();
-    }, Math.max(0, arrival.deadline - Date.now()));
+    const timer = window.setTimeout(
+      () => {
+        if (
+          (simulationRouteRef.current ?? plannedJourneyRouteRef.current) ===
+          arrival.route
+        )
+          clearPlannedRoute();
+      },
+      Math.max(0, arrival.deadline - Date.now()),
+    );
     return () => window.clearTimeout(timer);
   }, [arrival, clearPlannedRoute]);
 
@@ -3229,8 +3635,15 @@ export default function App() {
     void finishActiveWalk()
       .catch((error) => {
         console.error("Could not finalize recorded walk", { error });
-        if (activeWalkRef.current && trackingUserRef.current === accountUserIdRef.current) {
-          setJourneySaveError(error instanceof Error ? error.message : "Could not save this journey. Keep Hecate open and retry saving.");
+        if (
+          activeWalkRef.current &&
+          trackingUserRef.current === accountUserIdRef.current
+        ) {
+          setJourneySaveError(
+            error instanceof Error
+              ? error.message
+              : "Could not save this journey. Keep Hecate open and retry saving.",
+          );
         }
       })
       .finally(() => setWalkFinalizing(false));
@@ -3243,7 +3656,9 @@ export default function App() {
       throw new Error("Wait for your discovery history to finish loading.");
     }
     if (trackingStateRef.current !== "idle" || activeWalkRef.current) {
-      throw new Error("Stop and save the current discovery before importing a GPX file.");
+      throw new Error(
+        "Stop and save the current discovery before importing a GPX file.",
+      );
     }
     if (file.size > 25 * 1024 * 1024) {
       throw new Error("The GPX file is larger than the 25 MB import limit.");
@@ -3363,7 +3778,8 @@ export default function App() {
     category: ActivityNotificationCategory,
     enabled: boolean,
   ): Promise<string | null> => {
-    if (!accountUserId) return "Sign in before enabling activity notifications.";
+    if (!accountUserId)
+      return "Sign in before enabling activity notifications.";
     const preferencesHaveBeenSaved =
       hasSavedActivityNotificationPreferences(accountUserId);
     if (enabled && nativeApp) {
@@ -3388,11 +3804,18 @@ export default function App() {
 
   const updateDiscoveredAreaReminders = (enabled: boolean): string | null => {
     if (!accountUserId) return "Sign in before changing journey reminders.";
-    const next = { ...activityNotificationPreferences, discoveredAreaReminders: enabled };
+    const next = {
+      ...activityNotificationPreferences,
+      discoveredAreaReminders: enabled,
+    };
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save discovered-area reminder preference", { accountUserId, enabled, error });
+      console.error("Could not save discovered-area reminder preference", {
+        accountUserId,
+        enabled,
+        error,
+      });
       return "Could not save your reminder preference. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -3409,7 +3832,12 @@ export default function App() {
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save reminder time", { accountUserId, field, time, error });
+      console.error("Could not save reminder time", {
+        accountUserId,
+        field,
+        time,
+        error,
+      });
       return "Could not save your reminder time. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -3421,14 +3849,22 @@ export default function App() {
     minutes: number,
   ): string | null => {
     if (!accountUserId) return "Sign in before changing reminder durations.";
-    const options = field === "discoveryReminderMinutes"
-      ? DISCOVERY_REMINDER_DURATIONS : INACTIVITY_REMINDER_DURATIONS;
-    if (!options.includes(minutes)) return "Choose one of the available reminder durations.";
+    const options =
+      field === "discoveryReminderMinutes"
+        ? DISCOVERY_REMINDER_DURATIONS
+        : INACTIVITY_REMINDER_DURATIONS;
+    if (!options.includes(minutes))
+      return "Choose one of the available reminder durations.";
     const next = { ...activityNotificationPreferences, [field]: minutes };
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save reminder duration", { accountUserId, field, minutes, error });
+      console.error("Could not save reminder duration", {
+        accountUserId,
+        field,
+        minutes,
+        error,
+      });
       return "Could not save your reminder duration. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -3457,9 +3893,12 @@ export default function App() {
         : defaultActivityNotificationPreferences()),
       streakReminderTime: activityNotificationPreferences.streakReminderTime,
       dailyReminderTime: activityNotificationPreferences.dailyReminderTime,
-      discoveryReminderMinutes: activityNotificationPreferences.discoveryReminderMinutes,
-      inactivityReminderMinutes: activityNotificationPreferences.inactivityReminderMinutes,
-      discoveredAreaReminders: activityNotificationPreferences.discoveredAreaReminders,
+      discoveryReminderMinutes:
+        activityNotificationPreferences.discoveryReminderMinutes,
+      inactivityReminderMinutes:
+        activityNotificationPreferences.inactivityReminderMinutes,
+      discoveredAreaReminders:
+        activityNotificationPreferences.discoveredAreaReminders,
     };
     const remindersActive = enabled && discoveryLocationAllowed;
     setReminderEnabled(remindersActive);
@@ -3474,10 +3913,7 @@ export default function App() {
       reminderRef.current.pausedUntil,
     );
     setActivityNotificationPreferences(nextActivityPreferences);
-    saveActivityNotificationPreferences(
-      accountUserId,
-      nextActivityPreferences,
-    );
+    saveActivityNotificationPreferences(accountUserId, nextActivityPreferences);
     return null;
   };
 
@@ -3506,11 +3942,13 @@ export default function App() {
       }
       await registerNotificationActions(LocalNotifications);
       await LocalNotifications.schedule({
-        notifications: [{
-          ...notification,
-          isExactNotification: false,
-          schedule: { at: new Date(Date.now() + 5_000) },
-        }],
+        notifications: [
+          {
+            ...notification,
+            isExactNotification: false,
+            schedule: { at: new Date(Date.now() + 5_000) },
+          },
+        ],
       });
       setActivityNotificationTestMessage(
         `${notificationName} will appear in 5 seconds.`,
@@ -3532,10 +3970,14 @@ export default function App() {
         id: MORNING_INVITE_TEST_NOTIFICATION_ID,
         title: "Heading out today?",
         body: morningInviteMessage(
-          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
-            ? discoveryProgress.travelledDistance : null,
-          citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current
-            ? accountCityProgress : null,
+          citiesLoadedUserId === accountUserId &&
+            discoveryHistoryReadyRef.current
+            ? discoveryProgress.travelledDistance
+            : null,
+          citiesLoadedUserId === accountUserId &&
+            discoveryHistoryReadyRef.current
+            ? accountCityProgress
+            : null,
         ),
         schedule: { at: new Date(Date.now() + 5_000) },
         actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
@@ -3550,7 +3992,9 @@ export default function App() {
       {
         id: REMINDER_TEST_NOTIFICATION_ID,
         title: "Ready to record your journey?",
-        body: reminderMessage(activityNotificationPreferences.discoveryReminderMinutes),
+        body: reminderMessage(
+          activityNotificationPreferences.discoveryReminderMinutes,
+        ),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "test-unmapped", userId: accountUserId },
       },
@@ -3600,17 +4044,27 @@ export default function App() {
       [2.1644, 41.3872],
     ];
     const points: Coordinate[] = route.map(([lng, lat], index) => ({
-      lng, lat, walkId, recordedAt: startedAt + index * 3 * 60_000,
+      lng,
+      lat,
+      walkId,
+      recordedAt: startedAt + index * 3 * 60_000,
     }));
     const previousPoints = points.slice(0, 3);
-    const previousCells = new Set(discoveryCellsFromPoints(previousPoints).map(discoveryCellKey));
+    const previousCells = new Set(
+      discoveryCellsFromPoints(previousPoints).map(discoveryCellKey),
+    );
     setExplorationSummary({
       walkId,
       points,
-      cells: discoveryCellsFromPoints(points).filter((cell) => !previousCells.has(discoveryCellKey(cell))),
+      cells: discoveryCellsFromPoints(points).filter(
+        (cell) => !previousCells.has(discoveryCellKey(cell)),
+      ),
       startedAt,
       finishedAt,
-      newGroundKm: Math.max(0, discoveredDistanceKm(points) - discoveredDistanceKm(previousPoints)),
+      newGroundKm: Math.max(
+        0,
+        discoveredDistanceKm(points) - discoveredDistanceKm(previousPoints),
+      ),
       travelledKm: routeDistanceKm(points),
       cityName: "Barcelona",
       cityPercentageAdded: 0.03,
@@ -3651,10 +4105,15 @@ export default function App() {
   const notifyJourneySpeedStop = (walkId: string): void => {
     if (!nativeApp || !accountUserId) return;
     void sendJourneySpeedStopNotification(
-      LocalNotifications, accountUserId, walkId,
+      LocalNotifications,
+      accountUserId,
+      walkId,
       () => accountUserIdRef.current === accountUserId,
     ).catch((error) => {
-      console.error("Could not notify user about journey speed stop", { walkId, error });
+      console.error("Could not notify user about journey speed stop", {
+        walkId,
+        error,
+      });
     });
   };
 
@@ -3712,7 +4171,10 @@ export default function App() {
       finishedAt: activeWalkRef.current.startedAt,
     });
     setJourneyStopMessage(null);
-    const tracker = createJourneyRecordingTracker(createLocationTracker(walkId), progressCities);
+    const tracker = createJourneyRecordingTracker(
+      createLocationTracker(walkId),
+      progressCities,
+    );
     trackerRef.current = tracker;
     // The journey exists locally before the native watcher finishes starting,
     // so reflect the active session immediately and roll back on failure.
@@ -3722,13 +4184,16 @@ export default function App() {
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
-        const journeyStopped = error.code === "journey-stopped" || error.code === "speed-exceeded";
+        const journeyStopped =
+          error.code === "journey-stopped" || error.code === "speed-exceeded";
         setJourneyStopMessage(journeyStopped ? error.message : null);
         if (error.code === "speed-exceeded") notifyJourneySpeedStop(walkId);
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
         void Promise.resolve(tracker.stop()).catch((stopError) => {
-          console.error("Could not stop journey location tracking", { error: stopError });
+          console.error("Could not stop journey location tracking", {
+            error: stopError,
+          });
         });
         trackerRef.current = null;
         finalizeRecordedWalk();
@@ -3736,7 +4201,11 @@ export default function App() {
           error.code === "permission-denied" ? "denied" : "idle",
         );
         setTracking(
-          error.code === "permission-denied" ? "denied" : journeyStopped ? "idle" : "unavailable",
+          error.code === "permission-denied"
+            ? "denied"
+            : journeyStopped
+              ? "idle"
+              : "unavailable",
         );
       });
       if (trackerFailed || trackerRef.current !== tracker) return;
@@ -3758,11 +4227,21 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!requestedJourneyStopId || !authReady || discoveryLoading ||
-        walkFinalizing || tracking === "requesting") return;
+    if (
+      !requestedJourneyStopId ||
+      !authReady ||
+      discoveryLoading ||
+      walkFinalizing ||
+      tracking === "requesting"
+    )
+      return;
     const walk = activeWalkRef.current;
-    if (walk && walk.id === requestedJourneyStopId &&
-        trackingUserRef.current === accountUserId && tracking === "tracking") {
+    if (
+      walk &&
+      walk.id === requestedJourneyStopId &&
+      trackingUserRef.current === accountUserId &&
+      tracking === "tracking"
+    ) {
       setRequestedJourneyStopId(null);
       setSyncOpen(false);
       void toggleTracking();
@@ -3770,11 +4249,28 @@ export default function App() {
     }
     if (!walk || walk.id !== requestedJourneyStopId)
       setRequestedJourneyStopId(null);
-  }, [requestedJourneyStopId, accountUserId, authReady, discoveryLoading, tracking, walkFinalizing]);
+  }, [
+    requestedJourneyStopId,
+    accountUserId,
+    authReady,
+    discoveryLoading,
+    tracking,
+    walkFinalizing,
+  ]);
 
   useEffect(() => {
     const request = requestedJourneyControl;
-    if (!request || !authReady || !documentVisible || discoveryLoading || walkFinalizing || journeyControlBusy || tracking === "requesting" || handledJourneyControlRef.current?.id === request.id) return;
+    if (
+      !request ||
+      !authReady ||
+      !documentVisible ||
+      discoveryLoading ||
+      walkFinalizing ||
+      journeyControlBusy ||
+      tracking === "requesting" ||
+      handledJourneyControlRef.current?.id === request.id
+    )
+      return;
     handledJourneyControlRef.current = request;
     setJourneyControlBusy(true);
     const ownerId = accountUserId;
@@ -3782,23 +4278,46 @@ export default function App() {
     const perform = async (): Promise<void> => {
       try {
         await JourneyActivity.acknowledgeControlRequest({ id: request.id });
-        if (!controlMountedRef.current || accountUserIdRef.current !== ownerId) return;
+        if (!controlMountedRef.current || accountUserIdRef.current !== ownerId)
+          return;
         assertFreshJourneyControlRequest(request, Date.now());
-        if (trackingStateRef.current !== expectedTracking) throw new Error("Your journey changed while Hecate was opening. Tap the control again.");
+        if (trackingStateRef.current !== expectedTracking)
+          throw new Error(
+            "Your journey changed while Hecate was opening. Tap the control again.",
+          );
         setSyncOpen(false);
         await toggleTracking();
       } catch (error) {
-        console.error("Could not perform iOS journey control", { requestId: request.id, error });
-        if (controlMountedRef.current) setJourneyStopMessage(error instanceof Error ? error.message : "Could not start or stop the journey from the iOS control.");
+        console.error("Could not perform iOS journey control", {
+          requestId: request.id,
+          error,
+        });
+        if (controlMountedRef.current)
+          setJourneyStopMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not start or stop the journey from the iOS control.",
+          );
       } finally {
         if (controlMountedRef.current) {
-          setRequestedJourneyControl((current) => current?.id === request.id ? null : current);
+          setRequestedJourneyControl((current) =>
+            current?.id === request.id ? null : current,
+          );
           setJourneyControlBusy(false);
         }
       }
     };
     void perform();
-  }, [requestedJourneyControl, authReady, documentVisible, discoveryLoading, walkFinalizing, journeyControlBusy, tracking, accountUserId]);
+  }, [
+    requestedJourneyControl,
+    authReady,
+    documentVisible,
+    discoveryLoading,
+    walkFinalizing,
+    journeyControlBusy,
+    tracking,
+    accountUserId,
+  ]);
 
   useEffect(() => {
     const requestedUserId = pendingMorningWalkStartUserIdRef.current;
@@ -3839,12 +4358,18 @@ export default function App() {
     )
       return;
     const restoredWalkId = activeWalkRef.current.id;
-    const tracker = createJourneyRecordingTracker(createLocationTracker(restoredWalkId), progressCities);
+    const tracker = createJourneyRecordingTracker(
+      createLocationTracker(restoredWalkId),
+      progressCities,
+    );
     trackerRef.current = tracker;
     let trackerFailed = false;
     const restore = async (): Promise<void> => {
       if (Capacitor.isNativePlatform()) {
-        const { request } = await JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: restoredWalkId });
+        const { request } = await JourneyActivity.getStopRequest({
+          ownerId: accountUserId,
+          walkId: restoredWalkId,
+        });
         if (trackerRef.current !== tracker) return;
         if (request) {
           widgetStopRef.current = request;
@@ -3856,9 +4381,11 @@ export default function App() {
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
-        const journeyStopped = error.code === "journey-stopped" || error.code === "speed-exceeded";
+        const journeyStopped =
+          error.code === "journey-stopped" || error.code === "speed-exceeded";
         setJourneyStopMessage(journeyStopped ? error.message : null);
-        if (error.code === "speed-exceeded") notifyJourneySpeedStop(restoredWalkId);
+        if (error.code === "speed-exceeded")
+          notifyJourneySpeedStop(restoredWalkId);
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
         trackerRef.current = null;
@@ -3872,7 +4399,11 @@ export default function App() {
           error.code === "permission-denied" ? "denied" : "idle",
         );
         setTracking(
-          error.code === "permission-denied" ? "denied" : journeyStopped ? "idle" : "unavailable",
+          error.code === "permission-denied"
+            ? "denied"
+            : journeyStopped
+              ? "idle"
+              : "unavailable",
         );
       });
     };
@@ -3934,78 +4465,78 @@ export default function App() {
     card.style.transform = `translate3d(0, ${journeySheetOffsetPx(expanded, height)}px, 0)`;
   };
 
-  const settleJourneySheet = useCallback((
-    expanded: boolean,
-    fromHeight?: number,
-    durationMs = JOURNEY_SETTLE_DURATION_MS,
-  ) => {
-    const card = journeyCardRef.current;
-    if (!card) return;
-    const { collapsed, expanded: expandedHeight } = journeyBounds(card);
-    const targetHeight = expanded ? expandedHeight : collapsed;
-    const startHeight = fromHeight ?? journeyVisibleHeight(card);
-    const reducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
+  const settleJourneySheet = useCallback(
+    (
+      expanded: boolean,
+      fromHeight?: number,
+      durationMs = JOURNEY_SETTLE_DURATION_MS,
+    ) => {
+      const card = journeyCardRef.current;
+      if (!card) return;
+      const { collapsed, expanded: expandedHeight } = journeyBounds(card);
+      const targetHeight = expanded ? expandedHeight : collapsed;
+      const startHeight = fromHeight ?? journeyVisibleHeight(card);
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
 
-    if (journeySettleFrameRef.current !== null) {
-      cancelAnimationFrame(journeySettleFrameRef.current);
-      journeySettleFrameRef.current = null;
-    }
-    journeyAnimationRef.current?.cancel();
-    journeyAnimationRef.current = null;
-    const offsetForHeight = (height: number) =>
-      `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
-    const startTransform = offsetForHeight(startHeight);
-    const targetTransform = offsetForHeight(targetHeight);
-    const setVisualExpanded = (nextExpanded: boolean) => {
-      journeyExpandedRef.current = nextExpanded;
-      card.dataset.expanded = String(nextExpanded);
-    };
-    card.style.transform = startTransform;
+      if (journeySettleFrameRef.current !== null) {
+        cancelAnimationFrame(journeySettleFrameRef.current);
+        journeySettleFrameRef.current = null;
+      }
+      journeyAnimationRef.current?.cancel();
+      journeyAnimationRef.current = null;
+      const offsetForHeight = (height: number) =>
+        `translate3d(0, ${journeySheetOffsetPx(expandedHeight, height)}px, 0)`;
+      const startTransform = offsetForHeight(startHeight);
+      const targetTransform = offsetForHeight(targetHeight);
+      const setVisualExpanded = (nextExpanded: boolean) => {
+        journeyExpandedRef.current = nextExpanded;
+        card.dataset.expanded = String(nextExpanded);
+      };
+      card.style.transform = startTransform;
 
-    if (reducedMotion) {
-      setVisualExpanded(expanded);
-      setCitiesExpanded(expanded);
-      card.style.transform = targetTransform;
-      return;
-    }
-
-    // Change visual state without a React render. This keeps the MapLibre tree
-    // and drawer lists out of the animation's critical path, and removes the
-    // content divider immediately when closing begins.
-    setVisualExpanded(expanded);
-
-    journeySettleFrameRef.current = requestAnimationFrame(() => {
-      journeySettleFrameRef.current = null;
-      if (journeyCardRef.current !== card) return;
-      card.style.transform = targetTransform;
-      const animation = card.animate(
-        [
-          { transform: startTransform },
-          { transform: targetTransform },
-        ],
-        {
-          duration: durationMs,
-          easing: "cubic-bezier(0.32, 0.72, 0, 1)",
-          fill: "both",
-        },
-      );
-      journeyAnimationRef.current = animation;
-      animation.onfinish = () => {
-        if (journeyAnimationRef.current !== animation) return;
-        journeyAnimationRef.current = null;
-        card.style.transform = targetTransform;
-        animation.cancel();
+      if (reducedMotion) {
+        setVisualExpanded(expanded);
         setCitiesExpanded(expanded);
-      };
-      animation.oncancel = () => {
-        if (journeyAnimationRef.current === animation) {
+        card.style.transform = targetTransform;
+        return;
+      }
+
+      // Change visual state without a React render. This keeps the MapLibre tree
+      // and drawer lists out of the animation's critical path, and removes the
+      // content divider immediately when closing begins.
+      setVisualExpanded(expanded);
+
+      journeySettleFrameRef.current = requestAnimationFrame(() => {
+        journeySettleFrameRef.current = null;
+        if (journeyCardRef.current !== card) return;
+        card.style.transform = targetTransform;
+        const animation = card.animate(
+          [{ transform: startTransform }, { transform: targetTransform }],
+          {
+            duration: durationMs,
+            easing: "cubic-bezier(0.32, 0.72, 0, 1)",
+            fill: "both",
+          },
+        );
+        journeyAnimationRef.current = animation;
+        animation.onfinish = () => {
+          if (journeyAnimationRef.current !== animation) return;
           journeyAnimationRef.current = null;
-        }
-      };
-    });
-  }, []);
+          card.style.transform = targetTransform;
+          animation.cancel();
+          setCitiesExpanded(expanded);
+        };
+        animation.oncancel = () => {
+          if (journeyAnimationRef.current === animation) {
+            journeyAnimationRef.current = null;
+          }
+        };
+      });
+    },
+    [],
+  );
 
   const scrollToCityMilestones = useCallback((behavior: ScrollBehavior) => {
     const overview = journeyCardRef.current?.querySelector(
@@ -4028,9 +4559,8 @@ export default function App() {
   }, []);
 
   const openJourneyAtCityMilestones = useCallback(() => {
-    const scrollBehavior = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches
+    const scrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches
       ? "auto"
       : "smooth";
     pendingMilestonesScrollRef.current = true;
@@ -4048,9 +4578,8 @@ export default function App() {
 
   useEffect(() => {
     if (!citiesExpanded || !pendingMilestonesScrollRef.current) return;
-    const scrollBehavior = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches
+    const scrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)")
+      .matches
       ? "auto"
       : "smooth";
     if (journeyMilestonesScrollFrameRef.current !== null)
@@ -4214,94 +4743,97 @@ export default function App() {
     event.stopPropagation();
   };
 
-  const focusDiscoveredCity = useCallback((city: CityBoundary) => {
-    // Close even if an older account has no matching cell geometry to focus.
-    settleJourneySheet(false);
-    setViewedCity(city);
+  const focusDiscoveredCity = useCallback(
+    (city: CityBoundary) => {
+      // Close even if an older account has no matching cell geometry to focus.
+      settleJourneySheet(false);
+      setViewedCity(city);
 
-    const cityCells = cells.filter((cell) => {
-      const [lng, lat] = discoveryCellCenter(cell);
-      return isPointInCity({ lng, lat }, city);
-    });
+      const cityCells = cells.filter((cell) => {
+        const [lng, lat] = discoveryCellCenter(cell);
+        return isPointInCity({ lng, lat }, city);
+      });
 
-    const cityCenter = (() => {
-      if (cityCells.length) {
-        const coordinates = cityCells.map(discoveryCellCenter);
-        const longitudes = coordinates.map(([lng]) => lng);
-        const latitudes = coordinates.map(([, lat]) => lat);
-        return {
-          lng: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
-          lat: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
-        };
-      }
+      const cityCenter = (() => {
+        if (cityCells.length) {
+          const coordinates = cityCells.map(discoveryCellCenter);
+          const longitudes = coordinates.map(([lng]) => lng);
+          const latitudes = coordinates.map(([, lat]) => lat);
+          return {
+            lng: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
+            lat: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
+          };
+        }
 
-      const polygons =
-        city.geometry.type === "Polygon"
-          ? city.geometry.coordinates
-          : city.geometry.coordinates;
-      let west = Infinity;
-      let south = Infinity;
-      let east = -Infinity;
-      let north = -Infinity;
-      for (const polygon of polygons) {
-        for (const ring of polygon) {
-          for (const point of ring) {
-            const [lng, lat] = point as [number, number];
-            west = Math.min(west, lng);
-            south = Math.min(south, lat);
-            east = Math.max(east, lng);
-            north = Math.max(north, lat);
+        const polygons =
+          city.geometry.type === "Polygon"
+            ? city.geometry.coordinates
+            : city.geometry.coordinates;
+        let west = Infinity;
+        let south = Infinity;
+        let east = -Infinity;
+        let north = -Infinity;
+        for (const polygon of polygons) {
+          for (const ring of polygon) {
+            for (const point of ring) {
+              const [lng, lat] = point as [number, number];
+              west = Math.min(west, lng);
+              south = Math.min(south, lat);
+              east = Math.max(east, lng);
+              north = Math.max(north, lat);
+            }
           }
         }
+        if (
+          !Number.isFinite(west) ||
+          !Number.isFinite(east) ||
+          !Number.isFinite(south) ||
+          !Number.isFinite(north)
+        ) {
+          return { lng: 0, lat: 0 };
+        }
+        return { lng: (west + east) / 2, lat: (south + north) / 2 };
+      })();
+
+      setViewCenter(cityCenter);
+
+      if (!cityCells.length) {
+        mapRef.current?.flyTo({
+          center: [cityCenter.lng, cityCenter.lat],
+          zoom: 14.2,
+          duration: 900,
+          essential: true,
+        });
+        return;
       }
-      if (
-        !Number.isFinite(west) ||
-        !Number.isFinite(east) ||
-        !Number.isFinite(south) ||
-        !Number.isFinite(north)
-      ) {
-        return { lng: 0, lat: 0 };
+
+      const coordinates = cityCells.map(discoveryCellCenter);
+      if (coordinates.length === 1) {
+        mapRef.current?.flyTo({
+          center: coordinates[0],
+          zoom: 14.2,
+          duration: 900,
+          essential: true,
+        });
+        return;
       }
-      return { lng: (west + east) / 2, lat: (south + north) / 2 };
-    })();
-
-    setViewCenter(cityCenter);
-
-    if (!cityCells.length) {
-      mapRef.current?.flyTo({
-        center: [cityCenter.lng, cityCenter.lat],
-        zoom: 14.2,
-        duration: 900,
-        essential: true,
-      });
-      return;
-    }
-
-    const coordinates = cityCells.map(discoveryCellCenter);
-    if (coordinates.length === 1) {
-      mapRef.current?.flyTo({
-        center: coordinates[0],
-        zoom: 14.2,
-        duration: 900,
-        essential: true,
-      });
-      return;
-    }
-    const longitudes = coordinates.map(([lng]) => lng);
-    const latitudes = coordinates.map(([, lat]) => lat);
-    mapRef.current?.fitBounds(
-      [
-        [Math.min(...longitudes), Math.min(...latitudes)],
-        [Math.max(...longitudes), Math.max(...latitudes)],
-      ],
-      {
-        padding: { top: 110, right: 44, bottom: 150, left: 44 },
-        maxZoom: 14.2,
-        duration: 900,
-        essential: true,
-      },
-    );
-  }, [cells, settleJourneySheet]);
+      const longitudes = coordinates.map(([lng]) => lng);
+      const latitudes = coordinates.map(([, lat]) => lat);
+      mapRef.current?.fitBounds(
+        [
+          [Math.min(...longitudes), Math.min(...latitudes)],
+          [Math.max(...longitudes), Math.max(...latitudes)],
+        ],
+        {
+          padding: { top: 110, right: 44, bottom: 150, left: 44 },
+          maxZoom: 14.2,
+          duration: 900,
+          essential: true,
+        },
+      );
+    },
+    [cells, settleJourneySheet],
+  );
 
   const toggleMapPerspective = () => {
     const map = mapRef.current;
@@ -4343,10 +4875,10 @@ export default function App() {
     !authReady || Boolean(accountUserId && discoveryLoading);
   const showFirstDiscoveryHint = Boolean(
     accountUserId &&
-      !discoveryLoading &&
-      points.length === 0 &&
-      cells.length === 0 &&
-      tracking === "idle",
+    !discoveryLoading &&
+    points.length === 0 &&
+    cells.length === 0 &&
+    tracking === "idle",
   );
 
   useEffect(() => {
@@ -4367,37 +4899,50 @@ export default function App() {
     void Promise.all([
       client.auth.getUser(),
       loadFavoritePlacesFromDatabase(client, accountUserId),
-    ]).then(async ([{ data, error }, databasePlaces]) => {
-      if (cancelled || error || data.user?.id !== accountUserId) return;
-      let remotePlaces = databasePlaces;
-      if (!remotePlaces.length) {
-        const metadataPlaces = favoritePlacesFromUnknown(
-          data.user.user_metadata?.favorite_places,
-        );
-        const migrated = [...metadataPlaces, ...localPlaces].reduce<FavoritePlace[]>(
-          (places, place) => {
-            const previous = places.find((candidate) => candidate.id === place.id);
+    ])
+      .then(async ([{ data, error }, databasePlaces]) => {
+        if (cancelled || error || data.user?.id !== accountUserId) return;
+        let remotePlaces = databasePlaces;
+        if (!remotePlaces.length) {
+          const metadataPlaces = favoritePlacesFromUnknown(
+            data.user.user_metadata?.favorite_places,
+          );
+          const migrated = [...metadataPlaces, ...localPlaces].reduce<
+            FavoritePlace[]
+          >((places, place) => {
+            const previous = places.find(
+              (candidate) => candidate.id === place.id,
+            );
             if (!previous) return [...places, place];
             return previous.updatedAt >= place.updatedAt
               ? places
-              : [...places.filter((candidate) => candidate.id !== place.id), place];
-          },
-          [],
+              : [
+                  ...places.filter((candidate) => candidate.id !== place.id),
+                  place,
+                ];
+          }, []);
+          if (migrated.length) {
+            await upsertFavoritePlacesInDatabase(
+              client,
+              accountUserId,
+              migrated,
+            );
+            remotePlaces = migrated;
+          }
+          if (metadataPlaces.length) {
+            await client.auth.updateUser({ data: { favorite_places: null } });
+          }
+        }
+        if (cancelled) return;
+        saveFavoritePlaces(accountUserId, remotePlaces);
+        setFavoritePlaces(remotePlaces);
+      })
+      .catch((error) => {
+        console.warn(
+          "Saved places could not be loaded from the database",
+          error,
         );
-        if (migrated.length) {
-          await upsertFavoritePlacesInDatabase(client, accountUserId, migrated);
-          remotePlaces = migrated;
-        }
-        if (metadataPlaces.length) {
-          await client.auth.updateUser({ data: { favorite_places: null } });
-        }
-      }
-      if (cancelled) return;
-      saveFavoritePlaces(accountUserId, remotePlaces);
-      setFavoritePlaces(remotePlaces);
-    }).catch((error) => {
-      console.warn("Saved places could not be loaded from the database", error);
-    });
+      });
     return () => {
       cancelled = true;
     };
@@ -4414,10 +4959,12 @@ export default function App() {
       Keyboard.addListener("keyboardWillHide", () => {
         if (!disposed) setKeyboardInset(0);
       }),
-    ]).then((listeners) => {
-      if (disposed) listeners.forEach((listener) => void listener.remove());
-      else handles.push(...listeners);
-    }).catch(() => undefined);
+    ])
+      .then((listeners) => {
+        if (disposed) listeners.forEach((listener) => void listener.remove());
+        else handles.push(...listeners);
+      })
+      .catch(() => undefined);
     return () => {
       disposed = true;
       handles.forEach((listener) => void listener.remove());
@@ -4427,11 +4974,15 @@ export default function App() {
   const persistFavoritePlaces = (nextPlaces: FavoritePlace[]) => {
     if (!accountUserId) return;
     const changedPlaces = nextPlaces.filter((place) => {
-      const previous = favoritePlaces.find((candidate) => candidate.id === place.id);
+      const previous = favoritePlaces.find(
+        (candidate) => candidate.id === place.id,
+      );
       return !previous || previous.updatedAt !== place.updatedAt;
     });
     const removedIds = favoritePlaces
-      .filter((place) => !nextPlaces.some((candidate) => candidate.id === place.id))
+      .filter(
+        (place) => !nextPlaces.some((candidate) => candidate.id === place.id),
+      )
       .map((place) => place.id);
     setFavoritePlaces(nextPlaces);
     saveFavoritePlaces(accountUserId, nextPlaces);
@@ -4467,7 +5018,10 @@ export default function App() {
     setFavoriteDraft(null);
   };
 
-  const openFavoriteDirections = async (provider: "apple" | "google", favorite: FavoritePlace) => {
+  const openFavoriteDirections = async (
+    provider: "apple" | "google",
+    favorite: FavoritePlace,
+  ) => {
     const url = favoriteDirectionsUrl(provider, favorite);
     if (nativeApp) {
       try {
@@ -4519,24 +5073,27 @@ export default function App() {
     setSyncOpen(false);
   };
 
-  const openFavoritePlace = useCallback((favorite: FavoritePlace) => {
-    setSyncOpen(false);
-    setFavoritePlacementActive(false);
-    setFavoriteEditorMode("view");
-    if (journeyExpandedRef.current) settleJourneySheet(false);
-    setSelectedFavoritePlaceId(favorite.id);
-    setFavoriteDraft({ ...favorite });
-    const map = mapRef.current;
-    if (!map) return;
-    map.flyTo({
-      center: [favorite.lng, favorite.lat],
-      zoom: Math.max(map.getZoom(), 15.5),
-      pitch: 0,
-      bearing: 0,
-      duration: 650,
-      essential: true,
-    });
-  }, [settleJourneySheet]);
+  const openFavoritePlace = useCallback(
+    (favorite: FavoritePlace) => {
+      setSyncOpen(false);
+      setFavoritePlacementActive(false);
+      setFavoriteEditorMode("view");
+      if (journeyExpandedRef.current) settleJourneySheet(false);
+      setSelectedFavoritePlaceId(favorite.id);
+      setFavoriteDraft({ ...favorite });
+      const map = mapRef.current;
+      if (!map) return;
+      map.flyTo({
+        center: [favorite.lng, favorite.lat],
+        zoom: Math.max(map.getZoom(), 15.5),
+        pitch: 0,
+        bearing: 0,
+        duration: 650,
+        essential: true,
+      });
+    },
+    [settleJourneySheet],
+  );
 
   const showRouteOnMap = useCallback(
     (routePoints: Coordinate[]) => {
@@ -4580,15 +5137,15 @@ export default function App() {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
     if (journeyExpandedRef.current)
-      settleJourneySheet(
-        false,
-        undefined,
-        JOURNEY_MAP_TAP_CLOSE_DURATION_MS,
-      );
+      settleJourneySheet(false, undefined, JOURNEY_MAP_TAP_CLOSE_DURATION_MS);
   }, [settleJourneySheet]);
 
   const handleFavoritePlaceRequest = useCallback(
-    ({ lat, lng, suggestedName }: {
+    ({
+      lat,
+      lng,
+      suggestedName,
+    }: {
       lat: number;
       lng: number;
       suggestedName?: string;
@@ -4601,15 +5158,33 @@ export default function App() {
   );
 
   return (
-    <main className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`} style={routePlannerOpen ? { "--route-panel-height": `${routePanelHeight}px`, "--route-panel-bottom": keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined } as React.CSSProperties : undefined} aria-busy={accountDataLoading}>
+    <main
+      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`}
+      style={
+        routePlannerOpen
+          ? ({
+              "--route-panel-height": `${routePanelHeight}px`,
+              "--route-panel-bottom":
+                keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined,
+            } as React.CSSProperties)
+          : undefined
+      }
+      aria-busy={accountDataLoading}
+    >
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
         mode={mode}
         points={points}
         cells={cells}
         highlightedPoints={highlightedRoutePoints}
-        currentPoint={simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)}
-        navigationFollowing={Boolean((simulationRoute || (tracking === "tracking" && plannedJourneyRouteRef.current)) && followCameraEnabledRef.current)}
+        currentPoint={
+          simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
+        }
+        navigationFollowing={Boolean(
+          (simulationRoute ||
+            (tracking === "tracking" && plannedJourneyRouteRef.current)) &&
+          followCameraEnabledRef.current,
+        )}
         onUserMarkerChange={onUserMarkerChange}
         locationState={
           tracking === "tracking"
@@ -4619,14 +5194,30 @@ export default function App() {
               : "idle"
         }
         onMapClick={handleMapClick}
-        onDestinationSelect={routePlannerOpen ? (point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); } : undefined}
+        onDestinationSelect={
+          routePlannerOpen
+            ? (point) => {
+                setRouteDestination(point);
+                setSelectedFavoritePlaceId(null);
+              }
+            : undefined
+        }
         favoritePlaces={favoritePlaces}
         selectedFavoritePlaceId={selectedFavoritePlaceId}
         favoritePlacementActive={favoritePlacementActive}
         onFavoritePlaceRequest={handleFavoritePlaceRequest}
-        onFavoriteSelect={routePlannerOpen
-          ? (favorite) => { setRouteDestination({ lng: favorite.lng, lat: favorite.lat, name: favorite.name }); setSelectedFavoritePlaceId(favorite.id); }
-          : openFavoritePlace}
+        onFavoriteSelect={
+          routePlannerOpen
+            ? (favorite) => {
+                setRouteDestination({
+                  lng: favorite.lng,
+                  lat: favorite.lat,
+                  name: favorite.name,
+                });
+                setSelectedFavoritePlaceId(favorite.id);
+              }
+            : openFavoritePlace
+        }
         onZoomChange={onZoomChange}
         onViewChange={onViewChange}
         onUserNavigation={suspendFollowCamera}
@@ -4638,7 +5229,11 @@ export default function App() {
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
           keyboardInset={keyboardInset}
-          previewEnabled={devToolsEnabled && tracking !== "tracking" && tracking !== "requesting"}
+          previewEnabled={
+            devToolsEnabled &&
+            tracking !== "tracking" &&
+            tracking !== "requesting"
+          }
           onPreview={(route) => {
             stopFollowCameraAnimation();
             simulationRouteRef.current = route;
@@ -4648,13 +5243,26 @@ export default function App() {
             focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
           }}
           userId={accountUserId}
-          onDestinationSelect={(point) => { setRouteDestination(point); setSelectedFavoritePlaceId(null); }}
+          onDestinationSelect={(point) => {
+            setRouteDestination(point);
+            setSelectedFavoritePlaceId(null);
+          }}
           destination={routeDestination}
           searchCity={activeCity}
           origin={locationIsCurrent && currentPoint ? currentPoint : null}
-          navigationPoint={simulationPoint ?? (plannedJourneyRouteRef.current && tracking === "tracking" ? currentPoint ?? null : null)}
+          navigationPoint={
+            simulationPoint ??
+            (plannedJourneyRouteRef.current && tracking === "tracking"
+              ? (currentPoint ?? null)
+              : null)
+          }
           cells={cells}
-          ready={!accountDataLoading && (!accountUserId || (citiesLoadedUserId === accountUserId && discoveryHistoryReadyRef.current))}
+          ready={
+            !accountDataLoading &&
+            (!accountUserId ||
+              (citiesLoadedUserId === accountUserId &&
+                discoveryHistoryReadyRef.current))
+          }
           tracking={tracking === "tracking"}
           startingJourney={tracking === "requesting"}
           mapRef={mapRef}
@@ -4674,13 +5282,23 @@ export default function App() {
             setRoutePlannerOpen(false);
             if (trackingStateRef.current === "tracking") {
               const point = latestPassivePointRef.current ?? currentPoint;
-              if (!point) throw new Error("Find your current location before starting navigation.");
+              if (!point)
+                throw new Error(
+                  "Find your current location before starting navigation.",
+                );
               const cue = updateNavigationCue(route, point);
               focusOnUserPoint(point);
               const walk = activeWalkRef.current;
               const started = explorationStartRef.current;
               if (Capacitor.isNativePlatform() && walk && started) {
-                const snapshot = { ...journeyActivitySnapshot(walk, started.discoveryDistance, pointsRef.current), navigation: cue };
+                const snapshot = {
+                  ...journeyActivitySnapshot(
+                    walk,
+                    started.discoveryDistance,
+                    pointsRef.current,
+                  ),
+                  navigation: cue,
+                };
                 enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
               }
             } else {
@@ -4689,19 +5307,31 @@ export default function App() {
           }}
         />
       )}
-      {simulationRoute && <NavigationSimulation panelRef={simulationPanelRef} route={simulationRoute} onFix={previewNavigationFix} onStop={() => {
-        simulationRouteRef.current = null;
-        setSimulationRoute(null);
-        setSimulationPoint(null);
-        clearPlannedRoute();
-        if (currentPoint) focusOnUserPoint(currentPoint);
-      }} />}
-      {turnCue && !routePlannerOpen && !citiesExpanded && (simulationRoute || tracking === "tracking") && <NavigationTurn cue={turnCue} anchor={simulationRoute ? simulationPanelRef : journeyCardRef} />}
+      {simulationRoute && (
+        <NavigationSimulation
+          panelRef={simulationPanelRef}
+          route={simulationRoute}
+          onFix={previewNavigationFix}
+          onStop={() => {
+            simulationRouteRef.current = null;
+            setSimulationRoute(null);
+            setSimulationPoint(null);
+            clearPlannedRoute();
+            if (currentPoint) focusOnUserPoint(currentPoint);
+          }}
+        />
+      )}
+      {turnCue &&
+        !routePlannerOpen &&
+        !citiesExpanded &&
+        (simulationRoute || tracking === "tracking") && (
+          <NavigationTurn
+            cue={turnCue}
+            anchor={simulationRoute ? simulationPanelRef : journeyCardRef}
+          />
+        )}
       {devToolsEnabled && devToolsVisible && (
-        <aside
-          className="dev-tools"
-          aria-label="Development test tools"
-        >
+        <aside className="dev-tools" aria-label="Development test tools">
           <div className="dev-tools__heading">
             <strong>Dev tools</strong>
             <button
@@ -4837,7 +5467,10 @@ export default function App() {
         </div>
       </header>
 
-      {!accountUserId && !isCityScale && !accountDataLoading && !routePlannerOpen ? (
+      {!accountUserId &&
+      !isCityScale &&
+      !accountDataLoading &&
+      !routePlannerOpen ? (
         <section className="guest-intro" aria-labelledby="guest-intro-title">
           <div className="eyebrow">Discover your world</div>
           <h1 id="guest-intro-title">Turn every walk into your map.</h1>
@@ -4876,7 +5509,10 @@ export default function App() {
       {favoritePlacementActive && (
         <div className="favorite-placement-hint" role="status">
           Tap the place you want to remember
-          <button type="button" onClick={() => setFavoritePlacementActive(false)}>
+          <button
+            type="button"
+            onClick={() => setFavoritePlacementActive(false)}
+          >
             Cancel
           </button>
         </div>
@@ -4889,7 +5525,11 @@ export default function App() {
           aria-label="Discovery reminder"
         >
           <strong>Start recording your journey?</strong>
-          <p>{reminderMessage(activityNotificationPreferences.discoveryReminderMinutes)}</p>
+          <p>
+            {reminderMessage(
+              activityNotificationPreferences.discoveryReminderMinutes,
+            )}
+          </p>
           <div>
             <button
               type="button"
@@ -4977,7 +5617,9 @@ export default function App() {
             onClick={() => {
               void openLocationSettings().catch((error: Error) => {
                 console.warn("Could not open location settings", { error });
-                setLocationSettingsError("Could not open Settings. Enable location for Hecate in device Settings.");
+                setLocationSettingsError(
+                  "Could not open Settings. Enable location for Hecate in device Settings.",
+                );
                 setLocationPermissionToastVisible(true);
               });
             }}
@@ -4989,7 +5631,11 @@ export default function App() {
           </button>
         )}
 
-      <nav ref={mapActionsRef} className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}${routePlannerOpen && compactMapActions ? " map-actions--compact" : ""}`} aria-label="Map controls">
+      <nav
+        ref={mapActionsRef}
+        className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}${routePlannerOpen && compactMapActions ? " map-actions--compact" : ""}`}
+        aria-label="Map controls"
+      >
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}
@@ -5019,7 +5665,11 @@ export default function App() {
               setFavoritePlacementActive((active) => !active);
               if (journeyExpandedRef.current) settleJourneySheet(false);
             }}
-            aria-label={favoritePlacementActive ? "Cancel adding a saved place" : "Save a place"}
+            aria-label={
+              favoritePlacementActive
+                ? "Cancel adding a saved place"
+                : "Save a place"
+            }
             aria-pressed={favoritePlacementActive}
             title="Save a place"
           >
@@ -5032,7 +5682,9 @@ export default function App() {
               ? " location-control--requesting"
               : ""
           }`}
-          onClick={() => simulationPoint ? focusOnUserPoint(simulationPoint) : void locate()}
+          onClick={() =>
+            simulationPoint ? focusOnUserPoint(simulationPoint) : void locate()
+          }
           aria-label={
             currentPoint ? "Center on my location" : "Find my location"
           }
@@ -5046,9 +5698,7 @@ export default function App() {
               currentMode === "discover" ? "map" : "discover",
             )
           }
-          aria-label={
-            mode === "discover" ? "Turn fog off" : "Turn fog on"
-          }
+          aria-label={mode === "discover" ? "Turn fog off" : "Turn fog on"}
           aria-pressed={mode === "discover"}
           title={mode === "discover" ? "Turn fog off" : "Turn fog on"}
         >
@@ -5075,7 +5725,9 @@ export default function App() {
           key={`${favoriteDraft.id}:${favoriteEditorMode}`}
           favorite={favoriteDraft}
           initialMode={favoriteEditorMode}
-          existing={favoritePlaces.some((place) => place.id === favoriteDraft.id)}
+          existing={favoritePlaces.some(
+            (place) => place.id === favoriteDraft.id,
+          )}
           keyboardInset={keyboardInset}
           onClose={() => {
             setFavoriteDraft(null);
@@ -5090,14 +5742,17 @@ export default function App() {
             setFavoritePlacementActive(false);
             setHighlightedRoutePoints([]);
             setSelectedFavoritePlaceId(favorite.id);
-            setRouteDestination({ lng: favorite.lng, lat: favorite.lat, name: favorite.name });
+            setRouteDestination({
+              lng: favorite.lng,
+              lat: favorite.lat,
+              name: favorite.name,
+            });
             setRoutePlannerOpen(true);
             suspendFollowCamera();
             if (journeyExpandedRef.current) settleJourneySheet(false);
           }}
         />
       )}
-
 
       {isCityScale && !routePlannerOpen && !simulationRoute && (
         <section
@@ -5137,11 +5792,16 @@ export default function App() {
                       <span>this walk</span>
                     </div>
                     <div>
-                      <JourneyCounterValue display={displayedNewGroundCounter} />
+                      <JourneyCounterValue
+                        display={displayedNewGroundCounter}
+                      />
                       <span>new area</span>
                     </div>
                     <div>
-                      <strong className="active-journey-value" aria-label={displayedTimeCounter.label}>
+                      <strong
+                        className="active-journey-value"
+                        aria-label={displayedTimeCounter.label}
+                      >
                         {displayedTimeCounter.text}
                       </strong>
                       <span>time</span>
@@ -5194,9 +5854,9 @@ export default function App() {
                     ? "Stop discovering"
                     : walkFinalizing
                       ? "Finishing your discovery"
-                    : tracking === "requesting"
-                      ? "Finding your location"
-                      : "Start discovering"
+                      : tracking === "requesting"
+                        ? "Finding your location"
+                        : "Start discovering"
               }
               title={
                 !accountUserId
@@ -5231,11 +5891,20 @@ export default function App() {
               sample discovery.
             </p>
           )}
-          {journeyStopMessage && <p className="location-error" role="status">{journeyStopMessage}</p>}
+          {journeyStopMessage && (
+            <p className="location-error" role="status">
+              {journeyStopMessage}
+            </p>
+          )}
           {journeySaveError && (
             <div className="location-error" role="alert">
               <p>{journeySaveError}</p>
-              <button type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={finalizeRecordedWalk}>
+              <button
+                type="button"
+                data-testid="retry-journey-save"
+                disabled={walkFinalizing}
+                onClick={finalizeRecordedWalk}
+              >
                 Retry saving journey
               </button>
             </div>
@@ -5249,7 +5918,9 @@ export default function App() {
             currentStreakDays={discoveryProgress.walkingStats.currentStreakDays}
             weekDiscoveryDistance={discoveryProgress.weekDiscoveryDistance}
             weekActiveTimeMs={discoveryProgress.weekActiveTimeMs}
-            weekDiscoveryDeltaDistance={discoveryProgress.weekDiscoveryDeltaDistance}
+            weekDiscoveryDeltaDistance={
+              discoveryProgress.weekDiscoveryDeltaDistance
+            }
             weekActiveDeltaTimeMs={discoveryProgress.weekActiveDeltaTimeMs}
             cityProgress={accountCityProgress}
             onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
@@ -5257,7 +5928,6 @@ export default function App() {
         </section>
       )}
 
-      <div className="attribution-note">Open map · Your paths stay yours</div>
       {coverageInfoOpen && summaryCity && (
         <div
           className="coverage-backdrop"
@@ -5324,11 +5994,19 @@ export default function App() {
           onReminderChange={updateReminderEnabled}
           activityNotificationPreferences={activityNotificationPreferences}
           onActivityNotificationChange={updateActivityNotificationPreference}
-          onStreakReminderTimeChange={(time) => updateReminderTime("streakReminderTime", time)}
+          onStreakReminderTimeChange={(time) =>
+            updateReminderTime("streakReminderTime", time)
+          }
           onDiscoveredAreaRemindersChange={updateDiscoveredAreaReminders}
-          onDiscoveryReminderDurationChange={(minutes) => updateReminderDuration("discoveryReminderMinutes", minutes)}
-          onInactivityReminderDurationChange={(minutes) => updateReminderDuration("inactivityReminderMinutes", minutes)}
-          onDailyReminderTimeChange={(time) => updateReminderTime("dailyReminderTime", time)}
+          onDiscoveryReminderDurationChange={(minutes) =>
+            updateReminderDuration("discoveryReminderMinutes", minutes)
+          }
+          onInactivityReminderDurationChange={(minutes) =>
+            updateReminderDuration("inactivityReminderMinutes", minutes)
+          }
+          onDailyReminderTimeChange={(time) =>
+            updateReminderTime("dailyReminderTime", time)
+          }
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
           onShowGpxImport={showRouteOnMap}
@@ -5422,8 +6100,11 @@ export default function App() {
               {explorationSummary.travelledKm > 0 && (
                 <span>
                   {Math.round(
-                    explorationSummary.newGroundKm / explorationSummary.travelledKm * 100,
-                  )}% of this walk was new ground
+                    (explorationSummary.newGroundKm /
+                      explorationSummary.travelledKm) *
+                      100,
+                  )}
+                  % of this walk was new ground
                 </span>
               )}
               {explorationSummary.cityName &&
@@ -5467,7 +6148,15 @@ export default function App() {
           </section>
         </div>
       )}
-      {feedbackOpen && accountUserId && <FeedbackForm key={accountUserId} userId={accountUserId} accountEmail={accountUserEmail} keyboardInset={keyboardInset} onClose={() => setFeedbackOpen(false)} />}
+      {feedbackOpen && accountUserId && (
+        <FeedbackForm
+          key={accountUserId}
+          userId={accountUserId}
+          accountEmail={accountUserEmail}
+          keyboardInset={keyboardInset}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      )}
       {activeAchievementCelebration && !explorationSummary && (
         <AchievementCelebration
           achievement={activeAchievementCelebration}
@@ -5487,7 +6176,10 @@ export default function App() {
                 accountUserId,
                 activeAchievementCelebration.id,
               ).catch((error) =>
-                console.warn("Could not sync achievement acknowledgement", error),
+                console.warn(
+                  "Could not sync achievement acknowledgement",
+                  error,
+                ),
               );
             setAchievementCelebrations((current) => current.slice(1));
           }}

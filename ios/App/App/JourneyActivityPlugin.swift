@@ -7,7 +7,11 @@ import UIKit
 class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     let identifier = "JourneyActivityPlugin"
     let jsName = "JourneyActivity"
+    private var appearance: JourneyAppearance = .system
+    private var colorTheme: JourneyColorTheme = .light
+    @MainActor private var activityQueue: Task<Void, Never>?
     let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setAppearance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
@@ -20,6 +24,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     override func load() {
+        if #available(iOS 16.2, *), let state = Activity<JourneyActivityAttributes>.activities.first?.content.state {
+            appearance = state.appearance ?? .system
+            colorTheme = state.colorTheme ?? .light
+        }
         NotificationCenter.default.addObserver(self, selector: #selector(journeyStopped(_:)),
                                                name: JourneyStopStore.notification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(journeyControlRequested(_:)),
@@ -27,6 +35,59 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
+
+    // Serialize native trait changes with metrics so theme refreshes cannot overwrite a newer snapshot.
+    private func enqueueActivityOperation(_ operation: @escaping @MainActor () async -> Void) {
+        Task { @MainActor in
+            let previous = self.activityQueue
+            let next = Task { @MainActor in
+                await previous?.value
+                await operation()
+            }
+            self.activityQueue = next
+        }
+    }
+
+    @objc func setAppearance(_ call: CAPPluginCall) {
+        guard let value = call.getString("preference"), let preference = JourneyAppearance(rawValue: value),
+              let themeValue = call.getString("theme"), let theme = JourneyColorTheme(rawValue: themeValue) else {
+            call.reject("Journey appearance requires system, light, or dark and a resolved light or dark theme.")
+            return
+        }
+        enqueueActivityOperation {
+            self.appearance = preference
+            self.colorTheme = theme
+            if #available(iOS 16.2, *) {
+                for activity in Activity<JourneyActivityAttributes>.activities
+                    where activity.activityState == .active || activity.activityState == .stale {
+                    var state = activity.content.state
+                    state.appearance = preference
+                    state.colorTheme = theme
+                    await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate))
+                }
+            }
+            call.resolve()
+        }
+    }
+
+    @MainActor func updateSystemAppearance(_ style: UIUserInterfaceStyle) {
+        guard style != .unspecified else { return }
+        enqueueActivityOperation {
+            guard self.appearance == .system else { return }
+            let theme: JourneyColorTheme = style == .dark ? .dark : .light
+            guard self.colorTheme != theme else { return }
+            self.colorTheme = theme
+            if #available(iOS 16.2, *) {
+                for activity in Activity<JourneyActivityAttributes>.activities
+                    where activity.activityState == .active || activity.activityState == .stale {
+                    var state = activity.content.state
+                    state.appearance = self.appearance
+                    state.colorTheme = self.colorTheme
+                    await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate))
+                }
+            }
+        }
+    }
 
     @objc private func journeyControlRequested(_ notification: Notification) {
         notifyListeners("controlRequested", data: [:])
@@ -109,7 +170,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Starting a journey Live Activity requires valid journey metrics.")
             return
         }
-        Task { @MainActor in
+        enqueueActivityOperation {
+            var state = state
+            state.appearance = self.appearance
+            state.colorTheme = self.colorTheme
             do {
                 if try JourneyStopStore.read(walkId: walkId) != nil { call.resolve(); return }
                 for activity in Activity<JourneyActivityAttributes>.activities {
@@ -152,7 +216,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Updating a journey Live Activity requires valid journey metrics.")
             return
         }
-        Task {
+        enqueueActivityOperation {
+            var state = state
+            state.appearance = self.appearance
+            state.colorTheme = self.colorTheme
             for activity in Activity<JourneyActivityAttributes>.activities
                 where activity.attributes.walkId == walkId &&
                     (activity.activityState == .active || activity.activityState == .stale) {
@@ -170,7 +237,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Ending a journey Live Activity requires valid final journey metrics.")
             return
         }
-        Task {
+        enqueueActivityOperation {
+            var state = state
+            state.appearance = self.appearance
+            state.colorTheme = self.colorTheme
             for activity in Activity<JourneyActivityAttributes>.activities
                 where activity.attributes.walkId == walkId {
                 await activity.end(
@@ -184,7 +254,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func clear(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(); return }
-        Task {
+        enqueueActivityOperation {
             for activity in Activity<JourneyActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
@@ -199,7 +269,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         let walkId = call.getString("walkId")
-        Task {
+        enqueueActivityOperation {
             for activity in Activity<JourneyActivityAttributes>.activities {
                 if activity.attributes.ownerId == ownerId &&
                     (activity.attributes.walkId == walkId || activity.content.state.finishedAt != nil) {
@@ -230,7 +300,9 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             newGroundMeters: meters,
             updatedAt: Date(),
             finishedAt: finishedAt,
-            navigation: finishedAt == nil ? navigation : nil
+            navigation: finishedAt == nil ? navigation : nil,
+            appearance: appearance,
+            colorTheme: colorTheme
         )
     }
 }

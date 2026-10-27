@@ -1,3 +1,4 @@
+import { useAppearance } from "../appearance";
 import {
   mdiArrowLeft,
   mdiBellOutline,
@@ -42,6 +43,8 @@ export const XIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, s
 export const ChevronIcon = ({ size, strokeWidth }: IconProps) => <svg {...base(size, strokeWidth)}><path d="m9 18 6-6-6-6"/></svg>
 
 export function HecateMark({ size = 30 }: { size?: number }) {
+  const { theme } = useAppearance();
+  if (theme === "dark") return <img className="hecate-mark hecate-mark--image" src="/app-icons/dark-mode.png" width={size} height={size} alt="" aria-hidden="true" />;
   return <svg className="hecate-mark" width={size} height={size} viewBox="0 0 32 36" fill="none" aria-hidden="true">
     <path className="hecate-mark__flame" d="M16 2.2c-3.7 4.2-2.1 6.7-5.2 9.6-3.7 3.5-2.5 9.8 2.6 11.8-1.3-3.7.5-6.5 3.4-9.1-.2 3.3 3.4 4.8 1.8 9.1 5.2-1.9 6.9-7.4 3.7-11.7-2.6-3.4-2.7-6.5-2-8.8-2.1 1.8-3.4 3.8-3.9 5.8-.8-2.4-.7-4.6-.4-6.7Z"/>
     <path className="hecate-mark__ember" d="M16.3 14.8c-1.7 2-2.8 3.8-1.5 6.4 2.6-.4 4.2-2.8 2.8-5.4-.4-.8-.8-1.5-.8-2.4l-.5 1.4Z"/>

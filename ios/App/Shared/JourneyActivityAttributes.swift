@@ -27,6 +27,14 @@ struct JourneyNavigation: Codable, Hashable {
     let distanceMeters: Double
 }
 
+enum JourneyAppearance: String, Codable, Hashable {
+    case system, light, dark
+}
+
+enum JourneyColorTheme: String, Codable, Hashable {
+    case light, dark
+}
+
 @available(iOS 16.2, *)
 struct JourneyActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
@@ -35,6 +43,8 @@ struct JourneyActivityAttributes: ActivityAttributes {
         let updatedAt: Date
         let finishedAt: Date?
         var navigation: JourneyNavigation? = nil
+        var appearance: JourneyAppearance? = nil
+        var colorTheme: JourneyColorTheme? = nil
     }
 
     let walkId: String
@@ -113,7 +123,7 @@ struct StopJourneyIntent: LiveActivityIntent {
         await activity.end(
             ActivityContent(state: JourneyActivityAttributes.ContentState(
                 distanceKm: state.distanceKm, newGroundMeters: state.newGroundMeters,
-                updatedAt: finishedAt, finishedAt: finishedAt
+                updatedAt: finishedAt, finishedAt: finishedAt, appearance: state.appearance, colorTheme: state.colorTheme
             ), staleDate: nil),
             dismissalPolicy: .after(finishedAt.addingTimeInterval(5))
         )

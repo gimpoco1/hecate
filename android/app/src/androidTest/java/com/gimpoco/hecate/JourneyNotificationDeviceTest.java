@@ -26,6 +26,35 @@ import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public class JourneyNotificationDeviceTest {
+    @Test public void appearancePersistsAndControlsJourneyNotificationColors() {
+        Context context = testContext();
+        JourneyNotifications notifications = new JourneyNotifications(context);
+        String previous = notifications.appearance();
+        JourneyState state = new JourneyState("appearance-device-test", "device-test", System.currentTimeMillis(), 0.12, 8.0, null);
+        try {
+            notifications.setAppearance("dark");
+            JourneyNotifications restored = new JourneyNotifications(context);
+            assertTrue(restored.usesDarkAppearance());
+            Notification dark = restored.ongoing(state);
+            assertEquals(0xffd9f26a, dark.color);
+            assertFalse(dark.extras.getBoolean(Notification.EXTRA_COLORIZED));
+            android.graphics.Bitmap logo = ((android.graphics.drawable.BitmapDrawable) dark.getLargeIcon().loadDrawable(context)).getBitmap();
+            int darkLogoBackground = logo.getPixel(logo.getWidth() / 2, logo.getHeight() / 16);
+
+            notifications.setAppearance("light");
+            assertFalse(new JourneyNotifications(context).usesDarkAppearance());
+            assertEquals(0xff183c2f, notifications.ongoing(state).color);
+            android.graphics.Bitmap lightLogo = ((android.graphics.drawable.BitmapDrawable) notifications.ongoing(state).getLargeIcon().loadDrawable(context)).getBitmap();
+            assertNotEquals(darkLogoBackground, lightLogo.getPixel(lightLogo.getWidth() / 2, lightLogo.getHeight() / 16));
+
+            notifications.setAppearance("system");
+            boolean systemDark = (context.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            assertEquals(systemDark, new JourneyNotifications(context).usesDarkAppearance());
+        } finally {
+            notifications.setAppearance(previous);
+        }
+    }
     private static Context testContext() {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         if (!context.getPackageName().equals("com.gimpoco.hecate.journeytest"))

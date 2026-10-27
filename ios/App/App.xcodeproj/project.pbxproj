@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CE2600270000000000000001 /* AppIconPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600270000000000000002 /* AppIconPlugin.swift */; };
 		CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
 		CE2600010000000000000002 /* JourneyControlIntent.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
 		D88B31D74E80497781B0B003 /* JourneyTopographyBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */; };
@@ -54,6 +55,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CE2600270000000000000002 /* AppIconPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPlugin.swift; sourceTree = "<group>"; };
 		CE2600010000000000000003 /* JourneyControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyControlIntent.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTopographyBackground.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B002 /* Widget Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				D5CB8A6015E59759735FC04E /* JourneyActivityPlugin.swift */,
+				CE2600270000000000000002 /* AppIconPlugin.swift */,
 				47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */,
 			);
 			path = App;
@@ -343,6 +346,7 @@
 				7F6A14860EC6F620138594F9 /* JourneyActivityAttributes.swift in Sources */,
 				CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */,
 				B0CF8717134E5F788E967348 /* JourneyActivityPlugin.swift in Sources */,
+				CE2600270000000000000001 /* AppIconPlugin.swift in Sources */,
 				C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -390,7 +394,7 @@
 				INFOPLIST_FILE = JourneyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gimpoco.hecate.JourneyWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -513,13 +517,14 @@
 			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconDark;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QJM558MW8W;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.gimpoco.hecate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -534,13 +539,14 @@
 			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconDark;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QJM558MW8W;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gimpoco.hecate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
@@ -561,7 +567,7 @@
 				INFOPLIST_FILE = JourneyWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.5.0;
+				MARKETING_VERSION = 1.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gimpoco.hecate.JourneyWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
