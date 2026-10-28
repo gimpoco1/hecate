@@ -1,9 +1,35 @@
 import { describe, expect, it } from "vitest";
+import { MercatorCoordinate } from "maplibre-gl";
 import { DISCOVERY_RADIUS_M } from "./geo";
 import {
   appendedFogRouteCoordinates,
   fogRevealCoordinates,
+  fogTileCoordinates,
 } from "./fogLayer";
+
+describe("fogTileCoordinates", () => {
+  it.each([
+    [2.17, 41.38],
+    [-122.42, 37.77],
+    [179.999, 0],
+  ])("preserves subpixel GPU precision at %s, %s", (lng, lat) => {
+    const coordinate = MercatorCoordinate.fromLngLat({ lng, lat });
+    const tile: [number, number] = [
+      Math.floor(coordinate.x * 4096),
+      Math.floor(coordinate.y * 4096),
+    ];
+    const gpuCoordinate = new Float32Array(
+      fogTileCoordinates([coordinate.x, coordinate.y], tile),
+    );
+    const restored = [
+      (tile[0] + gpuCoordinate[0] / 8192) / 4096,
+      (tile[1] + gpuCoordinate[1] / 8192) / 4096,
+    ];
+    const worldPixelsAtMaxZoom = 512 * 2 ** 19;
+    expect(Math.abs(restored[0] - coordinate.x) * worldPixelsAtMaxZoom).toBeLessThan(0.01);
+    expect(Math.abs(restored[1] - coordinate.y) * worldPixelsAtMaxZoom).toBeLessThan(0.01);
+  });
+});
 
 describe("fogRevealCoordinates", () => {
   it("fills route gaps without duplicating discovery cells", () => {

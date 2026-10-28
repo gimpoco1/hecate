@@ -14,6 +14,7 @@ import {
   splitRoute,
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
+import { discoveryHighlightData } from "../discoveryHighlights";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
 import { useAppearance } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
@@ -26,6 +27,7 @@ type Props = {
   points: Coordinate[];
   cells: DiscoveryCell[];
   highlightedPoints: Coordinate[];
+  highlightedCells: DiscoveryCell[];
   currentPoint?: Coordinate;
   navigationFollowing: boolean;
   onUserMarkerChange?: (marker: maplibregl.Marker | null) => void;
@@ -158,6 +160,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   points,
   cells,
   highlightedPoints,
+  highlightedCells,
   currentPoint,
   navigationFollowing,
   onUserMarkerChange,
@@ -194,6 +197,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
   const highlightedPointsRef = useRef(highlightedPoints);
+  const highlightedCellsRef = useRef(highlightedCells);
   const onViewChangeRef = useRef(onViewChange);
   const onUserNavigationRef = useRef(onUserNavigation);
   const onHeadingChangeRef = useRef(onHeadingChange);
@@ -248,6 +252,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     if (map && fogLayer)
       syncHighlightedRoute(map, highlightedPoints, fogLayer.id);
   }, [highlightedPoints, mapRef]);
+  useEffect(() => {
+    highlightedCellsRef.current = highlightedCells;
+    const map = mapRef.current;
+    const fogLayer = fogLayerRef.current;
+    if (map && fogLayer)
+      syncHighlightedDiscoveries(map, highlightedCells, fogLayer.id);
+  }, [highlightedCells, mapRef]);
   useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
@@ -356,6 +367,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      if (highlightedCellsRef.current.length > 0)
+        syncHighlightedDiscoveries(map, highlightedCellsRef.current, fogLayer.id);
       if (highlightedPointsRef.current.length > 0) {
         syncHighlightedRoute(
           map,
@@ -542,6 +555,33 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     </div>
   );
 });
+
+function syncHighlightedDiscoveries(
+  map: MapLibreMap,
+  cells: DiscoveryCell[],
+  beforeLayerId: string,
+): void {
+  const sourceId = "hecate-highlighted-discoveries";
+  const layerId = "hecate-highlighted-discoveries-fill";
+  const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+  if (cells.length === 0) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (source) map.removeSource(sourceId);
+    return;
+  }
+  const data = discoveryHighlightData(cells);
+  if (source) {
+    source.setData(data);
+    return;
+  }
+  map.addSource(sourceId, { type: "geojson", data });
+  map.addLayer({
+    id: layerId,
+    type: "fill",
+    source: sourceId,
+    paint: { "fill-color": "#91b23c", "fill-opacity": 0.5 },
+  }, beforeLayerId);
+}
 
 function highlightedRouteData(points: Coordinate[]) {
   return {

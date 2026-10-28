@@ -37,6 +37,7 @@ import {
 } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
+import { discoveryHighlightData } from "./discoveryHighlights";
 import type {
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
@@ -997,6 +998,7 @@ export default function App() {
   const [highlightedRoutePoints, setHighlightedRoutePoints] = useState<
     Coordinate[]
   >([]);
+  const [highlightedDiscoveryCells, setHighlightedDiscoveryCells] = useState<DiscoveryCell[]>([]);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(
     null,
   );
@@ -5343,17 +5345,17 @@ export default function App() {
     [settleJourneySheet],
   );
 
-  const showRouteOnMap = useCallback(
-    (routePoints: Coordinate[]) => {
+  const focusMapOnCoordinates = useCallback(
+    (coordinates: GeoJSON.Position[]) => {
       setSyncOpen(false);
-      setHighlightedRoutePoints(routePoints);
       setSelectedFavoritePlaceId(null);
       if (journeyExpandedRef.current) settleJourneySheet(false);
+      suspendFollowCamera();
       const map = mapRef.current;
-      if (!map || routePoints.length === 0) return;
+      if (!map || coordinates.length === 0) return;
       map.stop();
-      const longitudes = routePoints.map((point) => point.lng);
-      const latitudes = routePoints.map((point) => point.lat);
+      const longitudes = coordinates.map((point) => point[0]);
+      const latitudes = coordinates.map((point) => point[1]);
       map.fitBounds(
         [
           [Math.min(...longitudes), Math.min(...latitudes)],
@@ -5367,8 +5369,23 @@ export default function App() {
         },
       );
     },
-    [settleJourneySheet],
+    [settleJourneySheet, suspendFollowCamera],
   );
+
+  const showRouteOnMap = useCallback(
+    (routePoints: Coordinate[]) => {
+      setHighlightedDiscoveryCells([]);
+      setHighlightedRoutePoints(routePoints);
+      focusMapOnCoordinates(routePoints.map((point) => [point.lng, point.lat]));
+    },
+    [focusMapOnCoordinates],
+  );
+
+  const showNewDiscoveriesOnMap = (newCells: DiscoveryCell[]): void => {
+    setHighlightedRoutePoints([]);
+    setHighlightedDiscoveryCells(newCells);
+    focusMapOnCoordinates(discoveryHighlightData(newCells).geometry.coordinates.flatMap((polygon) => polygon[0]));
+  };
 
   const showRouteById = useCallback(
     (routeId: string) => {
@@ -5384,6 +5401,7 @@ export default function App() {
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
+    setHighlightedDiscoveryCells([]);
     if (journeyExpandedRef.current)
       settleJourneySheet(false, undefined, JOURNEY_MAP_TAP_CLOSE_DURATION_MS);
   }, [settleJourneySheet]);
@@ -5429,6 +5447,7 @@ export default function App() {
         points={points}
         cells={cells}
         highlightedPoints={highlightedRoutePoints}
+        highlightedCells={highlightedDiscoveryCells}
         currentPoint={
           simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
         }
@@ -5933,6 +5952,7 @@ export default function App() {
             setFavoritePlacementActive(false);
             setFavoriteDraft(null);
             setHighlightedRoutePoints([]);
+            setHighlightedDiscoveryCells([]);
             setSelectedFavoritePlaceId(null);
             suspendFollowCamera();
             if (journeyExpandedRef.current) settleJourneySheet(false);
@@ -6025,6 +6045,7 @@ export default function App() {
             setSavedPlacesOpen(false);
             setFavoritePlacementActive(false);
             setHighlightedRoutePoints([]);
+            setHighlightedDiscoveryCells([]);
             setSelectedFavoritePlaceId(favorite.id);
             setRouteDestination({
               lng: favorite.lng,
@@ -6370,6 +6391,7 @@ export default function App() {
                 points={explorationSummary.points}
                 cells={explorationSummary.cells}
                 highlightedPoints={[]}
+                highlightedCells={[]}
                 onZoomChange={() => undefined}
                 mapRef={previewMapRef}
                 initialCenter={[
@@ -6424,8 +6446,9 @@ export default function App() {
                 className="exploration-recap__view"
                 type="button"
                 data-testid="recap-view-on-map"
+                disabled={explorationSummary.cells.length === 0}
                 onClick={() => {
-                  showRouteOnMap(explorationSummary.points);
+                  showNewDiscoveriesOnMap(explorationSummary.cells);
                   setExplorationSummary(null);
                 }}
               >
