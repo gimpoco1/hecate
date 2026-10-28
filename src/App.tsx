@@ -206,6 +206,9 @@ import {
   isNativeApp,
   openLocationSettings,
   readLocationAuthorization,
+  requestReminderMotionPermission,
+  readReminderMotionAuthorization,
+  reminderMotionPermissionLabel,
   passiveLocationMode,
   type LocationTracker,
 } from "./location";
@@ -818,6 +821,8 @@ export default function App() {
   const [discoveryLocationAllowed, setDiscoveryLocationAllowed] = useState(
     () => !isNativeApp(),
   );
+  const [reminderMotionAllowed, setReminderMotionAllowed] = useState<boolean | null>(isNativeApp() ? null : true);
+  const [reminderMotionError, setReminderMotionError] = useState("");
   const reminderEnabledRef = useRef(reminderEnabled);
   reminderEnabledRef.current = reminderEnabled;
   const activityNotificationQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -2174,7 +2179,8 @@ export default function App() {
     const enabled =
       preference.enabled &&
       notificationPermissionReady === true &&
-      discoveryLocationAllowed;
+      discoveryLocationAllowed &&
+      reminderMotionAllowed === true;
     setReminderEnabled(enabled);
     reminderEnabledRef.current = enabled;
     if (!enabled) resetInactivityReminder();
@@ -2183,6 +2189,7 @@ export default function App() {
     accountUserId,
     notificationPermissionReady,
     discoveryLocationAllowed,
+    reminderMotionAllowed,
     resetInactivityReminder,
     activityNotificationPreferences.discoveryReminderMinutes,
     activityNotificationPreferences.discoveredAreaReminders,
@@ -2928,14 +2935,57 @@ export default function App() {
   }, [centerMapOnPoint, nativeApp]);
 
   useEffect(() => {
+    if (!nativeApp || !accountUserId || notificationPermissionReady !== true) return;
+    let disposed = false;
+    let requesting = false;
+    const refreshMotionPermission = (): void => {
+      if (disposed || requesting || document.visibilityState !== "visible") return;
+      requesting = true;
+      void readReminderMotionAuthorization().then(async (status) => {
+        if (disposed) return;
+        if (status === "notDetermined" && (!loadReminderPreference(accountUserId).enabled || !discoveryLocationAllowed)) {
+          setReminderMotionAllowed(null);
+          setReminderMotionError("");
+          return;
+        }
+        const allowed = status === "notDetermined" ? await requestReminderMotionPermission() : status === "authorized";
+        if (disposed) return;
+        setReminderMotionAllowed(allowed);
+        setReminderMotionError(allowed ? "" : status === "unavailable"
+          ? "Motion detection isn’t available on this device."
+          : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+      }).catch((cause) => {
+        if (disposed) return;
+        setReminderMotionAllowed(false);
+        const message = cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`;
+        console.error("Could not enable motion-based discovery reminders", { cause });
+        setReminderMotionError(message);
+      }).finally(() => { requesting = false; });
+    };
+    refreshMotionPermission();
+    document.addEventListener("visibilitychange", refreshMotionPermission);
+    const listener = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) refreshMotionPermission();
+    });
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", refreshMotionPermission);
+      void listener.then((handle) => handle.remove());
+    };
+  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, nativeApp]);
+
+  useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
     const backgroundReminder =
       nativeApp &&
+      reminderMotionAllowed === true &&
       reminderEnabled &&
       Boolean(accountUserId) &&
       notificationPermissionReady === true;
     let disposed = false;
-    let nativeActive = true;
+    let nativeActive = !nativeApp;
+    let nativeStateKnown = !nativeApp;
+    let nativeStateRevision = 0;
     let trackerMode: "foreground" | "reminder" | null = null;
     let retryTimer: number | null = null;
     let acquisitionTimer: number | null = null;
@@ -2954,10 +3004,10 @@ export default function App() {
       if (tracker) void Promise.resolve(tracker.stop()).catch(() => undefined);
     };
     const desiredMode = () =>
-      passiveLocationMode(
+      nativeStateKnown ? passiveLocationMode(
         nativeActive && document.visibilityState === "visible",
         backgroundReminder,
-      );
+      ) : null;
     const start = (mode: "foreground" | "reminder") => {
       if (disposed || desiredMode() !== mode) return;
       if (foregroundTrackerRef.current && trackerMode === mode) return;
@@ -3099,6 +3149,8 @@ export default function App() {
     let appStateListener: { remove: () => Promise<void> } | undefined;
     if (nativeApp) {
       void CapacitorApp.addListener("appStateChange", (state) => {
+        nativeStateRevision += 1;
+        nativeStateKnown = true;
         nativeActive = state.isActive;
         updateVisibility();
       })
@@ -3106,7 +3158,19 @@ export default function App() {
           if (disposed) void listener.remove();
           else appStateListener = listener;
         })
-        .catch(() => undefined);
+        .catch((cause) => {
+          console.error("Could not observe native app state for passive location", { cause });
+          setPassiveLocationStatus("unavailable");
+        });
+      void CapacitorApp.getState().then((state) => {
+        if (disposed || nativeStateRevision !== 0) return;
+        nativeStateKnown = true;
+        nativeActive = state.isActive;
+        updateVisibility();
+      }).catch((cause) => {
+        console.error("Could not read native app state for passive location", { cause });
+        if (!disposed) setPassiveLocationStatus("unavailable");
+      });
     }
     updateVisibility();
     return () => {
@@ -3124,6 +3188,7 @@ export default function App() {
     notificationPermissionReady,
     passiveLocationRefreshGeneration,
     reminderEnabled,
+    reminderMotionAllowed,
     tracking,
   ]);
 
@@ -3893,6 +3958,20 @@ export default function App() {
         return "Notifications are unavailable right now. Try again later.";
       }
     }
+    if (enabled && nativeApp) {
+      try {
+        const allowed = await requestReminderMotionPermission();
+        setReminderMotionAllowed(allowed);
+        const message = allowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`;
+        setReminderMotionError(message);
+        if (!allowed) return message;
+      } catch (cause) {
+        setReminderMotionAllowed(false);
+        const message = cause instanceof Error ? cause.message : "Could not enable motion-based discovery reminders.";
+        setReminderMotionError(message);
+        return message;
+      }
+    }
     if (accountUserIdRef.current !== accountUserId)
       return "Your account changed. Reopen notification settings and try again.";
     setReminderEnabled(enabled);
@@ -4035,11 +4114,25 @@ export default function App() {
       discoveredAreaReminders:
         activityNotificationPreferences.discoveredAreaReminders,
     };
-    const remindersActive = enabled && discoveryLocationAllowed;
+    let motionAllowed = reminderMotionAllowed;
+    if (enabled && motionAllowed === null && discoveryLocationAllowed) {
+      try {
+        motionAllowed = await requestReminderMotionPermission();
+        setReminderMotionAllowed(motionAllowed);
+        setReminderMotionError(motionAllowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+      } catch (cause) {
+        motionAllowed = false;
+        setReminderMotionAllowed(false);
+        setReminderMotionError(cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`);
+      }
+    }
+    if (accountUserIdRef.current !== accountUserId)
+      return "Your account changed. Reopen notification settings and try again.";
+    const remindersActive = enabled && discoveryLocationAllowed && motionAllowed === true;
     setReminderEnabled(remindersActive);
     reminderEnabledRef.current = remindersActive;
     reminderRef.current.reset();
-    if (!enabled) resetInactivityReminder();
+    if (!remindersActive) resetInactivityReminder();
     setReminderPrompt(null);
     saveReminderPreference(
       accountUserId,
@@ -6176,6 +6269,8 @@ export default function App() {
           onClose={closeProfileDialog}
           onFeedbackOpen={() => setFeedbackOpen(true)}
           reminderEnabled={reminderEnabled}
+          reminderMotionError={reminderMotionError}
+          reminderMotionAllowed={reminderMotionAllowed}
           notificationPermissionReady={notificationPermissionReady}
           keyboardInset={keyboardInset}
           travelledDistance={discoveryProgress.travelledDistance}

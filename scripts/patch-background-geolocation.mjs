@@ -315,3 +315,121 @@ if (!androidSource.includes('intent.getStringExtra("journeyError")')) {
 ` + anchor)
   writeFileSync(androidPluginPath, androidSource)
 }
+
+// Idle discovery reminders use motion and significant changes, not continuous GPS.
+source = readFileSync(pluginPath, 'utf8')
+const motionWatcherMarker = '// Hecate motion-gated reminder watcher.'
+const existingMotionWatcher = source.indexOf(motionWatcherMarker)
+if (existingMotionWatcher !== -1) source = source.slice(0, existingMotionWatcher).trimEnd() + '\n'
+if (!source.includes('import CoreMotion')) source = source.replace('import CoreLocation', 'import CoreLocation\nimport CoreMotion')
+if (!source.includes('class Watcher: NSObject')) {
+  if (!source.includes('class Watcher {') || !source.includes('        allowStale = stale\n'))
+    throw new Error('Background geolocation plugin changed; review motion watcher initialization.')
+  source = source.replace('class Watcher {', 'class Watcher: NSObject {')
+    .replace('        allowStale = stale\n', '        allowStale = stale\n        super.init()\n')
+}
+if (!source.includes('let motionGated = call.getBool("motionGated")')) {
+  const original = `            let watcher = Watcher(
+                call.callbackId,
+                stale: call.getBool("stale") ?? false
+            )`
+  if (!source.includes(original)) throw new Error('Background geolocation plugin changed; review motion-gated watcher creation.')
+  source = source.replace(original, `            let motionGated = call.getBool("motionGated") == true
+            if motionGated {
+                guard CMMotionActivityManager.isActivityAvailable(), CLLocationManager.significantLocationChangeMonitoringAvailable() else {
+                    call.reject("Motion-based discovery reminders are unavailable on this device.", "MOTION_UNAVAILABLE")
+                    return
+                }
+                guard CMMotionActivityManager.authorizationStatus() == .authorized else {
+                    call.reject("Allow Motion & Fitness in Hecate's device settings to enable background discovery reminders.", "MOTION_NOT_AUTHORIZED")
+                    return
+                }
+            }
+            let watcher: Watcher = motionGated
+                ? MotionReminderWatcher(call.callbackId, stale: call.getBool("stale") ?? false)
+                : Watcher(call.callbackId, stale: call.getBool("stale") ?? false)`)
+}
+source = source.replace('self.watchers[index].locationManager.stopUpdatingLocation()', 'self.watchers[index].stop()')
+if (!source.includes('manager.activityType = journeyId')) {
+  source = source.replace('            manager.allowsBackgroundLocationUpdates = background', `            if journeyId == nil { manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters }
+            manager.activityType = journeyId == nil ? .other : .fitness
+            manager.allowsBackgroundLocationUpdates = background`)
+}
+if (!source.includes('@objc func requestMotionPermission')) {
+  source = source.replace('    private var watchers = [Watcher]()', '    private var watchers = [Watcher]()\n    private let motionPermissionManager = CMMotionActivityManager()')
+  source = source.replace('CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)', 'CAPPluginMethod(name: "requestMotionPermission", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)')
+  source = source.replace(implementationAnchor, `    @objc func requestMotionPermission(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard CMMotionActivityManager.isActivityAvailable(), CLLocationManager.significantLocationChangeMonitoringAvailable() else {
+                call.reject("Motion-based discovery reminders are unavailable on this device.", "MOTION_UNAVAILABLE")
+                return
+            }
+            let status = CMMotionActivityManager.authorizationStatus()
+            if status != .notDetermined {
+                call.resolve(["granted": status == .authorized])
+                return
+            }
+            guard UIApplication.shared.applicationState == .active else {
+                call.reject("Open Hecate to allow Motion & Fitness for background discovery reminders.", "MOTION_REQUIRES_FOREGROUND")
+                return
+            }
+            let now = Date()
+            self.motionPermissionManager.queryActivityStarting(from: now.addingTimeInterval(-1), to: now, to: .main) { _, error in
+                let status = CMMotionActivityManager.authorizationStatus()
+                if status == .denied || status == .restricted {
+                    call.resolve(["granted": false])
+                } else if let error {
+                    call.reject("Could not request Motion & Fitness permission: " + error.localizedDescription)
+                } else if status == .authorized {
+                    call.resolve(["granted": true])
+                } else {
+                    call.reject("Motion & Fitness permission has not been determined. Open Hecate and try again.")
+                }
+            }
+        }
+    }
+
+` + implementationAnchor)
+}
+source += '\n' + readFileSync(new URL('./ios-reminder-motion.swift', import.meta.url), 'utf8')
+writeFileSync(pluginPath, source)
+registration = readFileSync(registrationPath, 'utf8')
+if (!registration.includes('CAP_PLUGIN_METHOD(requestMotionPermission,')) {
+  registration = registration.replace('    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);', '    CAP_PLUGIN_METHOD(requestMotionPermission, CAPPluginReturnPromise);\n    CAP_PLUGIN_METHOD(openSettings, CAPPluginReturnPromise);')
+  writeFileSync(registrationPath, registration)
+}
+
+// Inspect denied permissions without prompting when reminders are switched off.
+source = readFileSync(pluginPath, 'utf8')
+if (!source.includes('@objc func getMotionAuthorizationStatus')) {
+  source = source.replace('CAPPluginMethod(name: "requestMotionPermission", returnType: CAPPluginReturnPromise)', 'CAPPluginMethod(name: "getMotionAuthorizationStatus", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "requestMotionPermission", returnType: CAPPluginReturnPromise)')
+  source = source.replace('    @objc func requestMotionPermission(_ call: CAPPluginCall) {', `    @objc func getMotionAuthorizationStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard CMMotionActivityManager.isActivityAvailable(), CLLocationManager.significantLocationChangeMonitoringAvailable() else {
+                call.resolve(["status": "unavailable"])
+                return
+            }
+            let status: String
+            switch CMMotionActivityManager.authorizationStatus() {
+            case .authorized: status = "authorized"
+            case .denied: status = "denied"
+            case .restricted: status = "restricted"
+            case .notDetermined: status = "notDetermined"
+            @unknown default:
+                call.reject("Unrecognized Motion & Fitness authorization status")
+                return
+            }
+            call.resolve(["status": status])
+        }
+    }
+
+    @objc func requestMotionPermission(_ call: CAPPluginCall) {`)
+  writeFileSync(pluginPath, source)
+}
+registration = readFileSync(registrationPath, 'utf8')
+if (!registration.includes('CAP_PLUGIN_METHOD(getMotionAuthorizationStatus,')) {
+  registration = registration.replace('    CAP_PLUGIN_METHOD(requestMotionPermission, CAPPluginReturnPromise);', '    CAP_PLUGIN_METHOD(getMotionAuthorizationStatus, CAPPluginReturnPromise);\n    CAP_PLUGIN_METHOD(requestMotionPermission, CAPPluginReturnPromise);')
+  writeFileSync(registrationPath, registration)
+}
+
+await import('./patch-android-reminder-motion.mjs')

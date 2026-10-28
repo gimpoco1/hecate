@@ -37,6 +37,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMotionUsageDescription</key>
+	<string>Hecate uses motion activity to pause discovery reminder GPS while you are stationary and resume it while you walk. Motion activity is not saved or synced.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Hecate uses background location during a walk you start, or when you enable discovery reminders, to suggest recording a journey through new areas. Reminder locations are not saved to your map or account.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
