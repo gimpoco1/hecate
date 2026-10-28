@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "./diagnostics";
 import { backtrackedDistanceKm, closedRouteLoops } from "./routeQuality";
 import { discoveredDistanceForFootprints, discoveryCellKey, discoveryFootprintCells, distanceKm, pointToDiscoveryCell } from "./geo";
 import type { Coordinate, DiscoveryCell } from "./types";
@@ -36,15 +37,15 @@ export class DestinationTooCloseError extends ExplorationRoutingError {
 }
 
 export class RouteDistanceExceededError extends ExplorationRoutingError {
-  constructor(readonly status: number, readonly responseBody: string, readonly locations: readonly RoutePoint[]) {
+  constructor(readonly status: number) {
     super("This journey exceeds the routing service’s distance limit. Choose a closer destination.");
     this.name = "RouteDistanceExceededError";
   }
 }
 
 class RouteRequestError extends ExplorationRoutingError {
-  constructor(readonly status: number, body: string, locations: readonly RoutePoint[]) {
-    super(`Route request failed (${status}): ${body}. Locations: ${JSON.stringify(locations)}`);
+  constructor(readonly status: number) {
+    super(`Route request failed (HTTP ${status}). Try again or contact support if this continues.`);
     this.name = "RouteRequestError";
   }
 }
@@ -177,13 +178,13 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
         const body = await response.text();
         const details: unknown = response.headers.get("content-type")?.includes("application/json") ? JSON.parse(body) : null;
         if (response.status === 400 && object(details) && details.code === "DistanceExceeded") {
-          throw new RouteDistanceExceededError(response.status, body, locations);
+          throw new RouteDistanceExceededError(response.status);
         }
         if (response.status === 400 && object(details) && (details.error_code === 442 || details.error_code === 171 || details.code === "NoRoute")) {
-          console.warn("No route through requested locations", { locations, mode, status: response.status, body });
+          console.warn("No route through requested locations", { mode, status: response.status });
           return [];
         }
-        throw new RouteRequestError(response.status, body, locations);
+        throw new RouteRequestError(response.status);
       }
       const routes = parsePlannedRoutes(await response.json());
       const origin = locations[0];
@@ -199,12 +200,12 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       if (signal.aborted || (!timedOut && !(error instanceof TypeError) &&
         !(error instanceof RouteRequestError && error.status >= 500))) throw error;
       const failure = timedOut
-        ? new ExplorationRoutingError(`Route request timed out after 20 seconds. Check your connection and try again. Locations: ${JSON.stringify(locations)}`)
+        ? new ExplorationRoutingError(`Route request timed out after 20 seconds. Check your connection and try again.`)
         : error instanceof TypeError
-          ? new ExplorationRoutingError(`Could not contact the routing service. Check your internet connection and try again. Endpoint: ${url.origin}. Locations: ${JSON.stringify(locations)}. Cause: ${error.message}`)
+          ? new ExplorationRoutingError(`Could not contact the routing service. Check your internet connection and try again. Endpoint: ${url.origin}.`)
           : error;
       if (attempt === 2) throw failure;
-      console.warn("Route request failed; retrying", { locations, mode, attempt, error: failure });
+      console.warn("Route request failed; retrying", { mode, attempt, error: errorDiagnostic(failure) });
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", cancel);

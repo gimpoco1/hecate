@@ -13,32 +13,26 @@ The development tools panel contains notification and achievement tests. It can 
 
 ## Cross-device sync
 
-1. Create a Supabase project and run `supabase.sql` in its SQL editor. Existing projects must migrate any rows still in `discovery_points` before rerunning the script; it removes that legacy table once empty.
-   The Hecate hosted project was cleaned with `scripts/cleanup-hosted-discovery.sql` and `scripts/install-city-region-compatibility.sql` on 2026-09-21. Those scripts are one-time records, not setup steps for a fresh project.
+1. Create a Supabase project, bootstrap it with `supabase.sql`, and apply the tracked migrations in order. Existing projects must migrate any rows still in `discovery_points` before rerunning the bootstrap script; it removes that legacy table once empty. Follow the [security deployment requirements](../SECURITY.md#deployment-and-release-requirements) for the current grants and server functions.
 2. Copy `.env.example` to `.env.local` and add the project URL and anonymous key.
 3. Enable Email authentication in Supabase. Keep password sign-in, new-user signup, and email OTP enabled. With **Confirm email** enabled, new password accounts receive a confirmation link before their first session starts.
-4. In **Authentication → URL Configuration**, set the Site URL to `https://hecate-eta.vercel.app/` and add these redirect URLs:
-   - `https://hecate-eta.vercel.app/`
-   - `https://hecate-eta.vercel.app/leaderboard`
-   - `hecate://auth/callback`
-
-Magic links opened from the website return to the deployed browser app. Links requested inside the Capacitor app use the `hecate://` URL scheme to reopen Hecate and complete the Supabase session.
+4. Configure authentication redirects, the trusted publisher, and native domain associations using the [security deployment requirements](../SECURITY.md#deployment-and-release-requirements). That document owns the current callback paths and release requirements.
 
 Supabase configuration and a signed-in account are required to record discoveries. Walk points are journaled in account-scoped device storage while recording, then uploaded to Supabase. An interrupted walk can be recovered through its last accepted GPS sample.
 
-The same SQL script installs the authenticated `delete_account` function used by the account dialog. It deletes the current user from Supabase Auth; foreign-key cascades then remove that user's walks, discovery cells, and discovered cities. Rerun `supabase.sql` on an existing project whenever this function is added or updated.
+The account dialog uses the authenticated `delete_account` function. See [Security](../SECURITY.md#issues-addressed-and-current-controls) for public-snapshot cleanup and [retention boundaries](../SECURITY.md#remaining-boundaries) for feedback and support email.
 
-It also installs the public leaderboard tables and the `publish_leaderboard_snapshot`, `unpublish_leaderboard_snapshot`, and `get_my_leaderboard_entry_id` functions. `leaderboard_entries` contains an opaque entry ID, aggregate totals, and achievement IDs; per-city rankings remain in `leaderboard_city_stats`. The private account-to-entry link and public-name history live together in the inaccessible `leaderboard_profiles` table. Private routes, cells, coordinates, and city boundaries are never copied into a leaderboard snapshot. The web client subscribes to Supabase Realtime and polls every 20 seconds as a fallback. Users must explicitly publish or update a snapshot; private discovery sync does not update the leaderboard automatically.
+The sharing panel controls the public name and selected cities. Joining is explicit; after joining, the app refreshes the selected published snapshot following a completed journey. The web client subscribes to Supabase Realtime and polls every 20 seconds as a fallback. [Security](../SECURITY.md#data-and-trust-boundaries) documents the public/private boundary and server publishing authority.
 
-Existing hosted projects must also run `scripts/install-leaderboard-sharing-controls.sql`. It reserves public names case-insensitively in a private profile table, allows one rename per account even across unpublishing, and installs the profile RPC used by the sharing panel. Users choose which city aggregates to include; unselected cities and their distance are omitted from the public snapshot.
+Public names are reserved case-insensitively, with one rename per account even across unpublishing. Use the current migration sequence rather than historical leaderboard installers when setting up or upgrading an environment.
 
 Named city milestones use the same canonical discovered-city distance: First Footprint and one star at 5 km, Pathfinder and two stars at 25 km, and City Cartographer and three stars at 100 km. Private progress stays in the installed app. The public explorer profile derives earned milestones only from city totals the user explicitly published, so an unshared city cannot reveal a milestone or progress. Artwork is mapped to `public/achievements/first-footprint.png`, `pathfinder.png`, and `city-cartographer.png`.
 
-Personal achievements are recomputed from synchronized route history with the same new-ground algorithm used by the map. `scripts/install-leaderboard-achievements.sql` adds the public achievement-ID table and updates the publishing RPC. The public snapshot contains only achievement IDs selected by the user—never the qualifying route, date, activity history, or location. Artwork lives in `public/achievements/<achievement-id>.png`; a Hecate fallback is rendered until a PNG is supplied.
+Personal achievements are recomputed from synchronized route history with the same new-ground algorithm used by the map. Publishing includes the computed earned achievement IDs; city selection does not individually select achievements. See [Security](../SECURITY.md#data-and-trust-boundaries) for the sharing boundary. Artwork lives in `public/achievements/<achievement-id>.png`; a Hecate fallback is rendered until a PNG is supplied.
 
 The achievement catalog deliberately mixes approachable and long-term goals. Current thresholds are: 8 km of new ground in one walk; a 5 km walk that is at least 80% new; a 5 km loop with 2 km new ground; 500 m on three consecutive days; 500 m on seven days within two weeks; 500 m in one city on ten days; 2 km in five cities; and an 8 km walk with 3 km new ground that remains at least 50% familiar.
 
-The first complete history load establishes an achievement baseline. Later unlocks and acknowledgement timestamps are synchronized through the private `user_achievement_unlocks` table installed by `scripts/install-private-achievement-unlocks.sql`. The complete local achievement evaluation remains authoritative for which achievements are earned; local storage and Supabase only coordinate pending celebrations and acknowledgement across devices. Native local notifications are emitted only for genuinely new unlocks.
+The first complete history load establishes an achievement baseline. Later unlocks and acknowledgement timestamps are synchronized through the private `user_achievement_unlocks` table installed by `scripts/install-private-achievement-unlocks.sql`. For private app celebrations, local achievement evaluation determines which achievements are earned; local storage and Supabase coordinate pending celebrations and acknowledgement across devices. Native local notifications are emitted only for genuinely new unlocks.
 
 Completed walks retain every accepted route sample in PostGIS lines. Discovered territory is stored as unique zoom-20 cells, so walking through the same place again does not create more discovery rows. See [STORAGE.md](STORAGE.md) for the model and tradeoffs.
 

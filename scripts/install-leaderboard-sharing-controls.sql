@@ -154,7 +154,7 @@ $$;
 
 revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) from public, anon;
 revoke all on function public.get_my_leaderboard_profile() from public, anon;
-grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) to authenticated;
+revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) from authenticated;
 grant execute on function public.get_my_leaderboard_profile() to authenticated;
 
 commit;

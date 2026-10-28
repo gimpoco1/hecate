@@ -82,6 +82,6 @@ end;
 $$;
 
 revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) from public, anon;
-grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) to authenticated;
+revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint) from authenticated;
 
 commit;

@@ -140,8 +140,7 @@ describe("discovery progress cache", () => {
       }),
     ).not.toThrow();
     expect(warning).toHaveBeenCalledWith("Could not cache discovery progress", {
-      userId: "user-42",
-      error: "Storage quota exceeded",
+      error: { name: "QuotaExceededError" },
     });
   });
 });

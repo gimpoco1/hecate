@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { PayloadTooLargeError, readJson } from "../_shared/http.ts";
 
 const SUPPORT_EMAIL = "supporthecate@gmail.com";
 const REASONS = {
@@ -51,10 +52,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
   }
   let record: FeedbackRecord;
   try {
-    record = parseFeedbackWebhook(await request.json());
+    record = parseFeedbackWebhook(await readJson(request, 16_384));
   } catch (error) {
-    if (!(error instanceof TypeError) && !(error instanceof SyntaxError)) throw error;
-    return Response.json({ error: error.message }, { status: 400 });
+    if (!(error instanceof TypeError) && !(error instanceof SyntaxError) && !(error instanceof PayloadTooLargeError)) throw error;
+    return Response.json({ error: error.message }, { status: error instanceof PayloadTooLargeError ? 413 : 400 });
   }
   const password = Deno.env.get("GMAIL_APP_PASSWORD")?.replace(/\s/g, "");
   if (!password) {
@@ -106,7 +107,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   } catch (error) {
     if (!(error instanceof Error)) throw error;
     const failure: MailFailure = error;
-    console.error("Feedback email delivery failed", { feedbackId: record.id, code: failure.code, responseCode: failure.responseCode, message: failure.message });
+    console.error("Feedback email delivery failed", { feedbackId: record.id, code: failure.code, responseCode: failure.responseCode });
     return Response.json({ error: "Gmail could not deliver the feedback alert. Check the function logs; the feedback remains saved.", feedbackId: record.id }, { status: 502 });
   } finally {
     transport.close();

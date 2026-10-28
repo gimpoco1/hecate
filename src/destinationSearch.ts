@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "./diagnostics";
 import { cityBounds, cityPointPredicate, type CityBoundary } from "./city";
 import type { RoutePoint } from "./explorationRouting";
 
@@ -62,12 +63,12 @@ async function requestDestinations(url: URL, signal: AbortSignal): Promise<Desti
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const response = await fetch(url, { signal });
-      if (!response.ok) throw new Error(`Destination lookup failed (${response.status}): ${await response.text()}. Request: ${url}`);
+      if (!response.ok) throw new Error(`Destination lookup failed (HTTP ${response.status}). Endpoint: ${url.origin}`);
       return parseDestinations(await response.json());
     } catch (error) {
       if (signal.aborted || attempt === 2) throw error;
-      console.warn("Destination lookup failed; retrying", { url: url.href, attempt, error });
+      console.warn("Destination lookup failed; retrying", { endpoint: url.origin, attempt, error: errorDiagnostic(error) });
     }
   }
-  throw new Error(`Destination lookup exhausted attempts. Request: ${url}`);
+  throw new Error(`Destination lookup exhausted attempts. Endpoint: ${url.origin}`);
 }

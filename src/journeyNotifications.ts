@@ -1,3 +1,4 @@
+import { errorDiagnostic } from './diagnostics'
 import type { LocalNotifications } from "@capacitor/local-notifications";
 import type { AppLauncher } from "@capacitor/app-launcher";
 import { JOURNEY_SPEED_STOP_ACTION_TYPE_ID, registerNotificationActions } from "./notificationActions";
@@ -67,9 +68,7 @@ export async function sendJourneySpeedStopNotification(
       return;
     } catch (error) {
       if (attempt === 3) throw error;
-      console.warn("Could not send journey speed-stop notification; retrying", {
-        userId, walkId, attempt, error,
-      });
+      console.warn("Could not send journey speed-stop notification; retrying", { walkId, attempt, error: errorDiagnostic(error) });
     }
   }
 }

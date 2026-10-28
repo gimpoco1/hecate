@@ -1,2 +1,5 @@
 [functions.notify-feedback]
 verify_jwt = false
+
+[functions.publish-leaderboard]
+verify_jwt = true

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -111,18 +112,12 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
         );
         map.once("idle", () => collapseMapAttribution(container));
         map.on("error", (event) => {
-          console.error("Saved place map rendering failed", {
-            placeId: place.id,
-            error: event.error,
-          });
+          console.error("Saved place map rendering failed", { placeId: place.id, error: errorDiagnostic(event.error) });
         });
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        console.error("Saved place map preview failed", {
-          placeId: place.id,
-          error,
-        });
+        console.error("Saved place map preview failed", { placeId: place.id, error: errorDiagnostic(error) });
         setErrorMessage(mapPreviewErrorMessage(error));
       });
 

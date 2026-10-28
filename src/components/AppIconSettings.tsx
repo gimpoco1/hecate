@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { mdiCheckCircle } from "@mdi/js";
@@ -14,7 +15,7 @@ export function AppIconSettings() {
     void AppIcon.getState().then(parseAppIconState).then((result) => {
       if (active) setState(result);
     }).catch((failure) => {
-      console.error("Could not read app icon", { error: failure });
+      console.error("Could not read app icon", { error: errorDiagnostic(failure) });
       if (active) setError(failure instanceof Error ? failure.message : "Could not read your app icon. Reopen Appearance to try again.");
     });
     return () => { active = false; };
@@ -27,7 +28,7 @@ export function AppIconSettings() {
     setError("");
     try { setState(parseAppIconState(await AppIcon.setIcon({ icon }))); }
     catch (failure) {
-      console.error("Could not change app icon", { icon, error: failure });
+      console.error("Could not change app icon", { icon, error: errorDiagnostic(failure) });
       setError(failure instanceof Error ? failure.message : "Could not change your app icon. Please try again.");
     } finally { changingRef.current = false; setPending(false); }
   };

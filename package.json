@@ -21,7 +21,8 @@
     "android:add": "npm run build && npx cap add android",
     "android:release": "node scripts/build-signed-android-release.mjs",
     "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npm run android:sync && npx cap open android"
+    "android:open": "npm run android:sync && npx cap open android",
+    "check:functions": "deno check --config supabase/functions/publish-leaderboard/deno.json supabase/functions/publish-leaderboard/index.ts && deno check --config supabase/functions/notify-feedback/deno.json supabase/functions/notify-feedback/index.ts && deno test supabase/functions/_shared/http_test.ts"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
@@ -48,8 +49,14 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
+    "deno": "^2.9.6",
     "typescript": "~5.9.2",
-    "vite": "^7.1.5",
-    "vitest": "^3.2.4"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "@capacitor/cli": {
+      "xcode": "^4.0.0"
+    }
   }
 }

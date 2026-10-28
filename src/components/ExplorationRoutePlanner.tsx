@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { clearRecentDestinations, loadRecentDestinations, recentDestinationFromSelection, saveRecentDestinations, withRecentDestination } from "../recentDestinations";
 import { RouteNotice } from "./RouteNotice";
 import { advanceRouteProgress, type RouteProgress } from "../routeProgress";
@@ -106,7 +107,7 @@ export function ExplorationRoutePlanner({
   useEffect(() => {
     try { setRecent(loadRecentDestinations(userId)); setHistoryError(""); }
     catch (cause) {
-      console.error("Could not load recent destinations", { userId, cause });
+      console.error("Could not load recent destinations", { cause: errorDiagnostic(cause) });
       setRecent(null); setHistoryError(cause instanceof Error ? cause.message : "Could not load recent destinations.");
     }
   }, [userId]);
@@ -116,14 +117,14 @@ export function ExplorationRoutePlanner({
       saveRecentDestinations(userId, updated);
       setRecent(updated); setHistoryError("");
     } catch (cause) {
-      console.error("Could not save recent destination", { userId, cause });
+      console.error("Could not save recent destination", { cause: errorDiagnostic(cause) });
       setHistoryError(cause instanceof Error ? cause.message : "Could not save recent destination.");
     }
   }, [userId]);
   const clearHistory = (): void => {
     try { clearRecentDestinations(userId); setRecent([]); setHistoryError(""); }
     catch (cause) {
-      console.error("Could not clear recent destinations", { userId, cause });
+      console.error("Could not clear recent destinations", { cause: errorDiagnostic(cause) });
       setHistoryError(cause instanceof Error ? cause.message : "Could not clear recent destinations.");
     }
   };
@@ -133,7 +134,7 @@ export function ExplorationRoutePlanner({
       saveRecentDestinations(userId, updated);
       setRecent(updated); setHistoryError("");
     } catch (cause) {
-      console.error("Could not remove recent destination", { userId, destination: result.point, cause });
+      console.error("Could not remove recent destination", { cause: errorDiagnostic(cause) });
       setHistoryError(cause instanceof Error ? cause.message : "Could not remove recent destination.");
     }
   };
@@ -249,7 +250,7 @@ export function ExplorationRoutePlanner({
         if (controller.signal.aborted) return;
         console.warn(
           "Could not name destination; keeping selected point label",
-          { destination, cause },
+          { cause: errorDiagnostic(cause) },
         );
       })
       .finally(() => {
@@ -297,19 +298,14 @@ export function ExplorationRoutePlanner({
           return;
         }
         if (cause instanceof RouteDistanceExceededError) {
-          console.warn("Destination exceeds routing service distance limit", { start, destination, profile, cause });
+          console.warn("Destination exceeds routing service distance limit", { start, profile, cause: errorDiagnostic(cause) });
           setDestinationError({
             title: "Exploring? Yes. That far? Maybe not.",
             message: cause.message,
           });
           return;
         }
-        console.error("Could not calculate direct route", {
-          start,
-          destination,
-          profile,
-          cause,
-        });
+        console.error("Could not calculate direct route", { start, profile, cause: errorDiagnostic(cause) });
         setDirectErrors((current) => ({
           ...current,
           [profile]:
@@ -492,11 +488,7 @@ export function ExplorationRoutePlanner({
       setExplorationPlan(result);
     } catch (cause) {
       if (controller.signal.aborted) return;
-      console.error("Could not plan exploration route", {
-        origin,
-        destination,
-        cause,
-      });
+      console.error("Could not plan exploration route", { cause: errorDiagnostic(cause) });
       setError(
         cause instanceof Error
           ? cause.message
