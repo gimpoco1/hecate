@@ -14,7 +14,7 @@ function TurnArrow({ symbol }: { symbol: TurnSymbol }) {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[symbol]} /></svg>;
 }
 
-export function NavigationTurn({ cue, anchor }: { cue: NavigationCue; anchor: RefObject<HTMLElement | null> }) {
+export function NavigationTurn({ cue, message, anchor }: { cue: NavigationCue | null; message: string; anchor: RefObject<HTMLElement | null> }) {
   const [bottom, setBottom] = useState(120);
   useLayoutEffect(() => {
     const panel = anchor.current;
@@ -28,6 +28,8 @@ export function NavigationTurn({ cue, anchor }: { cue: NavigationCue; anchor: Re
     window.addEventListener("resize", measure);
     return () => { resize.disconnect(); mutation.disconnect(); window.removeEventListener("resize", measure); };
   }, [anchor]);
+  if (message) return <aside className="navigation-turn" style={{ bottom }} role="status"><div><strong>Navigation</strong><span>{message}</span></div></aside>;
+  if (!cue) return null;
   const distance = cue.distanceMeters <= 10 ? (cue.symbol === "arrive" ? "Arrived" : "Now") : cue.distanceMeters < 1000 ? `${cue.distanceMeters} m` : `${(cue.distanceMeters / 1000).toFixed(1)} km`;
   return <aside className="navigation-turn" style={{ bottom }} aria-label="Next navigation turn">
     <TurnArrow symbol={cue.symbol} /><div><strong>{cue.distanceMeters > 10 ? `In ${distance}` : distance}</strong><span>{cue.instruction}</span></div>

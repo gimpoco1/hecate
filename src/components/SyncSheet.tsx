@@ -1,3 +1,4 @@
+import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { useAppearance } from "../appearance";
@@ -15,7 +16,7 @@ import {
   setAutomaticUpdatesEnabled,
 } from "../automaticUpdates";
 import { clearReminderPreference } from "../explorationReminder";
-import { openLocationSettings, readLocationAuthorization, type LocationAuthorization } from "../location";
+import { reminderMotionPermissionLabel, openLocationSettings, readLocationAuthorization, type LocationAuthorization } from "../location";
 import { isSyncConfigured, supabase } from "../storage";
 import { currentWorldMilestone } from "../badges";
 import { displayNameForUser, loadMyLeaderboardProfile } from "../leaderboard";
@@ -30,6 +31,7 @@ import {
   CitiesIcon,
   ChevronIcon,
   InfoIcon,
+  WarningIcon,
   LeaderboardIcon,
   RouteIcon,
   SaveIcon,
@@ -48,6 +50,8 @@ type Props = {
   onClose: () => void;
   onFeedbackOpen: () => void;
   reminderEnabled: boolean;
+  reminderMotionError: string;
+  reminderMotionAllowed: boolean | null;
   notificationPermissionReady: boolean | null;
   keyboardInset: number;
   travelledDistance: number;
@@ -153,6 +157,8 @@ export function SyncSheet({
   onClose,
   onFeedbackOpen,
   reminderEnabled,
+  reminderMotionError,
+  reminderMotionAllowed,
   notificationPermissionReady,
   keyboardInset,
   travelledDistance,
@@ -230,9 +236,19 @@ export function SyncSheet({
   const discoveryLocationAllowed =
     !Capacitor.isNativePlatform() ||
     (locationAuthorization === "always" && !locationAuthorizationError);
+  const discoveryRemindersAllowed = discoveryLocationAllowed && reminderMotionAllowed !== false;
+  const discoveryReminderBlocked = notificationPermissionReady === false || reminderMotionAllowed === false ||
+    Boolean(locationAuthorizationError) || (locationAuthorization !== null && locationAuthorization !== "always");
+  const notificationSettingsError = notificationError || reminderError;
+  const notificationWarning = notificationSettingsWarning({
+    notifications: notificationPermissionReady,
+    location: discoveryLocationAllowed ? "allowed" : locationAuthorization || locationAuthorizationError ? "blocked" : "pending",
+    motionError: reminderMotionError,
+    actionError: notificationSettingsError,
+  });
   const allNotificationsEnabled =
     notificationPermissionReady === true &&
-    (!discoveryLocationAllowed || reminderEnabled) &&
+    (!discoveryRemindersAllowed || reminderEnabled) &&
     activityNotificationPreferences.morningInvite &&
     activityNotificationPreferences.weeklyRecap &&
     activityNotificationPreferences.streakReminder;
@@ -1123,21 +1139,16 @@ export function SyncSheet({
                   </div>
                   <h2 id="notification-settings-sheet-title">Notifications</h2>
                   <div className="notification-settings-sheet__content">
-                    <p>
-                      Choose the discovery nudges you want to receive. You can
-                      change these at any time.
-                    </p>
-                    {notificationPermissionReady === false && (
-                      <div className="notification-permission-notice" role="status">
+                    <p>Choose which reminders you receive.</p>
+                    {notificationWarning === "notifications" && (
+                      <div id="notification-permission-warning" className="notification-permission-notice" role="status">
                         <span className="notification-permission-notice__icon" aria-hidden="true">
-                          <InfoIcon size={22} strokeWidth={2} />
+                          <WarningIcon size={22} />
                         </span>
                         <div>
-                          <strong>System notifications are off</strong>
+                          <strong>Notifications are off</strong>
                           <p>
-                            Enable notifications for Hecate in device Settings
-                            to receive reminders and weekly recaps. Your saved
-                            preferences will be restored when you return.
+                            Enable Hecate notifications in Settings.
                           </p>
                           <button
                             type="button"
@@ -1156,7 +1167,7 @@ export function SyncSheet({
                                 .finally(() => setNotificationPending(false));
                             }}
                           >
-                            Open device settings
+                            Open Settings
                             <ChevronIcon size={14} strokeWidth={2} />
                           </button>
                         </div>
@@ -1167,12 +1178,13 @@ export function SyncSheet({
                         Checking system notification permission…
                       </div>
                     )}
-                    {notificationError && (
+                    {notificationWarning === "error" && (
                       <div
+                        id="notification-settings-error"
                         className="form-message form-message--error"
                         role="alert"
                       >
-                        {notificationError}
+                        {notificationSettingsError}
                       </div>
                     )}
                     <section
@@ -1182,7 +1194,7 @@ export function SyncSheet({
                       <div className="account-setting account-setting--all">
                         <div>
                           <strong>All notifications</strong>
-                          <p>Turn all notifications on or off at once.</p>
+                          <p>Control all reminders at once.</p>
                         </div>
                         <button
                           type="button"
@@ -1215,11 +1227,12 @@ export function SyncSheet({
                             : "Turn all on"}
                         </button>
                       </div>
-                      <div className="account-setting" role="group" aria-labelledby="discovery-reminders-title">
+                      <div className="discovery-reminder-setting" role="group" aria-labelledby="discovery-reminders-title">
+                        <div className="account-setting">
                           <div>
                             <strong id="discovery-reminders-title">Undiscovered area reminders</strong>
                             <p>
-                              Get notified after{" "}
+                              Remind me after{" "}
                               <ReminderDuration
                                 title="Discovery reminder delay"
                                 value={activityNotificationPreferences.discoveryReminderMinutes}
@@ -1227,8 +1240,7 @@ export function SyncSheet({
                                 disabled={notificationPending || reminderPending}
                                 onChange={onDiscoveryReminderDurationChange}
                               />{" "}
-                              of exploring through an undiscovered area. While tracking,
-                              Hecate also suggests stopping after{" "}
+                              in new areas, or{" "}
                               <ReminderDuration
                                 title="Inactivity reminder delay"
                                 value={activityNotificationPreferences.inactivityReminderMinutes}
@@ -1236,15 +1248,14 @@ export function SyncSheet({
                                 disabled={notificationPending || reminderPending}
                                 onChange={onInactivityReminderDurationChange}
                               />{" "}
-                              in one place.
-                              Reminder locations are never saved or synced.
+                              without moving during a journey.
                             </p>
                             <label className="account-reminder-option">
                               <input
                                 type="checkbox"
                                 aria-label="Journey reminders in discovered areas"
                                 checked={activityNotificationPreferences.discoveredAreaReminders}
-                                disabled={!reminderEnabled || notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
+                                disabled={!reminderEnabled || notificationPermissionReady !== true || !discoveryRemindersAllowed || reminderPending || notificationPending}
                                 onChange={(event) => setReminderError(onDiscoveredAreaRemindersChange(
                                   event.target.checked,
                                 ) ?? "")}
@@ -1252,84 +1263,102 @@ export function SyncSheet({
                               <span>Also remind me in discovered areas</span>
                             </label>
                           </div>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled}
-                            aria-label="Undiscovered area reminders"
-                            disabled={notificationPermissionReady !== true || !discoveryLocationAllowed || reminderPending || notificationPending}
-                            onClick={() => {
-                              setReminderPending(true);
-                              setReminderError("");
-                              void onReminderChange(!reminderEnabled)
-                                .then((error) => setReminderError(error ?? ""))
-                                .finally(() => setReminderPending(false));
-                            }}
-                          >
-                            {notificationPermissionReady === true && discoveryLocationAllowed && reminderEnabled ? "On" : "Off"}
-                          </button>
-                        </div>
-                      {notificationPermissionReady === true && (locationAuthorization === "whenInUse" ||
-                        locationAuthorization === "denied" ||
-                        locationAuthorization === "notDetermined" ||
-                        locationAuthorizationError) && (
-                        <div className="notification-permission-notice" role="status">
-                          <span className="notification-permission-notice__icon" aria-hidden="true">
-                            <InfoIcon size={22} strokeWidth={2} />
-                          </span>
-                          <div>
-                            <strong>
-                              {locationAuthorization === "whenInUse"
-                                ? "Location is allowed only while using the app"
-                                : "Background location access is off"}
-                            </strong>
-                            <p>
-                              {locationAuthorizationError ||
-                                (Capacitor.getPlatform() === "android"
-                                  ? "To receive discovery reminders in the background, open Settings → Permissions → Location and choose Allow all the time."
-                                  : "To receive discovery reminders while Hecate is in the background, open Settings and choose Location → Always.")}
-                            </p>
+                          {discoveryReminderBlocked ? (
+                            <span className="account-setting__warning" role="img" aria-label="Discovery reminders need permission"
+                              aria-describedby={notificationWarning === "error" ? "notification-settings-error" : notificationWarning ? "notification-permission-warning" : undefined}>
+                              <WarningIcon size={24} />
+                            </span>
+                          ) : (
                             <button
                               type="button"
-                              className="notification-permission-notice__action"
+                              role="switch"
+                              aria-checked={notificationPermissionReady === true && discoveryRemindersAllowed && reminderEnabled}
+                              aria-label="Undiscovered area reminders"
+                              disabled={notificationPermissionReady !== true || !discoveryRemindersAllowed || reminderPending || notificationPending}
                               onClick={() => {
-                                void openLocationSettings().catch((error: Error) => {
-                                  console.warn("Could not open location settings", { error });
-                                  setLocationAuthorizationError(
-                                    "Could not open Settings. Open Hecate's app settings and allow background location.",
-                                  );
-                                });
+                                setReminderPending(true);
+                                setReminderError("");
+                                void onReminderChange(!reminderEnabled)
+                                  .then((error) => setReminderError(error ?? ""))
+                                  .finally(() => setReminderPending(false));
                               }}
                             >
-                              Open device settings
-                              <ChevronIcon size={14} strokeWidth={2} />
+                              {notificationPermissionReady === true && discoveryRemindersAllowed && reminderEnabled ? "On" : "Off"}
                             </button>
+                          )}
+                        </div>
+                        {notificationWarning === "location" && (
+                          <div id="notification-permission-warning" className="notification-permission-notice" role="status">
+                            <span className="notification-permission-notice__icon" aria-hidden="true">
+                              <WarningIcon size={22} />
+                            </span>
+                            <div>
+                              <strong>
+                                {locationAuthorizationError
+                                  ? "Check location access"
+                                  : locationAuthorization === "whenInUse"
+                                    ? "Location is allowed only while using the app"
+                                    : locationAuthorization === "notDetermined"
+                                      ? "Location permission isn’t set"
+                                      : "Location access is off"}
+                              </strong>
+                              <p>
+                                {locationAuthorizationError ||
+                                  (Capacitor.getPlatform() === "android"
+                                    ? "Choose “Allow all the time” so Hecate can check for undiscovered areas and send reminders in the background."
+                                    : "Choose “Always” so Hecate can check for undiscovered areas and send reminders in the background.")}
+                              </p>
+                              <button
+                                type="button"
+                                className="notification-permission-notice__action"
+                                onClick={() => {
+                                  void openLocationSettings().catch((error: Error) => {
+                                    console.warn("Could not open location settings", { error });
+                                    setLocationAuthorizationError(
+                                      "Could not open Settings. Open Hecate's app settings and allow background location.",
+                                    );
+                                  });
+                                }}
+                              >
+                                Open Settings
+                                <ChevronIcon size={14} strokeWidth={2} />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {reminderError && (
-                        <div
-                          className="form-message form-message--error"
-                          role="alert"
-                        >
-                          {reminderError}
-                        </div>
-                      )}
+                        )}
+                        {notificationWarning === "motion" && (
+                          <div id="notification-permission-warning" className="notification-permission-notice" role="status">
+                            <span className="notification-permission-notice__icon" aria-hidden="true">
+                              <WarningIcon size={22} />
+                            </span>
+                            <div>
+                              <strong>{reminderMotionPermissionLabel()} access is off</strong>
+                              <p>{reminderMotionError}</p>
+                              <button type="button" className="notification-permission-notice__action" onClick={() => {
+                                void openLocationSettings().catch((cause) => {
+                                  console.error("Could not open motion permission settings", { cause });
+                                  setReminderError(`Open Hecate’s device settings and allow ${reminderMotionPermissionLabel()}.`);
+                                });
+                              }}>Open Settings <ChevronIcon size={14} /></button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       {[
                         [
                           "morningInvite",
                           "Daily discovery reminder",
-                          "Receive a friendly morning reminder to get outside and add distance to your map.",
+                          "A daily nudge to explore.",
                         ] as const,
                         [
                           "weeklyRecap",
                           "Weekly progress summary",
-                          "Receive a Sunday evening recap of your new ground, distance walked, and current streak.",
+                          "Your distance, new ground and streak every Sunday.",
                         ] as const,
                         [
                           "streakReminder",
                           "Streak reminder",
-                          "Receive a reminder at your chosen time when you have not walked that day and your current streak is at risk.",
+                          "A reminder to protect your streak.",
                         ] as const,
                       ].map(([category, title, description]) => (
                         <div className="account-setting" key={category}>
@@ -1338,25 +1367,25 @@ export function SyncSheet({
                             <p>
                               {category === "streakReminder" ? (
                                 <>
-                                  Receive a reminder at{" "}
+                                  Remind me at{" "}
                                   <ReminderTime
                                     title="Streak reminder time"
                                     value={activityNotificationPreferences.streakReminderTime}
                                     disabled={notificationPending || reminderPending}
                                     onChange={onStreakReminderTimeChange}
                                   />{" "}
-                                  when you have not walked that day and your current streak is at risk.
+                                  if I haven’t walked and my streak is at risk.
                                 </>
                               ) : category === "morningInvite" ? (
                                 <>
-                                  Receive a reminder at{" "}
+                                  A daily nudge at{" "}
                                   <ReminderTime
                                     title="Daily reminder time"
                                     value={activityNotificationPreferences.dailyReminderTime}
                                     disabled={notificationPending || reminderPending}
                                     onChange={onDailyReminderTimeChange}
                                   />{" "}
-                                  to get outside and add distance to your map.
+                                  to explore.
                                 </>
                               ) : description}
                             </p>

@@ -1,4 +1,33 @@
+import type { Coordinate } from "./types";
 import type { RoutePoint } from "./explorationRouting";
+
+/** Uses the user's measured direction, independent of the planned route. */
+export function userCameraBearing(point: Coordinate, compassHeading: number | null): number | null {
+  const heading = compassHeading ?? point.heading;
+  return typeof heading === "number" && Number.isFinite(heading) && heading >= 0 && heading < 360 ? heading : null;
+}
+
+export type MapOrientation = "north-up" | "heading-up";
+
+/** North-up is the default; heading-up uses the measured user direction. */
+export function mapCameraBearing(orientation: MapOrientation, point: Coordinate, compassHeading: number | null): number | null {
+  return orientation === "north-up" ? 0 : userCameraBearing(point, compassHeading);
+}
+
+/** Avoids camera redraws after position and direction have already settled. */
+export function cameraNeedsUpdate(center: RoutePoint, target: Coordinate, bearing: number, targetBearing: number | null): boolean {
+  const positionChanged = Math.hypot(((target.lng - center.lng + 540) % 360 - 180) * Math.cos(target.lat * Math.PI / 180), target.lat - center.lat) * 111_320 > 0.5;
+  const directionChanged = targetBearing !== null && Math.abs(((targetBearing - bearing + 540) % 360) - 180) > 1;
+  return positionChanged || directionChanged;
+}
+
+/** Measures travel direction between two distinct locations. */
+export function movementBearing(start: RoutePoint, end: RoutePoint): number {
+  if (start.lng === end.lng && start.lat === end.lat) throw new RangeError("Travel direction requires two distinct locations.");
+  const radians = Math.PI / 180;
+  const latitude = (start.lat + end.lat) / 2 * radians;
+  return (Math.atan2((end.lng - start.lng) * Math.cos(latitude), end.lat - start.lat) / radians + 360) % 360;
+}
 
 type RouteProjection = { index: number; progress: number; distanceSquared: number };
 

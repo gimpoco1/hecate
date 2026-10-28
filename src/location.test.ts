@@ -1,26 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const native = vi.hoisted(() => ({
+  platform: 'ios',
   addWatcher: vi.fn(),
   removeWatcher: vi.fn(),
   removeAllWatchers: vi.fn(),
   openSettings: vi.fn(),
   getAuthorizationStatus: vi.fn(),
+  requestMotionPermission: vi.fn(),
+  getMotionAuthorizationStatus: vi.fn(),
 }))
 
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { getPlatform: () => 'ios', isNativePlatform: () => true },
+  Capacitor: { getPlatform: () => native.platform, isNativePlatform: () => native.platform !== 'web' },
   registerPlugin: () => ({
     addWatcher: native.addWatcher,
     removeWatcher: native.removeWatcher,
     removeAllWatchers: native.removeAllWatchers,
     openSettings: native.openSettings,
     getAuthorizationStatus: native.getAuthorizationStatus,
+    requestMotionPermission: native.requestMotionPermission,
+    getMotionAuthorizationStatus: native.getMotionAuthorizationStatus,
   }),
 }))
 
 import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from './location'
-import { readLocationAuthorization } from './location'
+import { readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from './location'
 
 describe('iOS location authorization', () => {
   it.each(['always', 'whenInUse', 'denied', 'notDetermined'])('reads %s without requesting location', async status => {
@@ -36,6 +41,7 @@ describe('iOS location authorization', () => {
 
 describe('native location lifecycle', () => {
   beforeEach(() => {
+    native.platform = 'ios'
     vi.clearAllMocks()
     native.removeAllWatchers.mockResolvedValue(undefined)
   })
@@ -47,9 +53,9 @@ describe('native location lifecycle', () => {
 
     const starting = tracker.start(() => undefined, () => undefined)
     await vi.waitFor(() => expect(native.removeAllWatchers).toHaveBeenCalledOnce())
-    await tracker.stop()
+    const stopping = tracker.stop()
     resolveCleanup()
-    await starting
+    await Promise.all([starting, stopping])
 
     expect(native.addWatcher).not.toHaveBeenCalled()
   })
@@ -67,6 +73,7 @@ describe('native location lifecycle', () => {
         stale: true,
         showsBackgroundLocationIndicator: false,
         journeyId: null,
+        motionGated: false,
       }),
       expect.any(Function),
     )
@@ -154,9 +161,9 @@ describe('native location lifecycle', () => {
 
     const starting = tracker.start(() => undefined, () => undefined)
     await vi.waitFor(() => expect(native.addWatcher).toHaveBeenCalledOnce())
-    await tracker.stop()
+    const stopping = tracker.stop()
     resolveWatcher('late-watcher')
-    await starting
+    await Promise.all([starting, stopping])
 
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'late-watcher' })
   })
@@ -184,9 +191,72 @@ describe('native location lifecycle', () => {
     await tracker.start(() => undefined, () => undefined)
 
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ journeyId: 'walk-1', distanceFilter: 8, stale: false, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
+      expect.objectContaining({ journeyId: 'walk-1', motionGated: false, distanceFilter: 8, stale: false, backgroundMessage: expect.any(String), showsBackgroundLocationIndicator: true }),
       expect.any(Function),
     )
+  })
+
+  it('waits for a stopped watcher to finish removal before registering the next mode', async () => {
+    let resolveRemoval!: () => void
+    native.addWatcher.mockResolvedValueOnce('outgoing').mockResolvedValueOnce('incoming')
+    native.removeWatcher.mockReturnValueOnce(new Promise<void>(resolve => { resolveRemoval = resolve })).mockResolvedValue(undefined)
+    const foreground = createForegroundLocationTracker()
+    await foreground.start(() => undefined, () => undefined)
+    const stopping = foreground.stop()
+    const reminder = createReminderLocationTracker()
+    const starting = reminder.start(() => undefined, () => undefined)
+    await vi.waitFor(() => expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'outgoing' }))
+    expect(native.addWatcher).toHaveBeenCalledTimes(1)
+    resolveRemoval()
+    await Promise.all([stopping, starting])
+    expect(native.addWatcher).toHaveBeenCalledTimes(2)
+    await reminder.stop()
+  })
+
+  it('cleans up a failed registration before a later tracker can start', async () => {
+    native.addWatcher.mockRejectedValueOnce(new Error('Native registration failed'))
+    const failed = createReminderLocationTracker()
+    await expect(failed.start(() => undefined, () => undefined)).rejects.toThrow('Native registration failed')
+    await failed.stop()
+    expect(native.removeAllWatchers).toHaveBeenCalledOnce()
+    native.addWatcher.mockResolvedValueOnce('restarted-foreground')
+    native.removeWatcher.mockResolvedValue(undefined)
+    const foreground = createForegroundLocationTracker()
+    await foreground.start(() => undefined, () => undefined)
+    await foreground.stop()
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: 'restarted-foreground' })
+  })
+
+  it.each(['authorized', 'denied', 'restricted', 'notDetermined', 'unavailable'] as const)('reads motion status %s without asking for permission', async status => {
+    native.getMotionAuthorizationStatus.mockResolvedValue({ status })
+    expect(await readReminderMotionAuthorization()).toBe(status)
+    expect(native.requestMotionPermission).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unrecognized native motion permission status', async () => {
+    native.getMotionAuthorizationStatus.mockResolvedValue({ status: 'invalid' })
+    await expect(readReminderMotionAuthorization()).rejects.toThrow('Unrecognized Motion & Fitness authorization status')
+  })
+
+  it('uses Android Physical activity permission and motion-gates its reminder watcher', async () => {
+    native.platform = 'android'
+    native.getMotionAuthorizationStatus.mockResolvedValue({ status: 'denied' })
+    native.requestMotionPermission.mockResolvedValue({ granted: false })
+    expect(await readReminderMotionAuthorization()).toBe('denied')
+    expect(await requestReminderMotionPermission()).toBe(false)
+    native.addWatcher.mockResolvedValue('android-reminder')
+    native.removeWatcher.mockResolvedValue(undefined)
+    const tracker = createReminderLocationTracker()
+    await tracker.start(() => undefined, () => undefined)
+    expect(native.addWatcher).toHaveBeenCalledWith(expect.objectContaining({ motionGated: true, journeyId: null }), expect.any(Function))
+    await tracker.stop()
+  })
+
+  it('requires an explicit native Motion & Fitness permission result', async () => {
+    native.requestMotionPermission.mockResolvedValueOnce({ granted: true }).mockResolvedValueOnce({ granted: false }).mockResolvedValueOnce({})
+    expect(await requestReminderMotionPermission()).toBe(true)
+    expect(await requestReminderMotionPermission()).toBe(false)
+    await expect(requestReminderMotionPermission()).rejects.toThrow('boolean granted')
   })
 
   it('marks opt-in reminder monitoring as background-capable without recording a walk', async () => {
@@ -195,7 +265,7 @@ describe('native location lifecycle', () => {
     const tracker = createReminderLocationTracker()
     await tracker.start(() => undefined, () => undefined)
     expect(native.addWatcher).toHaveBeenCalledWith(
-      expect.objectContaining({ journeyId: null, distanceFilter: 30, stale: false, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
+      expect.objectContaining({ journeyId: null, motionGated: true, distanceFilter: 30, stale: false, backgroundMessage: expect.stringContaining('Discovery reminders'), showsBackgroundLocationIndicator: false }),
       expect.any(Function),
     )
     await tracker.stop()

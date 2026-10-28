@@ -14,6 +14,7 @@ import {
   splitRoute,
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
+import { discoveryHighlightData } from "../discoveryHighlights";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
 import { useAppearance } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
@@ -26,6 +27,7 @@ type Props = {
   points: Coordinate[];
   cells: DiscoveryCell[];
   highlightedPoints: Coordinate[];
+  highlightedCells: DiscoveryCell[];
   currentPoint?: Coordinate;
   navigationFollowing: boolean;
   onUserMarkerChange?: (marker: maplibregl.Marker | null) => void;
@@ -44,6 +46,8 @@ type Props = {
   onZoomChange: (zoom: number) => void;
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void;
   onUserNavigation?: () => void;
+  onHeadingChange?: (heading: number) => void;
+  onUserCenteredChange?: (centered: boolean) => void;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
   fogLayerRef?: React.MutableRefObject<DiscoveryFogLayer | null>;
   initialCenter?: [number, number];
@@ -54,6 +58,13 @@ type FollowCameraEvent = maplibregl.MapLibreEvent & {
   hecateFollowCamera?: boolean;
   hecateNavigationPoint?: { lng: number; lat: number };
 };
+
+function isUserCentered(map: MapLibreMap, point: Coordinate | undefined): boolean {
+  if (!point) return false;
+  const marker = map.project(point);
+  const center = map.project(map.getCenter());
+  return Math.hypot(marker.x - center.x, marker.y - center.y) <= 12;
+}
 
 function userMarkerClassName(
   locationState: NonNullable<Props["locationState"]>,
@@ -149,6 +160,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   points,
   cells,
   highlightedPoints,
+  highlightedCells,
   currentPoint,
   navigationFollowing,
   onUserMarkerChange,
@@ -163,6 +175,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   onZoomChange,
   onViewChange,
   onUserNavigation,
+  onHeadingChange,
+  onUserCenteredChange,
   mapRef,
   fogLayerRef: externalFogLayerRef,
   initialCenter = [7, 24],
@@ -183,8 +197,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
   const highlightedPointsRef = useRef(highlightedPoints);
+  const highlightedCellsRef = useRef(highlightedCells);
   const onViewChangeRef = useRef(onViewChange);
   const onUserNavigationRef = useRef(onUserNavigation);
+  const onHeadingChangeRef = useRef(onHeadingChange);
+  onHeadingChangeRef.current = onHeadingChange;
+  const onUserCenteredChangeRef = useRef(onUserCenteredChange);
+  onUserCenteredChangeRef.current = onUserCenteredChange;
   const compassHeadingRef = useRef<number | undefined>(undefined);
   const [mapStyle, setMapStyle] = useState<
     Awaited<ReturnType<typeof loadMapStyle>> | string | null
@@ -234,6 +253,13 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       syncHighlightedRoute(map, highlightedPoints, fogLayer.id);
   }, [highlightedPoints, mapRef]);
   useEffect(() => {
+    highlightedCellsRef.current = highlightedCells;
+    const map = mapRef.current;
+    const fogLayer = fogLayerRef.current;
+    if (map && fogLayer)
+      syncHighlightedDiscoveries(map, highlightedCells, fogLayer.id);
+  }, [highlightedCells, mapRef]);
+  useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
   useEffect(() => {
@@ -281,6 +307,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       headingFrame = requestAnimationFrame(() => {
         headingFrame = null;
         compassHeadingRef.current = pendingHeading;
+        if (pendingHeading !== undefined) onHeadingChangeRef.current?.(pendingHeading);
         const element = markerRef.current?.getElement();
         const map = mapRef.current;
         if (element && map)
@@ -340,6 +367,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      if (highlightedCellsRef.current.length > 0)
+        syncHighlightedDiscoveries(map, highlightedCellsRef.current, fogLayer.id);
       if (highlightedPointsRef.current.length > 0) {
         syncHighlightedRoute(
           map,
@@ -382,11 +411,23 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const handleTouchCancel = (): void => {
       touchGestureActive = false;
     };
+    const interruptCamera = (): void => {
+      onUserNavigationRef.current?.();
+    };
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (event.pointerType === "touch") touchGestureActive = true;
+      interruptCamera();
+    };
+    const canvas = map.getCanvas();
+    canvas.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    canvas.addEventListener("wheel", interruptCamera, { capture: true, passive: true });
     const handleMoveEnd = (event: FollowCameraEvent) => {
-      if (event.hecateFollowCamera || touchGestureActive) return;
-      const center = map.getCenter();
+      onUserCenteredChangeRef.current?.(isUserCentered(map, currentPointRef.current));
+      if (touchGestureActive) return;
       const settledZoom = map.getZoom();
       onZoomChange(settledZoom);
+      if (event.hecateFollowCamera) return;
+      const center = map.getCenter();
       onViewChangeRef.current?.(
         { lng: center.lng, lat: center.lat },
         settledZoom,
@@ -400,7 +441,12 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     map.on("touchend", handleTouchEnd);
     map.on("touchcancel", handleTouchCancel);
     map.on("rotate", handleRotate);
-    map.on("dragstart", () => onUserNavigationRef.current?.());
+    const handleUserNavigation = (event: maplibregl.MapMovementEvent): void => {
+      if (event.originalEvent) onUserNavigationRef.current?.();
+    };
+    map.on("movestart", handleUserNavigation);
+    map.on("rotatestart", handleUserNavigation);
+    map.on("zoomstart", handleUserNavigation);
     map.on("click", (event) => {
       if (onDestinationSelectRef.current) {
         onDestinationSelectRef.current({ lng: event.lngLat.lng, lat: event.lngLat.lat });
@@ -418,11 +464,14 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     });
     map.on("moveend", handleMoveEnd);
     return () => {
+      canvas.removeEventListener("pointerdown", handlePointerDown, true);
+      canvas.removeEventListener("wheel", interruptCamera, true);
       baseStyleRef.current = null;
       fogLayerRef.current = null;
       if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
+      onUserCenteredChangeRef.current?.(false);
       onUserMarkerChangeRef.current?.(null);
       favoriteMarkersRef.current.forEach((marker) => marker.remove());
       favoriteMarkersRef.current = [];
@@ -434,6 +483,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!currentPoint) {
+      onUserCenteredChangeRef.current?.(false);
       markerRef.current?.remove();
       markerRef.current = null;
       onUserMarkerChangeRef.current?.(null);
@@ -441,6 +491,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       return;
     }
     if (!map) return;
+    onUserCenteredChangeRef.current?.(isUserCentered(map, currentPoint));
     if (!markerRef.current) {
       const element = createUserMarkerElement(locationStateRef.current);
       updateUserMarkerHeading(
@@ -504,6 +555,33 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     </div>
   );
 });
+
+function syncHighlightedDiscoveries(
+  map: MapLibreMap,
+  cells: DiscoveryCell[],
+  beforeLayerId: string,
+): void {
+  const sourceId = "hecate-highlighted-discoveries";
+  const layerId = "hecate-highlighted-discoveries-fill";
+  const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+  if (cells.length === 0) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (source) map.removeSource(sourceId);
+    return;
+  }
+  const data = discoveryHighlightData(cells);
+  if (source) {
+    source.setData(data);
+    return;
+  }
+  map.addSource(sourceId, { type: "geojson", data });
+  map.addLayer({
+    id: layerId,
+    type: "fill",
+    source: sourceId,
+    paint: { "fill-color": "#91b23c", "fill-opacity": 0.5 },
+  }, beforeLayerId);
+}
 
 function highlightedRouteData(points: Coordinate[]) {
   return {

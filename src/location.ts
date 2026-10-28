@@ -95,6 +95,31 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
 interface HecateBackgroundGeolocationPlugin extends BackgroundGeolocationPlugin {
   removeAllWatchers(): Promise<void>;
   getAuthorizationStatus(): Promise<{ status: string }>;
+  requestMotionPermission(): Promise<{ granted: boolean }>;
+  getMotionAuthorizationStatus(): Promise<{ status: string }>;
+}
+
+export function reminderMotionPermissionLabel(): string {
+  return Capacitor.getPlatform() === "android" ? "Physical activity" : "Motion & Fitness";
+}
+
+export type ReminderMotionAuthorization = "authorized" | "denied" | "restricted" | "notDetermined" | "unavailable";
+
+/** Reads platform activity-recognition access without displaying a permission prompt. */
+export async function readReminderMotionAuthorization(): Promise<ReminderMotionAuthorization> {
+  if (!Capacitor.isNativePlatform()) return "authorized";
+  const { status } = await HecateBackgroundGeolocation.getMotionAuthorizationStatus();
+  if (status !== "authorized" && status !== "denied" && status !== "restricted" && status !== "notDetermined" && status !== "unavailable")
+    throw new Error("Unrecognized Motion & Fitness authorization status: " + status);
+  return status;
+}
+
+/** Native background reminders require the platform motion permission. */
+export async function requestReminderMotionPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+  const result = await HecateBackgroundGeolocation.requestMotionPermission();
+  if (typeof result.granted !== "boolean") throw new Error("Native Motion & Fitness permission response is missing a boolean granted value.");
+  return result.granted;
 }
 
 export type LocationAuthorization = "always" | "whenInUse" | "denied" | "notDetermined";
@@ -110,6 +135,7 @@ export async function readLocationAuthorization(): Promise<LocationAuthorization
 const HecateBackgroundGeolocation =
   BackgroundGeolocation as HecateBackgroundGeolocationPlugin;
 let nativeRuntimePreparation: Promise<void> | null = null;
+let nativeWatcherCleanup: Promise<void> = Promise.resolve();
 
 async function retryNativeOperation(
   operation: () => Promise<void>,
@@ -134,7 +160,7 @@ async function retryNativeOperation(
 }
 
 async function prepareNativeRuntime() {
-  if (Capacitor.getPlatform() !== "ios") return;
+  if (!Capacitor.isNativePlatform()) return;
   if (!nativeRuntimePreparation) {
     nativeRuntimePreparation = retryNativeOperation(
       () => HecateBackgroundGeolocation.removeAllWatchers(),
@@ -163,6 +189,8 @@ function nativeError(error: CallbackError | unknown): LocationTrackerError {
     code:
       candidate?.code === "AIRPLANE_MODE"
         ? "journey-stopped"
+        : candidate?.code === "MOTION_NOT_AUTHORIZED" || candidate?.code === "MOTION_UNAVAILABLE"
+        ? "permission-denied"
         : candidate?.code === "NOT_AUTHORIZED"
         ? "permission-denied"
         : "unavailable",
@@ -173,8 +201,9 @@ function nativeError(error: CallbackError | unknown): LocationTrackerError {
 class NativeLocationTracker implements LocationTracker {
   private watcherId: string | null = null;
   private stopRequested = false;
-  private removalPromise: Promise<void> | null = null;
   private active = false;
+  private registrationPromise: Promise<void> | null = null;
+  private stopPromise: Promise<void> | null = null;
 
   constructor(private readonly mode: "walk" | "foreground" | "reminder", private readonly journeyId: string | null) {}
 
@@ -183,15 +212,30 @@ class NativeLocationTracker implements LocationTracker {
     onError: (error: LocationTrackerError) => void,
   ) {
     this.stopRequested = false;
+    this.stopPromise = null;
     this.active = true;
+    const cleanup = nativeWatcherCleanup;
+    this.registrationPromise = this.registerWatcher(onPoint, onError, cleanup);
+    await this.registrationPromise;
+  }
+
+  private async registerWatcher(
+    onPoint: (point: Coordinate) => void,
+    onError: (error: LocationTrackerError) => void,
+    cleanup: Promise<void>,
+  ): Promise<void> {
+    await cleanup;
+    if (this.stopRequested) return;
     await prepareNativeRuntime();
     if (this.stopRequested) return;
     const options: Parameters<BackgroundGeolocationPlugin["addWatcher"]>[0] & {
       showsBackgroundLocationIndicator?: boolean;
       journeyId: string | null;
+      motionGated: boolean;
     } = {
       showsBackgroundLocationIndicator: this.mode === "walk",
       journeyId: this.journeyId,
+      motionGated: this.mode === "reminder",
       ...(this.mode === "walk"
         ? {
             backgroundTitle: "Hecate is revealing your path",
@@ -233,9 +277,7 @@ class NativeLocationTracker implements LocationTracker {
       },
     );
     if (this.stopRequested) {
-      this.removalPromise = removeNativeWatcher(watcherId);
-      await this.removalPromise;
-      this.removalPromise = null;
+      await removeNativeWatcher(watcherId);
       return;
     }
     this.watcherId = watcherId;
@@ -246,18 +288,22 @@ class NativeLocationTracker implements LocationTracker {
     // Native watcher removal is asynchronous. Ignore callbacks immediately so
     // a final queued fix cannot leak into a completed or newly started walk.
     this.active = false;
-    if (!this.watcherId) {
-      await this.removalPromise;
-      return;
-    }
-    const id = this.watcherId;
-    this.watcherId = null;
-    this.removalPromise = removeNativeWatcher(id);
-    try {
-      await this.removalPromise;
-    } finally {
-      this.removalPromise = null;
-    }
+    if (this.stopPromise) return this.stopPromise;
+    const registration = this.registrationPromise;
+    this.stopPromise = nativeWatcherCleanup.then(async () => {
+      try {
+        await registration;
+      } catch (cause) {
+        console.warn("Removing native location state after failed registration", { mode: this.mode, journeyId: this.journeyId, cause });
+        await retryNativeOperation(() => HecateBackgroundGeolocation.removeAllWatchers(), "removeAllWatchers");
+      }
+      if (!this.watcherId) return;
+      const id = this.watcherId;
+      await removeNativeWatcher(id);
+      this.watcherId = null;
+    });
+    nativeWatcherCleanup = this.stopPromise;
+    return this.stopPromise;
   }
 }
 

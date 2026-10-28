@@ -3791,6 +3791,21 @@ button {
   opacity: 0.55;
   cursor: default;
 }
+.discovery-reminder-setting {
+  border-bottom: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), 0.08);
+}
+.discovery-reminder-setting > .account-setting {
+  border-bottom: 0;
+}
+.discovery-reminder-setting .notification-permission-notice {
+  margin: 0 0 12px;
+}
+.account-setting__warning {
+  display: flex;
+  flex: 0 0 54px;
+  justify-content: center;
+  color: var(--theme-text-warm, #705221);
+}
 .account-setting--all {
   padding-top: 4px;
 }

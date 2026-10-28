@@ -1,4 +1,4 @@
-import type { PlannedRoute } from "./explorationRouting";
+import type { RoutePoint, PlannedRoute } from "./explorationRouting";
 import type { RouteProgress } from "./routeProgress";
 import { distanceKm } from "./geo";
 import { routePositionAtDistance, type RouteGeometry } from "./routeGeometry";
@@ -17,6 +17,12 @@ export function routeContinuesStraight(geometry: RouteGeometry, fraction: number
   const incoming = Math.atan2((samples[1].lng - samples[0].lng) * scale, samples[1].lat - samples[0].lat);
   const outgoing = Math.atan2((samples[2].lng - samples[1].lng) * scale, samples[2].lat - samples[1].lat);
   return Math.abs(((outgoing - incoming) * 180 / Math.PI + 540) % 360 - 180) < 25;
+}
+
+/** Recognizes arrival from location even when the destination was reached by another route. */
+export function hasReachedRouteDestination(route: PlannedRoute, position: RoutePoint): boolean {
+  const endpoint = route.points[route.points.length - 1];
+  return distanceKm({ ...position, recordedAt: 0 }, { ...endpoint, recordedAt: 0 }) * 1000 <= 10;
 }
 
 /** Selects the next provider maneuver using progress along the route, not straight-line distance to a turn. */

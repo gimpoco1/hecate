@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { simulationPosition } from "../navigationSimulation";
+import { simulationHeading, simulationPosition, type NavigationPlayback } from "../navigationSimulation";
 import { prepareRouteGeometry } from "../routeGeometry";
-import type { PlannedRoute } from "../explorationRouting";
 import type { Coordinate } from "../types";
 
-type Props = { route: PlannedRoute; onFix: (point: Coordinate) => void; onStop: () => void; panelRef: RefObject<HTMLElement | null> };
+type Props = { route: NavigationPlayback; waitingForRoute: boolean; onFix: (point: Coordinate) => void; onStop: () => void; panelRef: RefObject<HTMLElement | null> };
 
-export function NavigationSimulation({ route, onFix, onStop, panelRef }: Props) {
+export function NavigationSimulation({ route, waitingForRoute, onFix, onStop, panelRef }: Props) {
   const geometry = useMemo(() => prepareRouteGeometry(route.points), [route]);
   const elapsedRef = useRef(0);
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState(5);
   const [progress, setProgress] = useState(0);
   useEffect(() => {
-    if (paused || elapsedRef.current >= route.durationSeconds) return;
+    elapsedRef.current = 0;
+    setProgress(0);
+  }, [route]);
+  useEffect(() => {
+    if (paused || waitingForRoute || elapsedRef.current >= route.durationSeconds) return;
     let previous = performance.now();
     const update = (): void => {
       const now = performance.now();
@@ -22,7 +25,7 @@ export function NavigationSimulation({ route, onFix, onStop, panelRef }: Props) 
       previous = now;
       const fraction = elapsedRef.current / route.durationSeconds;
       const point = simulationPosition(geometry, fraction);
-      onFix({ ...point, recordedAt: Date.now(), accuracy: 5 });
+      onFix({ ...point, recordedAt: Date.now(), accuracy: 5, heading: simulationHeading(geometry, fraction) });
       setProgress(fraction);
       if (fraction >= 1) window.clearInterval(timer);
     };
@@ -34,7 +37,7 @@ export function NavigationSimulation({ route, onFix, onStop, panelRef }: Props) 
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", resetClock);
     };
-  }, [onFix, paused, route.durationSeconds, geometry, speed]);
+  }, [onFix, paused, route.durationSeconds, geometry, speed, waitingForRoute]);
   return <section ref={panelRef} className="navigation-simulation" aria-label="Navigation preview">
     <strong>{progress >= 1 ? "Preview complete" : "Navigation preview"}</strong>
     <small>Simulated GPS · no journey or progress saved</small>

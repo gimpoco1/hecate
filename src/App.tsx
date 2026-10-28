@@ -1,12 +1,13 @@
-import { navigationCameraStep, routeCameraBearing } from "./routeCamera";
+import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
+import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
-import { navigationCue, type NavigationCue } from "./navigationGuidance";
+import { hasReachedRouteDestination, navigationCue, type NavigationCue } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
-import type { PlannedRoute } from "./explorationRouting";
+import { calculateNavigationRoute, type PlannedRoute, type TransportMode } from "./explorationRouting";
 import {
   ExplorationRoutePlanner,
   type RouteDestination,
@@ -36,6 +37,7 @@ import {
 } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
+import { discoveryHighlightData } from "./discoveryHighlights";
 import type {
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
@@ -105,6 +107,7 @@ import {
   ChevronIcon,
   HecateMark,
   InfoIcon,
+  CompassIcon,
   LocateIcon,
   FogIcon,
   ViewDimensionIcon,
@@ -204,6 +207,9 @@ import {
   isNativeApp,
   openLocationSettings,
   readLocationAuthorization,
+  requestReminderMotionPermission,
+  readReminderMotionAuthorization,
+  reminderMotionPermissionLabel,
   passiveLocationMode,
   type LocationTracker,
 } from "./location";
@@ -816,6 +822,8 @@ export default function App() {
   const [discoveryLocationAllowed, setDiscoveryLocationAllowed] = useState(
     () => !isNativeApp(),
   );
+  const [reminderMotionAllowed, setReminderMotionAllowed] = useState<boolean | null>(isNativeApp() ? null : true);
+  const [reminderMotionError, setReminderMotionError] = useState("");
   const reminderEnabledRef = useRef(reminderEnabled);
   reminderEnabledRef.current = reminderEnabled;
   const activityNotificationQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -878,6 +886,13 @@ export default function App() {
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
+  const [activeNavigationRoute, setActiveNavigationRoute] = useState<PlannedRoute | null>(null);
+  const navigationModeRef = useRef<TransportMode>("pedestrian");
+  const rerouteControllerRef = useRef<AbortController | null>(null);
+  const [navigationRequestPending, setNavigationRequestPending] = useState(false);
+  const nextRerouteAtRef = useRef(0);
+  const [navigationMessage, setNavigationMessage] = useState("");
+  useEffect(() => () => { rerouteControllerRef.current?.abort(); }, []);
   const simulationRouteRef = useRef<PlannedRoute | null>(null);
   const [simulationRoute, setSimulationRoute] = useState<PlannedRoute | null>(
     null,
@@ -885,6 +900,9 @@ export default function App() {
   const [simulationPoint, setSimulationPoint] = useState<Coordinate | null>(
     null,
   );
+  const simulationPointRef = useRef<Coordinate | null>(null);
+  const [simulationPlayback, setSimulationPlayback] = useState<NavigationPlayback | null>(null);
+  const [navigationTestMessage, setNavigationTestMessage] = useState("");
   const simulationPanelRef = useRef<HTMLElement>(null);
   const guidanceRef = useRef<{
     route: PlannedRoute;
@@ -903,6 +921,7 @@ export default function App() {
   const lastTurnInstructionRef = useRef("");
   const updateNavigationCue = useCallback(
     (route: PlannedRoute, point: Coordinate): NavigationCue | null => {
+      if (arrivalRef.current?.route === route) return guidanceRef.current?.cue ?? null;
       const previous =
         guidanceRef.current?.route === route
           ? guidanceRef.current.progress
@@ -918,13 +937,19 @@ export default function App() {
           ? guidanceRef.current.geometry
           : prepareRouteGeometry(route.points);
       const progress = advanceRouteProgress(geometry, point, previous);
-      const cue = navigationCue(route, progress);
+      const cue = hasReachedRouteDestination(route, point)
+        ? { instruction: "You have arrived at your destination.", symbol: "arrive" as const, distanceMeters: 0 }
+        : navigationCue(route, progress);
       guidanceRef.current = { route, geometry, progress, cue };
       if (
         cue?.symbol === "arrive" &&
         cue.distanceMeters <= 10 &&
         arrivalRef.current?.route !== route
       ) {
+        rerouteControllerRef.current?.abort();
+        rerouteControllerRef.current = null;
+        setNavigationRequestPending(false);
+        setNavigationMessage("");
         const reached = { route, deadline: Date.now() + 10_000 };
         arrivalRef.current = reached;
         setArrival(reached);
@@ -946,9 +971,17 @@ export default function App() {
   const [routeDestination, setRouteDestination] =
     useState<RouteDestination | null>(null);
   useEffect(() => {
+    rerouteControllerRef.current?.abort();
+    rerouteControllerRef.current = null;
+    setNavigationRequestPending(false);
+    nextRerouteAtRef.current = 0;
+    setNavigationMessage("");
+    setActiveNavigationRoute(null);
     plannedJourneyRouteRef.current = null;
     simulationRouteRef.current = null;
     setSimulationRoute(null);
+    setSimulationPlayback(null);
+    simulationPointRef.current = null;
     setSimulationPoint(null);
     guidanceRef.current = null;
     arrivalRef.current = null;
@@ -965,6 +998,7 @@ export default function App() {
   const [highlightedRoutePoints, setHighlightedRoutePoints] = useState<
     Coordinate[]
   >([]);
+  const [highlightedDiscoveryCells, setHighlightedDiscoveryCells] = useState<DiscoveryCell[]>([]);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(
     null,
   );
@@ -1116,6 +1150,17 @@ export default function App() {
   const followCameraBearingRef = useRef<number | null>(null);
   const followCameraTimestampRef = useRef<number | null>(null);
   const followCameraEnabledRef = useRef(true);
+  const [followingUser, setFollowingUser] = useState(true);
+  const compassHeadingRef = useRef<number | null>(null);
+  const [mapOrientation, setMapOrientation] = useState<MapOrientation>("north-up");
+  const mapOrientationRef = useRef<MapOrientation>("north-up");
+  const [userCentered, setUserCentered] = useState(false);
+  const userCenteredRef = useRef(false);
+  const updateUserCentered = useCallback((centered: boolean): void => {
+    if (userCenteredRef.current === centered) return;
+    userCenteredRef.current = centered;
+    setUserCentered(centered);
+  }, []);
   const discoveryUiRefreshTimerRef = useRef<number | null>(null);
   const journeyAnimationRef = useRef<Animation | null>(null);
   const journeyExpandedRef = useRef(false);
@@ -1144,19 +1189,18 @@ export default function App() {
   }, []);
   const animateFollowCamera = useCallback((point: Coordinate) => {
     followCameraTargetRef.current = point;
-    const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
-    followCameraBearingRef.current = route
-      ? routeCameraBearing(route.points, point)
-      : null;
+    followCameraBearingRef.current = mapCameraBearing(mapOrientationRef.current, point, simulationRouteRef.current ? null : compassHeadingRef.current);
     if (
       !followCameraEnabledRef.current ||
       followCameraFrameRef.current !== null
     )
       return;
+    const initialMap = mapRef.current;
+    if (!initialMap || !cameraNeedsUpdate(initialMap.getCenter(), point, initialMap.getBearing(), followCameraBearingRef.current)) return;
     const animate = (timestamp: number): void => {
       const map = mapRef.current;
       const target = followCameraTargetRef.current;
-      if (!map || !target || !followCameraEnabledRef.current) {
+      if (!map || !target || !followCameraEnabledRef.current || document.visibilityState !== "visible") {
         followCameraFrameRef.current = null;
         followCameraTimestampRef.current = null;
         return;
@@ -1182,7 +1226,7 @@ export default function App() {
           ? 0
           : ((targetBearing - map.getBearing() + 540) % 360) - 180;
       const next =
-        plannedRoute && targetBearing !== null
+        targetBearing !== null
           ? navigationCameraStep(
               center,
               target,
@@ -1234,21 +1278,24 @@ export default function App() {
     };
     followCameraFrameRef.current = requestAnimationFrame(animate);
   }, []);
-  const previewNavigationFix = useCallback(
-    (point: Coordinate): void => {
-      setSimulationPoint(point);
-      if (simulationRouteRef.current)
-        updateNavigationCue(simulationRouteRef.current, point);
-      animateFollowCamera(point);
-    },
-    [animateFollowCamera, updateNavigationCue],
-  );
+  const updateCameraHeading = useCallback((heading: number): void => {
+    compassHeadingRef.current = heading;
+    if (mapOrientationRef.current !== "heading-up" || !followCameraEnabledRef.current || simulationRouteRef.current || document.visibilityState !== "visible") return;
+    const point = followCameraTargetRef.current ?? latestPassivePointRef.current;
+    if (point) animateFollowCamera(point);
+  }, [animateFollowCamera]);
   useEffect(() => {
     stopFollowCameraAnimation();
   }, [accountUserId, stopFollowCameraAnimation]);
   const suspendFollowCamera = useCallback(() => {
+    const wasFollowing = followCameraEnabledRef.current;
     followCameraEnabledRef.current = false;
+    focusFirstTrackingPointRef.current = false;
+    setFollowingUser(false);
+    if (resumeCenterFrameRef.current !== null) cancelAnimationFrame(resumeCenterFrameRef.current);
+    resumeCenterFrameRef.current = null;
     stopFollowCameraAnimation();
+    if (wasFollowing) mapRef.current?.stop();
     viewCityLookupGenerationRef.current += 1;
   }, [stopFollowCameraAnimation]);
   const scheduleDiscoveryUiRefresh = useCallback(() => {
@@ -1268,12 +1315,10 @@ export default function App() {
     (point: Coordinate) => {
       const route =
         simulationRouteRef.current ?? plannedJourneyRouteRef.current;
-      const displayPoint =
-        simulationRouteRef.current &&
-        guidanceRef.current?.route === simulationRouteRef.current
-          ? guidanceRef.current.progress.position
-          : point;
-      followCameraEnabledRef.current = true;
+      if (route && guidanceRef.current?.route === route)
+        setTurnCue(guidanceRef.current.cue);
+      if (!followCameraEnabledRef.current) return;
+      const displayPoint = simulationRouteRef.current ? simulationPointRef.current ?? point : point;
       stopFollowCameraAnimation();
       setViewCenter({ lng: displayPoint.lng, lat: displayPoint.lat });
       setViewedCity(null);
@@ -1289,15 +1334,11 @@ export default function App() {
         resumeCenterFrameRef.current = requestAnimationFrame(() => {
           resumeCenterFrameRef.current = null;
           map.stop();
-          if (route && guidanceRef.current?.route === route)
-            setTurnCue(guidanceRef.current.cue);
           userMarkerRef.current?.setLngLat(displayPoint);
           map.jumpTo(
             {
               center: [displayPoint.lng, displayPoint.lat],
-              ...(route
-                ? { bearing: routeCameraBearing(route.points, displayPoint) }
-                : {}),
+              bearing: mapCameraBearing(mapOrientationRef.current, displayPoint, simulationRouteRef.current ? null : compassHeadingRef.current) ?? map.getBearing(),
             },
             { hecateFollowCamera: true, hecateNavigationPoint: displayPoint },
           );
@@ -2140,7 +2181,8 @@ export default function App() {
     const enabled =
       preference.enabled &&
       notificationPermissionReady === true &&
-      discoveryLocationAllowed;
+      discoveryLocationAllowed &&
+      reminderMotionAllowed === true;
     setReminderEnabled(enabled);
     reminderEnabledRef.current = enabled;
     if (!enabled) resetInactivityReminder();
@@ -2149,6 +2191,7 @@ export default function App() {
     accountUserId,
     notificationPermissionReady,
     discoveryLocationAllowed,
+    reminderMotionAllowed,
     resetInactivityReminder,
     activityNotificationPreferences.discoveryReminderMinutes,
     activityNotificationPreferences.discoveredAreaReminders,
@@ -2894,14 +2937,57 @@ export default function App() {
   }, [centerMapOnPoint, nativeApp]);
 
   useEffect(() => {
+    if (!nativeApp || !accountUserId || notificationPermissionReady !== true) return;
+    let disposed = false;
+    let requesting = false;
+    const refreshMotionPermission = (): void => {
+      if (disposed || requesting || document.visibilityState !== "visible") return;
+      requesting = true;
+      void readReminderMotionAuthorization().then(async (status) => {
+        if (disposed) return;
+        if (status === "notDetermined" && (!loadReminderPreference(accountUserId).enabled || !discoveryLocationAllowed)) {
+          setReminderMotionAllowed(null);
+          setReminderMotionError("");
+          return;
+        }
+        const allowed = status === "notDetermined" ? await requestReminderMotionPermission() : status === "authorized";
+        if (disposed) return;
+        setReminderMotionAllowed(allowed);
+        setReminderMotionError(allowed ? "" : status === "unavailable"
+          ? "Motion detection isn’t available on this device."
+          : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+      }).catch((cause) => {
+        if (disposed) return;
+        setReminderMotionAllowed(false);
+        const message = cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`;
+        console.error("Could not enable motion-based discovery reminders", { cause });
+        setReminderMotionError(message);
+      }).finally(() => { requesting = false; });
+    };
+    refreshMotionPermission();
+    document.addEventListener("visibilitychange", refreshMotionPermission);
+    const listener = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) refreshMotionPermission();
+    });
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", refreshMotionPermission);
+      void listener.then((handle) => handle.remove());
+    };
+  }, [accountUserId, notificationPermissionReady, discoveryLocationAllowed, nativeApp]);
+
+  useEffect(() => {
     if (tracking === "requesting" || tracking === "tracking") return;
     const backgroundReminder =
       nativeApp &&
+      reminderMotionAllowed === true &&
       reminderEnabled &&
       Boolean(accountUserId) &&
       notificationPermissionReady === true;
     let disposed = false;
-    let nativeActive = true;
+    let nativeActive = !nativeApp;
+    let nativeStateKnown = !nativeApp;
+    let nativeStateRevision = 0;
     let trackerMode: "foreground" | "reminder" | null = null;
     let retryTimer: number | null = null;
     let acquisitionTimer: number | null = null;
@@ -2920,10 +3006,10 @@ export default function App() {
       if (tracker) void Promise.resolve(tracker.stop()).catch(() => undefined);
     };
     const desiredMode = () =>
-      passiveLocationMode(
+      nativeStateKnown ? passiveLocationMode(
         nativeActive && document.visibilityState === "visible",
         backgroundReminder,
-      );
+      ) : null;
     const start = (mode: "foreground" | "reminder") => {
       if (disposed || desiredMode() !== mode) return;
       if (foregroundTrackerRef.current && trackerMode === mode) return;
@@ -2956,6 +3042,7 @@ export default function App() {
               nativeActive && document.visibilityState === "visible";
             if (visible) {
               setCurrentPoint(point);
+              if (!simulationRouteRef.current) animateFollowCamera(point);
               if (centerOnNextPassivePointRef.current) {
                 centerOnNextPassivePointRef.current = false;
                 centerMapOnPoint(point);
@@ -3064,6 +3151,8 @@ export default function App() {
     let appStateListener: { remove: () => Promise<void> } | undefined;
     if (nativeApp) {
       void CapacitorApp.addListener("appStateChange", (state) => {
+        nativeStateRevision += 1;
+        nativeStateKnown = true;
         nativeActive = state.isActive;
         updateVisibility();
       })
@@ -3071,7 +3160,19 @@ export default function App() {
           if (disposed) void listener.remove();
           else appStateListener = listener;
         })
-        .catch(() => undefined);
+        .catch((cause) => {
+          console.error("Could not observe native app state for passive location", { cause });
+          setPassiveLocationStatus("unavailable");
+        });
+      void CapacitorApp.getState().then((state) => {
+        if (disposed || nativeStateRevision !== 0) return;
+        nativeStateKnown = true;
+        nativeActive = state.isActive;
+        updateVisibility();
+      }).catch((cause) => {
+        console.error("Could not read native app state for passive location", { cause });
+        if (!disposed) setPassiveLocationStatus("unavailable");
+      });
     }
     updateVisibility();
     return () => {
@@ -3082,12 +3183,14 @@ export default function App() {
     };
   }, [
     accountUserId,
+    animateFollowCamera,
     centerMapOnPoint,
     devToolsEnabled,
     nativeApp,
     notificationPermissionReady,
     passiveLocationRefreshGeneration,
     reminderEnabled,
+    reminderMotionAllowed,
     tracking,
   ]);
 
@@ -3252,6 +3355,7 @@ export default function App() {
 
   const focusOnUserPoint = (point: Coordinate) => {
     followCameraEnabledRef.current = true;
+    setFollowingUser(true);
     stopFollowCameraAnimation();
     setViewCenter({ lng: point.lng, lat: point.lat });
     const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
@@ -3260,9 +3364,9 @@ export default function App() {
       {
         center: [point.lng, point.lat],
         zoom: route ? 17 : 15,
+        bearing: mapCameraBearing(mapOrientationRef.current, point, simulationRouteRef.current ? null : compassHeadingRef.current) ?? mapRef.current?.getBearing(),
         ...(route
           ? {
-              bearing: routeCameraBearing(route.points, point),
               padding: { top: 0, bottom: 0, left: 0, right: 0 },
             }
           : {}),
@@ -3275,7 +3379,7 @@ export default function App() {
 
   useEffect(() => {
     const focusIdentity = accountUserId ?? "__anonymous__";
-    if (initialMapFocusUserRef.current === focusIdentity || !currentPoint)
+    if (initialMapFocusUserRef.current === focusIdentity || !currentPoint || !followCameraEnabledRef.current)
       return;
     initialMapFocusUserRef.current = focusIdentity;
     const targetZoom = 14;
@@ -3312,28 +3416,11 @@ export default function App() {
     const navigationRoute = plannedJourneyRouteRef.current;
     if (navigationRoute && !simulationRouteRef.current) {
       const cue = updateNavigationCue(navigationRoute, point);
-      const instruction = cue?.instruction ?? "";
-      const liveWalk = activeWalkRef.current;
-      const liveStart = explorationStartRef.current;
+      recalculateNavigation(navigationRoute, point);
       if (
-        Capacitor.isNativePlatform() &&
-        liveWalk &&
-        liveStart &&
-        (instruction !== lastTurnInstructionRef.current ||
-          Date.now() - lastJourneyActivityUpdateRef.current >= 3000)
-      ) {
-        lastTurnInstructionRef.current = instruction;
-        lastJourneyActivityUpdateRef.current = Date.now();
-        const snapshot = {
-          ...journeyActivitySnapshot(
-            liveWalk,
-            liveStart.discoveryDistance,
-            pointsRef.current,
-          ),
-          navigation: cue,
-        };
-        enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
-      }
+        (cue?.instruction ?? "") !== lastTurnInstructionRef.current ||
+        Date.now() - lastJourneyActivityUpdateRef.current >= 3000
+      ) updateJourneyNavigation(cue);
     }
     if (focusFirstTrackingPointRef.current) {
       focusFirstTrackingPointRef.current = false;
@@ -3426,6 +3513,76 @@ export default function App() {
       deferredLocationUiRef.current = true;
     }
   };
+
+  const updateJourneyNavigation = useCallback((cue: NavigationCue | null): void => {
+    const liveWalk = activeWalkRef.current;
+    const liveStart = explorationStartRef.current;
+    if (!Capacitor.isNativePlatform() || !liveWalk || !liveStart) return;
+    lastTurnInstructionRef.current = cue?.instruction ?? "";
+    lastJourneyActivityUpdateRef.current = Date.now();
+    const snapshot = {
+      ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current),
+      navigation: cue,
+    };
+    enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
+  }, [enqueueJourneyActivity]);
+
+  const recalculateNavigation = useCallback((route: PlannedRoute, point: Coordinate): void => {
+    if (arrivalRef.current || guidanceRef.current?.route !== route) return;
+    const mode = navigationModeRef.current;
+    const offRouteDistanceM = mode === "pedestrian" ? 20 : 50;
+    if (guidanceRef.current.progress.distanceFromRouteM <= offRouteDistanceM) {
+      rerouteControllerRef.current?.abort();
+      rerouteControllerRef.current = null;
+      setNavigationRequestPending(false);
+      setNavigationMessage("");
+      return;
+    }
+    if (rerouteControllerRef.current || Date.now() < nextRerouteAtRef.current) return;
+    const controller = new AbortController();
+    rerouteControllerRef.current = controller;
+    setNavigationRequestPending(true);
+    nextRerouteAtRef.current = Date.now() + 30_000;
+    setNavigationMessage("Recalculating route…");
+    const destination = route.points[route.points.length - 1];
+    void calculateNavigationRoute(point, destination, cellsRef.current, mode, controller.signal)
+      .then((plan) => {
+        if (controller.signal.aborted || (simulationRouteRef.current ?? plannedJourneyRouteRef.current) !== route || arrivalRef.current) return;
+        const replacement = plan.routes[0];
+        const simulated = simulationRouteRef.current === route;
+        if (simulated) {
+          simulationRouteRef.current = replacement;
+          setSimulationRoute(replacement);
+          setSimulationPlayback(replacement);
+        } else plannedJourneyRouteRef.current = replacement;
+        setActiveNavigationRoute(replacement);
+        setNavigationMessage("");
+        const cue = updateNavigationCue(replacement, (simulated ? simulationPointRef.current : latestPassivePointRef.current) ?? point);
+        if (!simulated) updateJourneyNavigation(cue);
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        console.error("Could not recalculate navigation route", { origin: point, destination, mode, cause });
+        setNavigationMessage(cause instanceof Error ? cause.message : "Could not recalculate the route. Check your connection.");
+      })
+      .finally(() => {
+        if (rerouteControllerRef.current === controller) {
+        rerouteControllerRef.current = null;
+        setNavigationRequestPending(false);
+      }
+      });
+  }, [updateJourneyNavigation, updateNavigationCue]);
+
+  const previewNavigationFix = useCallback((point: Coordinate): void => {
+    simulationPointRef.current = point;
+    setSimulationPoint(point);
+    const route = simulationRouteRef.current;
+    if (route) {
+      updateNavigationCue(route, point);
+      recalculateNavigation(route, point);
+    }
+    animateFollowCamera(point);
+  }, [animateFollowCamera, recalculateNavigation, updateNavigationCue]);
 
   const finishActiveWalk = async () => {
     resetInactivityReminder();
@@ -3602,10 +3759,19 @@ export default function App() {
     }
     simulationRouteRef.current = null;
     setSimulationRoute(null);
+    setSimulationPlayback(null);
+    simulationPointRef.current = null;
     setSimulationPoint(null);
     stopFollowCameraAnimation();
+    rerouteControllerRef.current?.abort();
+    rerouteControllerRef.current = null;
+    setNavigationRequestPending(false);
+    nextRerouteAtRef.current = 0;
+    setNavigationMessage("");
+    setActiveNavigationRoute(null);
     plannedJourneyRouteRef.current = null;
     setRouteDestination(null);
+    setNavigationTestMessage("");
     setSelectedFavoritePlaceId(null);
   }, [enqueueJourneyActivity, stopFollowCameraAnimation]);
 
@@ -3628,6 +3794,42 @@ export default function App() {
     );
     return () => window.clearTimeout(timer);
   }, [arrival, clearPlannedRoute]);
+
+  const previewRouteRecalculation = async (): Promise<void> => {
+    clearPlannedRoute();
+    const controller = new AbortController();
+    rerouteControllerRef.current = controller;
+    setNavigationRequestPending(true);
+    setNavigationTestMessage("Calculating sample route…");
+    const origin = { lat: 41.3874, lng: 2.1686 };
+    const destination = { lat: 41.4036, lng: 2.1744 };
+    try {
+      const plan = await calculateNavigationRoute(origin, destination, [], "pedestrian", controller.signal);
+      if (controller.signal.aborted) return;
+      const route = plan.routes[0];
+      const playback = deviatingNavigationPlayback(route);
+      navigationModeRef.current = "pedestrian";
+      mapOrientationRef.current = "heading-up";
+      setMapOrientation("heading-up");
+      simulationRouteRef.current = route;
+      setSimulationRoute(route);
+      setSimulationPlayback(playback);
+      setActiveNavigationRoute(route);
+      setRouteDestination({ ...destination, name: "Mock navigation destination" });
+      setNavigationTestMessage("");
+      setDevToolsOpen(false);
+      focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      console.error("Could not prepare route recalculation preview", { origin, destination, cause });
+      setNavigationTestMessage(cause instanceof Error ? cause.message : "Could not calculate the sample route.");
+    } finally {
+      if (rerouteControllerRef.current === controller) {
+        rerouteControllerRef.current = null;
+        setNavigationRequestPending(false);
+      }
+    }
+  };
 
   const finalizeRecordedWalk = (): void => {
     clearPlannedRoute();
@@ -3756,6 +3958,20 @@ export default function App() {
           return "Allow notifications in your device settings to enable discovery reminders.";
       } catch {
         return "Notifications are unavailable right now. Try again later.";
+      }
+    }
+    if (enabled && nativeApp) {
+      try {
+        const allowed = await requestReminderMotionPermission();
+        setReminderMotionAllowed(allowed);
+        const message = allowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`;
+        setReminderMotionError(message);
+        if (!allowed) return message;
+      } catch (cause) {
+        setReminderMotionAllowed(false);
+        const message = cause instanceof Error ? cause.message : "Could not enable motion-based discovery reminders.";
+        setReminderMotionError(message);
+        return message;
       }
     }
     if (accountUserIdRef.current !== accountUserId)
@@ -3900,11 +4116,25 @@ export default function App() {
       discoveredAreaReminders:
         activityNotificationPreferences.discoveredAreaReminders,
     };
-    const remindersActive = enabled && discoveryLocationAllowed;
+    let motionAllowed = reminderMotionAllowed;
+    if (enabled && motionAllowed === null && discoveryLocationAllowed) {
+      try {
+        motionAllowed = await requestReminderMotionPermission();
+        setReminderMotionAllowed(motionAllowed);
+        setReminderMotionError(motionAllowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+      } catch (cause) {
+        motionAllowed = false;
+        setReminderMotionAllowed(false);
+        setReminderMotionError(cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`);
+      }
+    }
+    if (accountUserIdRef.current !== accountUserId)
+      return "Your account changed. Reopen notification settings and try again.";
+    const remindersActive = enabled && discoveryLocationAllowed && motionAllowed === true;
     setReminderEnabled(remindersActive);
     reminderEnabledRef.current = remindersActive;
     reminderRef.current.reset();
-    if (!enabled) resetInactivityReminder();
+    if (!remindersActive) resetInactivityReminder();
     setReminderPrompt(null);
     saveReminderPreference(
       accountUserId,
@@ -4153,6 +4383,7 @@ export default function App() {
     void Promise.resolve(foregroundTracker?.stop()).catch(() => undefined);
     const walkId = createWalkId();
     followCameraEnabledRef.current = true;
+    setFollowingUser(true);
     lastPointRef.current = undefined;
     const startingPoints = pointsRef.current;
     pointsRef.current = [...startingPoints];
@@ -4430,6 +4661,8 @@ export default function App() {
   }, [accountUserId, resetInactivityReminder, tracking]);
 
   const locate = () => {
+    followCameraEnabledRef.current = true;
+    setFollowingUser(true);
     void requestDeviceHeadingPermission();
     if (currentPoint) {
       focusOnUserPoint(currentPoint);
@@ -4439,6 +4672,23 @@ export default function App() {
       setPassiveLocationStatus("requesting");
       setPassiveLocationRefreshGeneration((generation) => generation + 1);
     }
+  };
+
+  const handleLocationControl = (): void => {
+    const point = simulationPointRef.current ?? (locationIsCurrent ? currentPoint : null);
+    if (!point || !userCenteredRef.current) {
+      if (simulationPointRef.current) focusOnUserPoint(simulationPointRef.current);
+      else locate();
+      return;
+    }
+    const orientation: MapOrientation = mapOrientationRef.current === "north-up" ? "heading-up" : "north-up";
+    mapOrientationRef.current = orientation;
+    setMapOrientation(orientation);
+    followCameraEnabledRef.current = true;
+    setFollowingUser(true);
+    void requestDeviceHeadingPermission();
+    stopFollowCameraAnimation();
+    animateFollowCamera(point);
   };
 
   const journeyBounds = (card: HTMLElement) => {
@@ -4842,13 +5092,13 @@ export default function App() {
     setPerspectiveView(nextPerspective);
     map.easeTo({
       pitch: nextPerspective ? 52 : 0,
-      bearing: nextPerspective ? -24 : 0,
       duration: 900,
       essential: true,
     });
   };
 
   const showGlobe = () => {
+    suspendFollowCamera();
     setPerspectiveView(false);
     mapRef.current?.flyTo({
       center: [7, 24],
@@ -5095,17 +5345,17 @@ export default function App() {
     [settleJourneySheet],
   );
 
-  const showRouteOnMap = useCallback(
-    (routePoints: Coordinate[]) => {
+  const focusMapOnCoordinates = useCallback(
+    (coordinates: GeoJSON.Position[]) => {
       setSyncOpen(false);
-      setHighlightedRoutePoints(routePoints);
       setSelectedFavoritePlaceId(null);
       if (journeyExpandedRef.current) settleJourneySheet(false);
+      suspendFollowCamera();
       const map = mapRef.current;
-      if (!map || routePoints.length === 0) return;
+      if (!map || coordinates.length === 0) return;
       map.stop();
-      const longitudes = routePoints.map((point) => point.lng);
-      const latitudes = routePoints.map((point) => point.lat);
+      const longitudes = coordinates.map((point) => point[0]);
+      const latitudes = coordinates.map((point) => point[1]);
       map.fitBounds(
         [
           [Math.min(...longitudes), Math.min(...latitudes)],
@@ -5119,8 +5369,23 @@ export default function App() {
         },
       );
     },
-    [settleJourneySheet],
+    [settleJourneySheet, suspendFollowCamera],
   );
+
+  const showRouteOnMap = useCallback(
+    (routePoints: Coordinate[]) => {
+      setHighlightedDiscoveryCells([]);
+      setHighlightedRoutePoints(routePoints);
+      focusMapOnCoordinates(routePoints.map((point) => [point.lng, point.lat]));
+    },
+    [focusMapOnCoordinates],
+  );
+
+  const showNewDiscoveriesOnMap = (newCells: DiscoveryCell[]): void => {
+    setHighlightedRoutePoints([]);
+    setHighlightedDiscoveryCells(newCells);
+    focusMapOnCoordinates(discoveryHighlightData(newCells).geometry.coordinates.flatMap((polygon) => polygon[0]));
+  };
 
   const showRouteById = useCallback(
     (routeId: string) => {
@@ -5136,6 +5401,7 @@ export default function App() {
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
+    setHighlightedDiscoveryCells([]);
     if (journeyExpandedRef.current)
       settleJourneySheet(false, undefined, JOURNEY_MAP_TAP_CLOSE_DURATION_MS);
   }, [settleJourneySheet]);
@@ -5157,6 +5423,10 @@ export default function App() {
     [],
   );
 
+  const locationControlLabel = userCentered
+    ? mapOrientation === "north-up" ? "Switch to heading-up" : "Switch to north-up"
+    : (simulationPoint || locationIsCurrent) ? "Center on my location" : "Find my location";
+
   return (
     <main
       className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`}
@@ -5177,13 +5447,14 @@ export default function App() {
         points={points}
         cells={cells}
         highlightedPoints={highlightedRoutePoints}
+        highlightedCells={highlightedDiscoveryCells}
         currentPoint={
           simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
         }
         navigationFollowing={Boolean(
           (simulationRoute ||
             (tracking === "tracking" && plannedJourneyRouteRef.current)) &&
-          followCameraEnabledRef.current,
+          followingUser,
         )}
         onUserMarkerChange={onUserMarkerChange}
         locationState={
@@ -5221,6 +5492,8 @@ export default function App() {
         onZoomChange={onZoomChange}
         onViewChange={onViewChange}
         onUserNavigation={suspendFollowCamera}
+        onHeadingChange={updateCameraHeading}
+        onUserCenteredChange={updateUserCentered}
         mapRef={mapRef}
         fogLayerRef={fogLayerRef}
       />
@@ -5235,9 +5508,13 @@ export default function App() {
             tracking !== "requesting"
           }
           onPreview={(route) => {
+            mapOrientationRef.current = "heading-up";
+            setMapOrientation("heading-up");
             stopFollowCameraAnimation();
             simulationRouteRef.current = route;
             setSimulationRoute(route);
+            setSimulationPlayback(route);
+            setActiveNavigationRoute(route);
             setRoutePlannerOpen(false);
             setDevToolsOpen(false);
             focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
@@ -5250,6 +5527,7 @@ export default function App() {
           destination={routeDestination}
           searchCity={activeCity}
           origin={locationIsCurrent && currentPoint ? currentPoint : null}
+          activeRoute={activeNavigationRoute}
           navigationPoint={
             simulationPoint ??
             (plannedJourneyRouteRef.current && tracking === "tracking"
@@ -5270,9 +5548,24 @@ export default function App() {
           onClose={clearPlannedRoute}
           onClear={clearRouteDestination}
           onLocate={locate}
-          onStart={(route) => {
+          onStart={(route, mode) => {
+            const point = latestPassivePointRef.current ?? currentPoint;
+            if (!point)
+              throw new Error("Find your current location before starting navigation.");
+            mapOrientationRef.current = "heading-up";
+            setMapOrientation("heading-up");
+            void requestDeviceHeadingPermission();
+            rerouteControllerRef.current?.abort();
+            rerouteControllerRef.current = null;
+            setNavigationRequestPending(false);
+            nextRerouteAtRef.current = 0;
+            setNavigationMessage("");
+            navigationModeRef.current = mode;
+            setActiveNavigationRoute(route);
             simulationRouteRef.current = null;
             setSimulationRoute(null);
+            setSimulationPlayback(null);
+            simulationPointRef.current = null;
             setSimulationPoint(null);
             guidanceRef.current = null;
             arrivalRef.current = null;
@@ -5280,13 +5573,9 @@ export default function App() {
             lastTurnInstructionRef.current = "";
             plannedJourneyRouteRef.current = route;
             setRoutePlannerOpen(false);
+            const cue = updateNavigationCue(route, point);
+            recalculateNavigation(route, point);
             if (trackingStateRef.current === "tracking") {
-              const point = latestPassivePointRef.current ?? currentPoint;
-              if (!point)
-                throw new Error(
-                  "Find your current location before starting navigation.",
-                );
-              const cue = updateNavigationCue(route, point);
               focusOnUserPoint(point);
               const walk = activeWalkRef.current;
               const started = explorationStartRef.current;
@@ -5307,26 +5596,30 @@ export default function App() {
           }}
         />
       )}
-      {simulationRoute && (
+      {simulationRoute && simulationPlayback && (
         <NavigationSimulation
           panelRef={simulationPanelRef}
-          route={simulationRoute}
+          route={simulationPlayback}
+          waitingForRoute={navigationRequestPending}
           onFix={previewNavigationFix}
           onStop={() => {
             simulationRouteRef.current = null;
             setSimulationRoute(null);
+            setSimulationPlayback(null);
+            simulationPointRef.current = null;
             setSimulationPoint(null);
             clearPlannedRoute();
             if (currentPoint) focusOnUserPoint(currentPoint);
           }}
         />
       )}
-      {turnCue &&
+      {(turnCue || navigationMessage) &&
         !routePlannerOpen &&
         !citiesExpanded &&
         (simulationRoute || tracking === "tracking") && (
           <NavigationTurn
             cue={turnCue}
+            message={navigationMessage}
             anchor={simulationRoute ? simulationPanelRef : journeyCardRef}
           />
         )}
@@ -5376,6 +5669,17 @@ export default function App() {
           {activityNotificationTestMessage && (
             <small role="status">{activityNotificationTestMessage}</small>
           )}
+          <strong>Navigation</strong>
+          <small>Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.</small>
+          <button
+            type="button"
+            data-testid="preview-route-recalculation"
+            disabled={tracking === "tracking" || tracking === "requesting" || navigationRequestPending}
+            onClick={() => void previewRouteRecalculation()}
+          >
+            Test route recalculation
+          </button>
+          {navigationTestMessage && <small role="status">{navigationTestMessage}</small>}
           <strong>Journey recap</strong>
           <small>Previews a sample journey without saving progress.</small>
           <button
@@ -5648,6 +5952,7 @@ export default function App() {
             setFavoritePlacementActive(false);
             setFavoriteDraft(null);
             setHighlightedRoutePoints([]);
+            setHighlightedDiscoveryCells([]);
             setSelectedFavoritePlaceId(null);
             suspendFollowCamera();
             if (journeyExpandedRef.current) settleJourneySheet(false);
@@ -5677,20 +5982,19 @@ export default function App() {
           </button>
         )}
         <button
-          className={`location-control${
-            passiveLocationStatus === "requesting"
+          className={`location-control${userCentered && mapOrientation === "heading-up" ? " active" : ""}${
+            passiveLocationStatus === "requesting" && tracking !== "tracking"
               ? " location-control--requesting"
               : ""
           }`}
-          onClick={() =>
-            simulationPoint ? focusOnUserPoint(simulationPoint) : void locate()
-          }
-          aria-label={
-            currentPoint ? "Center on my location" : "Find my location"
-          }
-          title={currentPoint ? "Center on my location" : "Find my location"}
+          onClick={handleLocationControl}
+          aria-label={locationControlLabel}
+          title={locationControlLabel}
+          data-testid="map-location-control"
+          data-orientation={mapOrientation}
+          data-centered={userCentered}
         >
-          <LocateIcon size={21} />
+          {userCentered ? <CompassIcon size={21} /> : <LocateIcon size={21} />}
         </button>
         <button
           onClick={() =>
@@ -5741,6 +6045,7 @@ export default function App() {
             setSavedPlacesOpen(false);
             setFavoritePlacementActive(false);
             setHighlightedRoutePoints([]);
+            setHighlightedDiscoveryCells([]);
             setSelectedFavoritePlaceId(favorite.id);
             setRouteDestination({
               lng: favorite.lng,
@@ -5758,6 +6063,7 @@ export default function App() {
         <section
           ref={journeyCardRef}
           className="journey-card"
+          data-testid="journey-drawer"
           onPointerDown={beginJourneyDrag}
           onPointerMove={moveJourneyDrag}
           onPointerUp={endJourneyDrag}
@@ -5984,6 +6290,8 @@ export default function App() {
           onClose={closeProfileDialog}
           onFeedbackOpen={() => setFeedbackOpen(true)}
           reminderEnabled={reminderEnabled}
+          reminderMotionError={reminderMotionError}
+          reminderMotionAllowed={reminderMotionAllowed}
           notificationPermissionReady={notificationPermissionReady}
           keyboardInset={keyboardInset}
           travelledDistance={discoveryProgress.travelledDistance}
@@ -6083,6 +6391,7 @@ export default function App() {
                 points={explorationSummary.points}
                 cells={explorationSummary.cells}
                 highlightedPoints={[]}
+                highlightedCells={[]}
                 onZoomChange={() => undefined}
                 mapRef={previewMapRef}
                 initialCenter={[
@@ -6137,8 +6446,9 @@ export default function App() {
                 className="exploration-recap__view"
                 type="button"
                 data-testid="recap-view-on-map"
+                disabled={explorationSummary.cells.length === 0}
                 onClick={() => {
-                  showRouteOnMap(explorationSummary.points);
+                  showNewDiscoveriesOnMap(explorationSummary.cells);
                   setExplorationSummary(null);
                 }}
               >

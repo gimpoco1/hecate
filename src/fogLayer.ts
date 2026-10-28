@@ -41,12 +41,30 @@ const MAX_FOG_RADIUS_SCALE = 3;
 const FOG_BUCKET_ZOOM = 12;
 const FOG_BUCKET_COUNT = 2 ** FOG_BUCKET_ZOOM;
 const FOG_BUCKET_MARGIN = 2;
+const FOG_TILE_EXTENT = 8192;
 
 type FogBucket = {
   x: number;
   y: number;
   centers: number[];
 };
+
+type VisibleFogBucket = {
+  x: number;
+  y: number;
+  offset: number;
+  count: number;
+};
+
+export function fogTileCoordinates(
+  coordinate: readonly [number, number],
+  tile: readonly [number, number],
+): [number, number] {
+  return [
+    (coordinate[0] * FOG_BUCKET_COUNT - tile[0]) * FOG_TILE_EXTENT,
+    (coordinate[1] * FOG_BUCKET_COUNT - tile[1]) * FOG_TILE_EXTENT,
+  ];
+}
 
 type VisibleBucketRange = {
   west: number;
@@ -429,7 +447,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   private revealCoordinateKeys = new Set<string>();
   private visibleBucketSignature = "";
   private visibleCentersDirty = true;
-  private centerCount = 0;
+  private visibleBuckets: VisibleFogBucket[] = [];
   private cornerBuffer: WebGLBuffer | null = null;
   private centerBuffer: WebGLBuffer | null = null;
   private maskTexture: WebGLTexture | null = null;
@@ -568,13 +586,12 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     this.refreshVisibleRevealCenters();
-    if (this.centerCount === 0) return;
+    if (this.visibleBuckets.length === 0) return;
 
     const now = performance.now();
     const liquidProgress = this.currentLiquidProgress(now);
     const maskProgram = this.getMaskProgram(gl, input);
     gl.useProgram(maskProgram.program);
-    applyProjectionUniforms(gl, maskProgram, input.defaultProjectionData);
     gl.uniform2f(maskProgram.viewport, this.maskWidth, this.maskHeight);
     const pixelRatio =
       this.maskWidth /
@@ -586,11 +603,6 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
         this.map?.getZoom() ?? 0,
       ) * pixelRatio;
     gl.uniform1f(maskProgram.radiusPixels, radiusPixels);
-    gl.uniform2f(
-      maskProgram.liquidHead,
-      this.liquidHead?.[0] ?? 0,
-      this.liquidHead?.[1] ?? 0,
-    );
     gl.uniform1f(maskProgram.liquidProgress, liquidProgress);
     gl.uniform1f(
       maskProgram.liquidActive,
@@ -602,12 +614,26 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.vertexAttribDivisor(0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.centerBuffer);
     gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
     gl.vertexAttribDivisor(1, 1);
     gl.enable(gl.BLEND);
     gl.blendEquation(gl.MAX);
     gl.blendFunc(gl.ONE, gl.ONE);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.centerCount);
+    this.visibleBuckets.forEach((bucket) => {
+      applyProjectionUniforms(
+        gl,
+        maskProgram,
+        input.getProjectionData({
+          tileID: { canonical: { x: bucket.x, y: bucket.y, z: FOG_BUCKET_ZOOM } },
+          applyGlobeMatrix: true,
+        }),
+      );
+      const head: [number, number] = this.liquidHead
+        ? fogTileCoordinates(this.liquidHead, [bucket.x, bucket.y])
+        : [0, 0];
+      gl.uniform2f(maskProgram.liquidHead, head[0], head[1]);
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, bucket.offset);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, bucket.count);
+    });
     gl.vertexAttribDivisor(1, 0);
   }
 
@@ -691,7 +717,8 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
       );
       const key = `${x}:${y}`;
       const bucket = this.revealBuckets.get(key) ?? { x, y, centers: [] };
-      bucket.centers.push(coordinate.x, coordinate.y);
+      // Convert before uploading to float32 so rotation preserves street-level precision.
+      bucket.centers.push(...fogTileCoordinates([coordinate.x, coordinate.y], [x, y]));
       this.revealBuckets.set(key, bucket);
       added += 1;
     });
@@ -735,6 +762,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     if (!this.visibleCentersDirty && signature === this.visibleBucketSignature)
       return;
     const centers: number[] = [];
+    const visibleBuckets: VisibleFogBucket[] = [];
     this.revealBuckets.forEach((bucket) => {
       const insideLongitude = range.wraps
         ? bucket.x >= range.west - FOG_BUCKET_MARGIN ||
@@ -745,10 +773,17 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
         insideLongitude &&
         bucket.y >= range.north &&
         bucket.y <= range.south
-      )
+      ) {
+        visibleBuckets.push({
+          x: bucket.x,
+          y: bucket.y,
+          offset: centers.length * Float32Array.BYTES_PER_ELEMENT,
+          count: bucket.centers.length / 2,
+        });
         centers.push(...bucket.centers);
+      }
     });
-    this.centerCount = centers.length / 2;
+    this.visibleBuckets = visibleBuckets;
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.centerBuffer);
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
