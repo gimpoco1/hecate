@@ -1,3 +1,4 @@
+import { AuthEntry } from "./AuthEntry";
 import {
   useEffect,
   useMemo,
@@ -443,43 +444,49 @@ function LeaderboardAccountPanel({
             Account sync is not configured for this build.
           </div>
         ) : !user ? (
-          <form className="leaderboard-signin" onSubmit={signIn}>
-            <label htmlFor="leaderboard-email">Email</label>
-            <input
-              id="leaderboard-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              required
-              placeholder="you@example.com"
-            />
-            <label htmlFor="leaderboard-password">Password</label>
-            <input
-              id="leaderboard-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-              placeholder="Your password"
-            />
-            <button
-              className="leaderboard-primary-button"
-              type="submit"
-              disabled={pending}
-            >
-              {pending ? "Signing in…" : "Sign in"}
-            </button>
-            <button
-              className="leaderboard-link-button"
-              type="button"
-              onClick={() => void sendLink()}
-              disabled={pending}
-            >
-              Email me a sign-in link
-            </button>
-          </form>
+          <div className="auth-panel">
+            <AuthEntry disabled={pending} onPendingChange={setPending}>
+              <form className="leaderboard-signin" onSubmit={signIn}>
+                <fieldset className="auth-form-fields" disabled={pending}>
+                  <label htmlFor="leaderboard-email">Email</label>
+                  <input
+                    id="leaderboard-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    required
+                    placeholder="you@example.com"
+                  />
+                  <label htmlFor="leaderboard-password">Password</label>
+                  <input
+                    id="leaderboard-password"
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                    placeholder="Your password"
+                  />
+                  <button
+                    className="leaderboard-primary-button"
+                    type="submit"
+                    disabled={pending}
+                  >
+                    {pending ? "Signing in…" : "Sign in"}
+                  </button>
+                  <button
+                    className="leaderboard-link-button"
+                    type="button"
+                    onClick={() => void sendLink()}
+                    disabled={pending}
+                  >
+                    Email me a sign-in link
+                  </button>
+                </fieldset>
+              </form>
+            </AuthEntry>
+          </div>
         ) : (
           <>
             <div className="leaderboard-account-line">
@@ -1013,7 +1020,7 @@ export function WebLeaderboard() {
         </a>
         <nav aria-label="Leaderboard navigation">
           <span>Leaderboard</span>
-          <button type="button" onClick={() => setPanelOpen(true)}>
+          <button type="button" data-testid="leaderboard-account-open" onClick={() => setPanelOpen(true)}>
             <UserIcon size={17} />
             {myEntryId ? "My ranking" : "Join the board"}
           </button>

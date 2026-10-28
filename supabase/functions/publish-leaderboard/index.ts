@@ -1,7 +1,7 @@
 // Include lazy city geometry modules in the hosted function's deployment graph.
-import '../../../src/regions/greater-london.json' with { type: 'json' }
-import '../../../src/regions/barcelona-metropolitan.json' with { type: 'json' }
-import '../../../src/regions/new-york.json' with { type: 'json' }
+import '../../../src/regions/greater-london.ts'
+import '../../../src/regions/barcelona-metropolitan.ts'
+import '../../../src/regions/new-york.ts'
 import { createClient, type PostgrestError } from '@supabase/supabase-js'
 import { canonicalCityForStoredBoundary } from '../../../src/city.ts'
 import { loadStoredDiscovery } from '../../../src/discoveryStorage.ts'
@@ -10,7 +10,7 @@ import { leaderboardSnapshotFromDiscovery, leaderboardSnapshotForCities } from '
 import { PayloadTooLargeError, readJson } from '../_shared/http.ts'
 
 type PublishRequest = { displayName: string; cityIds: string[]; timeZone: string }
-const WEB_ORIGIN = 'https://hecate-eta.vercel.app'
+const WEB_ORIGIN = 'https://hecate-explore.vercel.app'
 
 function parsePublishRequest(value: unknown): PublishRequest {
   if (!value || typeof value !== 'object' || !('timeZone' in value) || typeof value.timeZone !== 'string' || value.timeZone.length > 80 || !('displayName' in value) || typeof value.displayName !== 'string' ||

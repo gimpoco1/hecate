@@ -26,7 +26,7 @@ export function shouldRedirectBrowserToLeaderboard(
   return !developmentMode && !nativePlatform && isAppRootPath(pathname)
 }
 
-const PRODUCTION_WEB_ORIGIN = 'https://hecate-eta.vercel.app'
+const PRODUCTION_WEB_ORIGIN = 'https://hecate-explore.vercel.app'
 
 export function hostedLeaderboardUrl(): string {
   return new URL('/leaderboard', PRODUCTION_WEB_ORIGIN).toString()

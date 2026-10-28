@@ -1,3 +1,4 @@
+import { AuthEntry } from "./AuthEntry";
 import { errorDiagnostic } from '../diagnostics'
 import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
@@ -187,6 +188,7 @@ export function SyncSheet({
   const [passwordIntent, setPasswordIntent] =
     useState<PasswordIntent>("signin");
   const [message, setMessage] = useState("");
+  const [appleAccessRemoval, setAppleAccessRemoval] = useState(false);
   const [messageTone, setMessageTone] = useState<MessageTone>("success");
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(isSyncConfigured);
@@ -306,6 +308,7 @@ export function SyncSheet({
 
   useEffect(() => {
     if (!open) {
+      setAppleAccessRemoval(false);
       setConfirmingDelete(false);
       setNotificationSettingsSheetOpen(false);
       setAppearanceSheetOpen(false);
@@ -455,6 +458,7 @@ export function SyncSheet({
 
   const deleteAccount = async () => {
     if (!supabase) return;
+    const hasAppleIdentity = user?.identities?.some(identity => identity.provider === "apple") === true;
     setAuthPending(true);
     setMessage("");
     try {
@@ -469,7 +473,8 @@ export function SyncSheet({
       await supabase.auth.signOut({ scope: "local" });
       setUser(null);
       setConfirmingDelete(false);
-      onClose();
+      if (hasAppleIdentity) setAppleAccessRemoval(true);
+      else onClose();
     } catch {
       setMessage(
         "Unable to delete your account right now. Check your connection and try again.",
@@ -646,7 +651,7 @@ export function SyncSheet({
         <p>
           {user
             ? "Your private discoveries, progress, and account settings in one place."
-            : "Sign in to start discovering. Your paths belong to your account and stay in sync across your devices."}
+            : "Sign in or create an account to sync your discoveries."}
         </p>
         {authLoading ? (
           <div className="account-loading" role="status">
@@ -906,6 +911,9 @@ export function SyncSheet({
                     All your discoveries, routes, and account data will be
                     permanently deleted. This cannot be recovered.
                   </p>
+                  {user.identities?.some(identity => identity.provider === "apple") && (
+                    <p>After deletion, remove Hecate from Sign in with Apple in your Apple Account settings to revoke Apple's authorization.</p>
+                  )}
                   <div className="delete-confirmation__actions">
                     <button
                       type="button"
@@ -1423,165 +1431,177 @@ export function SyncSheet({
           </>
         ) : isSyncConfigured ? (
           <div className="auth-panel">
-            <div
-              className="auth-methods"
-              role="tablist"
-              aria-label={
-                passwordIntent === "signup"
-                  ? "Account action"
-                  : "Sign-in method"
-              }
-            >
-              {passwordIntent === "signup" ? (
-                <>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected="true"
-                    className="active"
-                    onClick={beginAccountCreation}
-                  >
-                    Sign up
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected="false"
-                    onClick={() => {
-                      setPasswordIntent("signin");
-                      setPassword("");
-                      setConfirmPassword("");
-                      setMessage("");
-                    }}
-                  >
-                    Log in
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={signInMethod === "password"}
-                    className={signInMethod === "password" ? "active" : ""}
-                    onClick={() => {
-                      setSignInMethod("password");
-                      setMessage("");
-                    }}
-                  >
-                    Password
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={signInMethod === "link"}
-                    className={signInMethod === "link" ? "active" : ""}
-                    onClick={() => {
-                      setSignInMethod("link");
-                      setMessage("");
-                    }}
-                  >
-                    Email link
-                  </button>
-                </>
-              )}
-            </div>
-            <form className="auth-form" onSubmit={signIn}>
-              <label htmlFor="email">Email address</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-                onFocus={keepAuthFieldVisible}
-                required
-              />
-              {signInMethod === "password" && (
-                <>
-                  <label htmlFor="password">Password</label>
+            {appleAccessRemoval && (
+              <p className="form-message form-message--success" role="status">
+                Your Hecate account and data have been deleted. To remove Apple's authorization too, open Settings → your Apple Account → Sign in with Apple → Hecate → Stop Using Apple.
+              </p>
+            )}
+            <AuthEntry disabled={authPending} onPendingChange={setAuthPending}>
+              <div
+                className="auth-methods"
+                role="tablist"
+                aria-label={
+                  passwordIntent === "signup"
+                    ? "Account action"
+                    : "Sign-in method"
+                }
+              >
+                {passwordIntent === "signup" ? (
+                  <>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected="true"
+                      className="active"
+                      onClick={beginAccountCreation}
+                    >
+                      Sign up
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected="false"
+                      data-testid="auth-signin"
+                      onClick={() => {
+                        setPasswordIntent("signin");
+                        setPassword("");
+                        setConfirmPassword("");
+                        setMessage("");
+                      }}
+                    >
+                      Log in
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={signInMethod === "password"}
+                      data-testid="auth-password"
+                      className={signInMethod === "password" ? "active" : ""}
+                      onClick={() => {
+                        setSignInMethod("password");
+                        setMessage("");
+                      }}
+                    >
+                      Password
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={signInMethod === "link"}
+                      data-testid="auth-email-link"
+                      className={signInMethod === "link" ? "active" : ""}
+                      onClick={() => {
+                        setSignInMethod("link");
+                        setMessage("");
+                      }}
+                    >
+                      Email link
+                    </button>
+                  </>
+                )}
+              </div>
+              <form className="auth-form" onSubmit={signIn}>
+                <fieldset className="auth-form-fields" disabled={authPending}>
+                  <label htmlFor="email">Email address</label>
                   <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder={
-                      passwordIntent === "signup"
-                        ? "At least 8 characters"
-                        : "Your password"
-                    }
-                    autoComplete={
-                      passwordIntent === "signup"
-                        ? "new-password"
-                        : "current-password"
-                    }
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
                     onFocus={keepAuthFieldVisible}
-                    minLength={passwordIntent === "signup" ? 8 : undefined}
                     required
                   />
-                  {passwordIntent === "signup" && (
+                  {signInMethod === "password" && (
                     <>
-                      <label htmlFor="confirm-password">Confirm password</label>
+                      <label htmlFor="password">Password</label>
                       <input
-                        id="confirm-password"
+                        id="password"
                         type="password"
-                        value={confirmPassword}
-                        onChange={(event) =>
-                          setConfirmPassword(event.target.value)
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder={
+                          passwordIntent === "signup"
+                            ? "At least 8 characters"
+                            : "Your password"
                         }
-                        placeholder="Type your password again"
-                        autoComplete="new-password"
+                        autoComplete={
+                          passwordIntent === "signup"
+                            ? "new-password"
+                            : "current-password"
+                        }
                         onFocus={keepAuthFieldVisible}
-                        minLength={8}
+                        minLength={passwordIntent === "signup" ? 8 : undefined}
                         required
                       />
+                      {passwordIntent === "signup" && (
+                        <>
+                          <label htmlFor="confirm-password">Confirm password</label>
+                          <input
+                            id="confirm-password"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(event) =>
+                              setConfirmPassword(event.target.value)
+                            }
+                            placeholder="Type your password again"
+                            autoComplete="new-password"
+                            onFocus={keepAuthFieldVisible}
+                            minLength={8}
+                            required
+                          />
+                        </>
+                      )}
                     </>
                   )}
-                </>
-              )}
-              <button
-                className="auth-submit"
-                type="submit"
-                disabled={authPending}
-              >
-                {authPending
-                  ? passwordIntent === "signup" && signInMethod === "password"
-                    ? "Creating account…"
-                    : signInMethod === "password"
-                      ? "Signing in…"
-                      : "Sending…"
-                  : signInMethod === "link"
-                    ? "Send sign-in link"
-                    : passwordIntent === "signup"
-                      ? "Create account"
-                      : "Sign in"}
-              </button>
-              {signInMethod === "password" && passwordIntent === "signin" && (
-                <div className="auth-switch">
-                  <span>New to Hecate?</span>
-                  <button type="button" onClick={beginAccountCreation}>
-                    Create account
+                  <button
+                    className="auth-submit"
+                    type="submit"
+                    disabled={authPending}
+                  >
+                    {authPending
+                      ? passwordIntent === "signup" && signInMethod === "password"
+                        ? "Creating account…"
+                        : signInMethod === "password"
+                          ? "Signing in…"
+                          : "Sending…"
+                      : signInMethod === "link"
+                        ? "Send sign-in link"
+                        : passwordIntent === "signup"
+                          ? "Create account"
+                          : "Sign in"}
                   </button>
-                </div>
-              )}
-              {signInMethod === "link" && (
-                <div className="auth-switch">
-                  <span>New to Hecate?</span>
-                  <button type="button" onClick={beginAccountCreation}>
-                    Create account
-                  </button>
-                </div>
-              )}
-              {message && (
-                <div
-                  className={`form-message form-message--${messageTone}`}
-                  role={messageTone === "error" ? "alert" : "status"}
-                >
-                  {message}
-                </div>
-              )}
-            </form>
+                  {signInMethod === "password" && passwordIntent === "signin" && (
+                    <div className="auth-switch">
+                      <span>New to Hecate?</span>
+                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>
+                        Create account
+                      </button>
+                    </div>
+                  )}
+                  {signInMethod === "link" && (
+                    <div className="auth-switch">
+                      <span>New to Hecate?</span>
+                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>
+                        Create account
+                      </button>
+                    </div>
+                  )}
+                </fieldset>
+                {message && (
+                  <div
+                    className={`form-message form-message--${messageTone}`}
+                    role={messageTone === "error" ? "alert" : "status"}
+                  >
+                    {message}
+                  </div>
+                )}
+              </form>
+            </AuthEntry>
           </div>
         ) : (
           <div className="setup-note">

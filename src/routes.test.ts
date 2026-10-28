@@ -34,7 +34,7 @@ describe('browser routes', () => {
 
   it('opens the hosted leaderboard from the native app', () => {
     expect(hostedLeaderboardUrl()).toBe(
-      'https://hecate-eta.vercel.app/leaderboard',
+      'https://hecate-explore.vercel.app/leaderboard',
     )
   })
 

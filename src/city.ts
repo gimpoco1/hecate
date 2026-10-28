@@ -29,19 +29,19 @@ const metropolitanRegions = [
     id: "region:greater-london",
     name: "Greater London",
     bounds: [-0.511, 51.286, 0.335, 51.693],
-    geometry: () => import("./regions/greater-london.json", { with: { type: "json" } }),
+    geometry: () => import("./regions/greater-london.ts"),
   },
   {
     id: "region:barcelona-metropolitan",
     name: "Barcelona",
     bounds: [1.846, 41.263, 2.297, 41.535],
-    geometry: () => import("./regions/barcelona-metropolitan.json", { with: { type: "json" } }),
+    geometry: () => import("./regions/barcelona-metropolitan.ts"),
   },
   {
     id: "region:new-york",
     name: "New York",
     bounds: [-74.26, 40.47, -73.7, 40.92],
-    geometry: () => import("./regions/new-york.json", { with: { type: "json" } }),
+    geometry: () => import("./regions/new-york.ts"),
   },
 ] as const;
 

@@ -2,7 +2,7 @@ import { errorDiagnostic } from './diagnostics'
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
-import { initializeNativeAuthLinks, initializeWebAuth } from './auth'
+import { initializeNativeAuthLinks, initializeWebAuth, isSignInCancellation } from './auth'
 import { isLeaderboardPath, shouldRedirectBrowserToLeaderboard } from './routes'
 import './styles.css'
 import { initializeAppearance } from './appearance'
@@ -37,13 +37,23 @@ document.querySelector('meta[name="description"]')?.setAttribute(
     : 'Track your walks, reveal new ground, and discover your world with Hecate.',
 )
 
-void initializeWebAuth().then(() => {
+function renderExperience(): void {
   createRoot(document.getElementById('root')!).render(<StrictMode><Suspense fallback={null}><RootExperience /></Suspense></StrictMode>)
-}).catch((error: Error) => {
+}
+
+void initializeWebAuth().then(renderExperience).catch((error: Error) => {
+  if (isSignInCancellation(error)) {
+    renderExperience()
+    return
+  }
   const message = document.createElement('p')
   message.setAttribute('role', 'alert')
   message.textContent = error.message
-  document.getElementById('root')!.replaceChildren(message)
+  const retry = document.createElement('a')
+  retry.href = '/leaderboard'
+  retry.dataset.testid = 'auth-retry'
+  retry.textContent = 'Return to Hecate and try again'
+  document.getElementById('root')!.replaceChildren(message, retry)
 })
 void initializeNativeAuthLinks()
 

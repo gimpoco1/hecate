@@ -846,7 +846,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   useEffect(() => {
     const onAuthError = (): void => {
-      setJourneyStopMessage("Sign-in failed. Request a new link from Hecate on this device.");
+      setJourneyStopMessage("Sign-in failed. Please try again from Account & sync.");
     };
     window.addEventListener("hecate:auth-error", onAuthError);
     return () => window.removeEventListener("hecate:auth-error", onAuthError);
