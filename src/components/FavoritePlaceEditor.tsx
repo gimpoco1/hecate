@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { useEffect, useState } from "react";
 import { Clipboard } from "@capacitor/clipboard";
 import {
@@ -70,7 +71,7 @@ export function FavoritePlaceEditor({
       })
       .catch((error) => {
         if (!controller.signal.aborted)
-          console.warn("Could not find a name for this saved place", error);
+          console.warn("Could not find a name for this saved place", errorDiagnostic(error));
       });
     return () => controller.abort();
   }, [existing, favorite.lat, favorite.lng, favorite.name]);
@@ -106,7 +107,7 @@ export function FavoritePlaceEditor({
                   setCoordinatesCopied(true);
                   setCopyError("");
                 }).catch((error) => {
-                  console.error("Could not copy saved place coordinates", { error });
+                  console.error("Could not copy saved place coordinates", { error: errorDiagnostic(error) });
                   setCopyError("Could not copy coordinates. Please try again.");
                 });
               }}>

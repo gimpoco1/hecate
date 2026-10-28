@@ -1,10 +1,10 @@
-import { cityPointPredicate, type CityBoundary } from "./city";
+import { cityPointPredicate, type CityBoundary } from "./city.ts";
 import {
   discoveryJourneyMetricsByRegion,
   distanceKm,
   type DiscoveryJourneyMetric,
-} from "./geo";
-import type { Coordinate } from "./types";
+} from "./geo.ts";
+import type { Coordinate } from "./types.ts";
 
 /**
  * Canonical public achievement ID allow-list.
@@ -127,9 +127,10 @@ export function personalAchievementDefinition(id: PersonalAchievementId) {
   return PERSONAL_ACHIEVEMENTS.find((achievement) => achievement.id === id)!;
 }
 
-function localDayOrdinal(timestamp: number) {
-  const date = new Date(timestamp);
-  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS;
+function dayOrdinal(timestamp: number, formatter: Intl.DateTimeFormat): number {
+  const parts = formatter.formatToParts(timestamp);
+  const part = (name: Intl.DateTimeFormatPartTypes): number => Number(parts.find(value => value.type === name)!.value);
+  return Date.UTC(part("year"), part("month") - 1, part("day")) / DAY_MS;
 }
 
 function longestConsecutiveRun(days: number[]) {
@@ -160,6 +161,15 @@ export function evaluateAchievementsFromJourneys(
   journeys: JourneyWithCityDistances[],
   cityDistances: AchievementCityDistance[],
 ): AchievementEvaluation[] {
+  return evaluateAchievementsInTimeZone(journeys, cityDistances, Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
+
+export function evaluateAchievementsInTimeZone(
+  journeys: JourneyWithCityDistances[],
+  cityDistances: AchievementCityDistance[],
+  timeZone: string,
+): AchievementEvaluation[] {
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric" });
   const longestNewWalk = Math.max(0, ...journeys.map(({ newGroundKm }) => newGroundKm));
   const bestUncharted = journeys.reduce(
     (best, journey) => {
@@ -185,7 +195,7 @@ export function evaluateAchievementsFromJourneys(
   );
   const dailyDistance = new Map<number, number>();
   journeys.forEach((journey) => {
-    const day = localDayOrdinal(journey.finishedAt);
+    const day = dayOrdinal(journey.finishedAt, formatter);
     dailyDistance.set(day, (dailyDistance.get(day) ?? 0) + journey.newGroundKm);
   });
   const qualifyingDays = [...dailyDistance]
@@ -196,7 +206,7 @@ export function evaluateAchievementsFromJourneys(
 
   const cityDailyDistance = new Map<string, Map<number, number>>();
   journeys.forEach((journey) => {
-    const day = localDayOrdinal(journey.finishedAt);
+    const day = dayOrdinal(journey.finishedAt, formatter);
     Object.entries(journey.newGroundKmByRegion).forEach(([cityId, distance]) => {
       const dailyDistance = cityDailyDistance.get(cityId) ?? new Map<number, number>();
       dailyDistance.set(day, (dailyDistance.get(day) ?? 0) + distance);
@@ -294,10 +304,15 @@ export function evaluateAchievementsFromJourneys(
   }));
 }
 
-export function evaluatePersonalAchievements(
+export function evaluatePersonalAchievements(points: Coordinate[], cities: CityBoundary[]): AchievementEvaluation[] {
+  return evaluatePersonalAchievementsInTimeZone(points, cities, Intl.DateTimeFormat().resolvedOptions().timeZone);
+}
+
+export function evaluatePersonalAchievementsInTimeZone(
   points: Coordinate[],
   cities: CityBoundary[],
-) {
+  timeZone: string,
+): AchievementEvaluation[] {
   const cityPredicates = cities.map((city) => ({
     id: city.id,
     containsPoint: cityPointPredicate(city),
@@ -323,7 +338,7 @@ export function evaluatePersonalAchievements(
       0,
     ),
   }));
-  return evaluateAchievementsFromJourneys(journeys, cityDistances);
+  return evaluateAchievementsInTimeZone(journeys, cityDistances, timeZone);
 }
 
 export function earnedPersonalAchievementIds(

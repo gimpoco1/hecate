@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -141,13 +142,9 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
       JSON.stringify(routes.slice(0, 20)),
     );
   } catch (error) {
-    console.warn("Could not persist GPX import history", {
-      userId,
-      error:
-        error instanceof Error
+    console.warn("Could not persist GPX import history", { error: errorDiagnostic(error instanceof Error
           ? error.message
-          : "Web Storage failed with an unknown error.",
-    });
+          : "Web Storage failed with an unknown error.") });
   }
 }
 
@@ -221,7 +218,7 @@ export function SyncSheet({
         if (active) setLocationAuthorizationError(
           "Could not check location access. Check Location in device Settings.",
         );
-        console.warn("Could not read location authorization", { error });
+        console.warn("Could not read location authorization", { error: errorDiagnostic(error) });
       });
     };
     refresh();
@@ -1159,7 +1156,7 @@ export function SyncSheet({
                               setNotificationError("");
                               void openLocationSettings()
                                 .catch((error: Error) => {
-                                  console.warn("Could not open device settings", { error });
+                                  console.warn("Could not open device settings", { error: errorDiagnostic(error) });
                                   setNotificationError(
                                     "Could not open Settings. Open your device Settings and enable notifications for Hecate.",
                                   );
@@ -1313,7 +1310,7 @@ export function SyncSheet({
                                 className="notification-permission-notice__action"
                                 onClick={() => {
                                   void openLocationSettings().catch((error: Error) => {
-                                    console.warn("Could not open location settings", { error });
+                                    console.warn("Could not open location settings", { error: errorDiagnostic(error) });
                                     setLocationAuthorizationError(
                                       "Could not open Settings. Open Hecate's app settings and allow background location.",
                                     );
@@ -1336,7 +1333,7 @@ export function SyncSheet({
                               <p>{reminderMotionError}</p>
                               <button type="button" className="notification-permission-notice__action" onClick={() => {
                                 void openLocationSettings().catch((cause) => {
-                                  console.error("Could not open motion permission settings", { cause });
+                                  console.error("Could not open motion permission settings", { cause: errorDiagnostic(cause) });
                                   setReminderError(`Open Hecate’s device settings and allow ${reminderMotionPermissionLabel()}.`);
                                 });
                               }}>Open Settings <ChevronIcon size={14} /></button>

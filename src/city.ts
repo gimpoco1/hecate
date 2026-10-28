@@ -6,8 +6,8 @@ import {
   discoveryFootprintCells,
   discoveryPointsFromCells,
   pointToDiscoveryCell,
-} from "./geo";
-import type { Coordinate, DiscoveryCell } from "./types";
+} from "./geo.ts";
+import type { Coordinate, DiscoveryCell } from "./types.ts";
 
 const EARTH_RADIUS_KM = 6371.0088;
 
@@ -29,19 +29,19 @@ const metropolitanRegions = [
     id: "region:greater-london",
     name: "Greater London",
     bounds: [-0.511, 51.286, 0.335, 51.693],
-    geometry: () => import("./regions/greater-london.json"),
+    geometry: () => import("./regions/greater-london.json", { with: { type: "json" } }),
   },
   {
     id: "region:barcelona-metropolitan",
     name: "Barcelona",
     bounds: [1.846, 41.263, 2.297, 41.535],
-    geometry: () => import("./regions/barcelona-metropolitan.json"),
+    geometry: () => import("./regions/barcelona-metropolitan.json", { with: { type: "json" } }),
   },
   {
     id: "region:new-york",
     name: "New York",
     bounds: [-74.26, 40.47, -73.7, 40.92],
-    geometry: () => import("./regions/new-york.json"),
+    geometry: () => import("./regions/new-york.json", { with: { type: "json" } }),
   },
 ] as const;
 
@@ -216,6 +216,12 @@ export function cityBounds(city: CityBoundary): { west: number; south: number; e
 export async function canonicalCityForStoredBoundary(
   city: CityBoundary,
 ): Promise<CityBoundary> {
+  const knownRegion = metropolitanRegions.find(region => region.id === city.id);
+  if (knownRegion) return {
+    ...city,
+    name: knownRegion.name,
+    geometry: (await knownRegion.geometry()).default as CityGeometry,
+  };
   const { west, south, east, north } = cityBounds(city);
   const center = { lng: (west + east) / 2, lat: (south + north) / 2 };
   const region = await metropolitanCityForPoint(center);

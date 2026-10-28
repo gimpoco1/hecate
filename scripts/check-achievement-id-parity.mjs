@@ -4,6 +4,7 @@ const root = new URL('../', import.meta.url)
 const sources = [
   'supabase.sql',
   'scripts/install-leaderboard-achievements.sql',
+  'supabase/migrations/20261028120000_harden_api_boundaries.sql',
 ]
 
 function read(relativePath) {

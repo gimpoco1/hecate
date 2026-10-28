@@ -1,3 +1,4 @@
+import { errorDiagnostic } from './diagnostics'
 import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
 import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
@@ -479,13 +480,7 @@ export function saveCachedDiscoveryProgress(
       JSON.stringify(cached),
     );
   } catch (error) {
-    console.warn("Could not cache discovery progress", {
-      userId,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Web Storage failed with an unknown error.",
-    });
+    console.warn("Could not cache discovery progress", { error: errorDiagnostic(error) });
   }
 }
 
@@ -785,12 +780,7 @@ async function retryGpxImportOperation(
         error instanceof Error
           ? error
           : new Error(`${operationName} failed for an unknown reason.`);
-      console.warn("GPX import operation failed", {
-        operation: operationName,
-        fileName,
-        attempt,
-        error: lastError.message,
-      });
+      console.warn("GPX import operation failed", { operation: operationName, attempt, error: errorDiagnostic(lastError) });
       if (attempt < 3) {
         await new Promise((resolve) =>
           window.setTimeout(resolve, attempt * 300),
@@ -854,6 +844,14 @@ export default function App() {
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [accountUserEmail, setAccountUserEmail] = useState("");
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
+  useEffect(() => {
+    const onAuthError = (): void => {
+      setJourneyStopMessage("Sign-in failed. Request a new link from Hecate on this device.");
+    };
+    window.addEventListener("hecate:auth-error", onAuthError);
+    return () => window.removeEventListener("hecate:auth-error", onAuthError);
+  }, []);
+
   const [tracking, setTracking] = useState<TrackingState>("idle");
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
     useState(false);
@@ -1438,9 +1436,7 @@ export default function App() {
       journeyActivityQueueRef.current = journeyActivityQueueRef.current
         .then(operation)
         .catch((error: Error) => {
-          console.warn("Could not synchronize journey Live Activity", {
-            error,
-          });
+          console.warn("Could not synchronize journey Live Activity", { error: errorDiagnostic(error) });
         });
     },
     [],
@@ -1489,7 +1485,7 @@ export default function App() {
         if (result) handleUrl(result.url);
       })
       .catch((error: Error) =>
-        console.warn("Could not read journey launch URL", { error }),
+        console.warn("Could not read journey launch URL", { error: errorDiagnostic(error) }),
       );
     return () => {
       active = false;
@@ -1535,7 +1531,7 @@ export default function App() {
         );
       } catch (error) {
         if (!active) return;
-        console.error("Could not read iOS journey control", { error });
+        console.error("Could not read iOS journey control", { error: errorDiagnostic(error) });
         setJourneyStopMessage(
           error instanceof Error
             ? error.message
@@ -1557,7 +1553,7 @@ export default function App() {
       })
       .catch((error) => {
         if (!active) return;
-        console.error("Could not register iOS journey control", { error });
+        console.error("Could not register iOS journey control", { error: errorDiagnostic(error) });
         setJourneyStopMessage(
           error instanceof Error
             ? error.message
@@ -1596,10 +1592,7 @@ export default function App() {
         setRequestedJourneyStopId(request.walkId);
       })
       .catch((error: Error) =>
-        console.error("Could not read widget journey stop", {
-          error,
-          walkId: walk.id,
-        }),
+        console.error("Could not read widget journey stop", { error: errorDiagnostic(error), walkId: walk.id }),
       );
     return () => {
       active = false;
@@ -1720,7 +1713,7 @@ export default function App() {
             });
           })
           .catch((error) => {
-            console.warn("Could not schedule inactivity reminder", error);
+            console.warn("Could not schedule inactivity reminder", errorDiagnostic(error));
             if (
               dueAt !== null &&
               generation === inactivityGenerationRef.current
@@ -1769,7 +1762,7 @@ export default function App() {
       .catch((error) => {
         console.error(
           "Could not observe iOS foreground state for journey Live Activities",
-          { error },
+          { error: errorDiagnostic(error) },
         );
         if (active)
           setJourneyStopMessage(
@@ -2001,7 +1994,7 @@ export default function App() {
         }
       })
       .catch((error) => {
-        console.warn("Could not sync achievement unlocks", error);
+        console.warn("Could not sync achievement unlocks", errorDiagnostic(error));
       });
   }, [
     accountUserId,
@@ -2109,9 +2102,7 @@ export default function App() {
           })
           .catch((error) => {
             if (active) setDiscoveryLocationAllowed(false);
-            console.warn("Could not refresh background location permission", {
-              error,
-            });
+            console.warn("Could not refresh background location permission", { error: errorDiagnostic(error) });
           });
       }
       setNotificationClock(Date.now());
@@ -2121,7 +2112,7 @@ export default function App() {
             setNotificationPermissionReady(permission.display === "granted");
         })
         .catch((error) =>
-          console.warn("Could not refresh notification permission", { error }),
+          console.warn("Could not refresh notification permission", { error: errorDiagnostic(error) }),
         );
     };
     refreshPermission();
@@ -2153,10 +2144,7 @@ export default function App() {
     setPendingSpeedStopReport(null);
     void openJourneySpeedStopReport(AppLauncher, pendingSpeedStopReport).catch(
       (error: Error) => {
-        console.error("Could not open journey speed-stop report", {
-          walkId: pendingSpeedStopReport.walkId,
-          error,
-        });
+        console.error("Could not open journey speed-stop report", { walkId: pendingSpeedStopReport.walkId, error: errorDiagnostic(error) });
         if (accountUserIdRef.current === pendingSpeedStopReport.userId) {
           setJourneyStopMessage(
             `Could not open your email app. Contact supporthecate@gmail.com and include journey ID ${pendingSpeedStopReport.walkId}.`,
@@ -2352,11 +2340,11 @@ export default function App() {
     };
     activityNotificationQueueRef.current = activityNotificationQueueRef.current
       .catch((error) =>
-        console.warn("Previous notification update failed", { error }),
+        console.warn("Previous notification update failed", { error: errorDiagnostic(error) }),
       )
       .then(update)
       .catch((error) =>
-        console.warn("Could not update activity notifications", { error }),
+        console.warn("Could not update activity notifications", { error: errorDiagnostic(error) }),
       );
     return () => {
       activityNotificationGenerationRef.current += 1;
@@ -2523,9 +2511,7 @@ export default function App() {
       setTracking("idle");
       setPassiveLocationStatus("idle");
       void Promise.resolve(tracker?.stop()).catch((error) => {
-        console.error("Could not stop location tracking after account change", {
-          error,
-        });
+        console.error("Could not stop location tracking after account change", { error: errorDiagnostic(error) });
       });
     }
     journeyFinishedAtRef.current = null;
@@ -2654,7 +2640,7 @@ export default function App() {
         })
         .catch((error) => {
           if (!active) return;
-          console.warn("Could not load discovery history; retrying", error);
+          console.warn("Could not load discovery history; retrying", errorDiagnostic(error));
           // Keep recording available offline. Upload/reconciliation remains
           // gated by discoveryHistoryReadyRef until a later retry succeeds.
           setDiscoveryLoading(false);
@@ -2721,7 +2707,7 @@ export default function App() {
     } catch (error) {
       // Discovery syncing is the source of truth. A later completed session or
       // online retry can safely rebuild the public aggregate snapshot.
-      console.warn("Could not refresh live leaderboard data", error);
+      console.warn("Could not refresh live leaderboard data", errorDiagnostic(error));
       return false;
     }
   };
@@ -2825,7 +2811,7 @@ export default function App() {
                 accountUserId,
               );
             } catch (error) {
-              console.warn("Could not update stored cities", error);
+              console.warn("Could not update stored cities", errorDiagnostic(error));
             }
           }
           if (!active) return;
@@ -2838,7 +2824,7 @@ export default function App() {
         })
         .catch((error) => {
           if (!active) return;
-          console.warn("Could not load discovered cities; retrying", error);
+          console.warn("Could not load discovered cities; retrying", errorDiagnostic(error));
           retryTimer = window.setTimeout(load, 15_000);
         });
     load();
@@ -2960,7 +2946,7 @@ export default function App() {
         if (disposed) return;
         setReminderMotionAllowed(false);
         const message = cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`;
-        console.error("Could not enable motion-based discovery reminders", { cause });
+        console.error("Could not enable motion-based discovery reminders", { cause: errorDiagnostic(cause) });
         setReminderMotionError(message);
       }).finally(() => { requesting = false; });
     };
@@ -3074,7 +3060,7 @@ export default function App() {
                 reminderRef.current.durationMinutes,
                 kind,
               ).catch((error) =>
-                console.warn("Could not show discovery reminder", error),
+                console.warn("Could not show discovery reminder", errorDiagnostic(error)),
               );
             else if (visible) setReminderPrompt(kind);
           },
@@ -3161,7 +3147,7 @@ export default function App() {
           else appStateListener = listener;
         })
         .catch((cause) => {
-          console.error("Could not observe native app state for passive location", { cause });
+          console.error("Could not observe native app state for passive location", { cause: errorDiagnostic(cause) });
           setPassiveLocationStatus("unavailable");
         });
       void CapacitorApp.getState().then((state) => {
@@ -3170,7 +3156,7 @@ export default function App() {
         nativeActive = state.isActive;
         updateVisibility();
       }).catch((cause) => {
-        console.error("Could not read native app state for passive location", { cause });
+        console.error("Could not read native app state for passive location", { cause: errorDiagnostic(cause) });
         if (!disposed) setPassiveLocationStatus("unavailable");
       });
     }
@@ -3216,7 +3202,7 @@ export default function App() {
       .then(setCityBoundary)
       .catch((error) => {
         if (!controller.signal.aborted)
-          console.warn("City boundary lookup failed", error);
+          console.warn("City boundary lookup failed", errorDiagnostic(error));
       });
   }, [activeCity, currentPoint]);
 
@@ -3253,7 +3239,7 @@ export default function App() {
         })
         .catch((error) => {
           if (!controller.signal.aborted)
-            console.warn("Map city lookup failed", error);
+            console.warn("Map city lookup failed", errorDiagnostic(error));
         })
         .finally(() => {
           if (
@@ -3562,7 +3548,7 @@ export default function App() {
       })
       .catch((cause) => {
         if (controller.signal.aborted) return;
-        console.error("Could not recalculate navigation route", { origin: point, destination, mode, cause });
+        console.error("Could not recalculate navigation route", { mode, cause: errorDiagnostic(cause) });
         setNavigationMessage(cause instanceof Error ? cause.message : "Could not recalculate the route. Check your connection.");
       })
       .finally(() => {
@@ -3821,7 +3807,7 @@ export default function App() {
       focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
     } catch (cause) {
       if (controller.signal.aborted) return;
-      console.error("Could not prepare route recalculation preview", { origin, destination, cause });
+      console.error("Could not prepare route recalculation preview", { cause: errorDiagnostic(cause) });
       setNavigationTestMessage(cause instanceof Error ? cause.message : "Could not calculate the sample route.");
     } finally {
       if (rerouteControllerRef.current === controller) {
@@ -3836,7 +3822,7 @@ export default function App() {
     setWalkFinalizing(true);
     void finishActiveWalk()
       .catch((error) => {
-        console.error("Could not finalize recorded walk", { error });
+        console.error("Could not finalize recorded walk", { error: errorDiagnostic(error) });
         if (
           activeWalkRef.current &&
           trackingUserRef.current === accountUserIdRef.current
@@ -4027,11 +4013,7 @@ export default function App() {
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save discovered-area reminder preference", {
-        accountUserId,
-        enabled,
-        error,
-      });
+      console.error("Could not save discovered-area reminder preference", { accountUserId, enabled, error: errorDiagnostic(error) });
       return "Could not save your reminder preference. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -4048,12 +4030,7 @@ export default function App() {
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save reminder time", {
-        accountUserId,
-        field,
-        time,
-        error,
-      });
+      console.error("Could not save reminder time", { accountUserId, field, time, error: errorDiagnostic(error) });
       return "Could not save your reminder time. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -4075,12 +4052,7 @@ export default function App() {
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
-      console.error("Could not save reminder duration", {
-        accountUserId,
-        field,
-        minutes,
-        error,
-      });
+      console.error("Could not save reminder duration", { accountUserId, field, minutes, error: errorDiagnostic(error) });
       return "Could not save your reminder duration. Try again.";
     }
     setActivityNotificationPreferences(next);
@@ -4184,10 +4156,7 @@ export default function App() {
         `${notificationName} will appear in 5 seconds.`,
       );
     } catch (error) {
-      console.warn("Could not schedule activity notification test", {
-        notificationName,
-        error,
-      });
+      console.warn("Could not schedule activity notification test", { notificationName, error: errorDiagnostic(error) });
       setActivityNotificationTestMessage(
         `Could not schedule ${notificationName.toLowerCase()}.`,
       );
@@ -4340,10 +4309,7 @@ export default function App() {
       walkId,
       () => accountUserIdRef.current === accountUserId,
     ).catch((error) => {
-      console.error("Could not notify user about journey speed stop", {
-        walkId,
-        error,
-      });
+      console.error("Could not notify user about journey speed stop", { walkId, error: errorDiagnostic(error) });
     });
   };
 
@@ -4422,9 +4388,7 @@ export default function App() {
         focusFirstTrackingPointRef.current = false;
         resetInactivityReminder();
         void Promise.resolve(tracker.stop()).catch((stopError) => {
-          console.error("Could not stop journey location tracking", {
-            error: stopError,
-          });
+          console.error("Could not stop journey location tracking", { error: errorDiagnostic(stopError) });
         });
         trackerRef.current = null;
         finalizeRecordedWalk();
@@ -4519,10 +4483,7 @@ export default function App() {
         setSyncOpen(false);
         await toggleTracking();
       } catch (error) {
-        console.error("Could not perform iOS journey control", {
-          requestId: request.id,
-          error,
-        });
+        console.error("Could not perform iOS journey control", { requestId: request.id, error: errorDiagnostic(error) });
         if (controlMountedRef.current)
           setJourneyStopMessage(
             error instanceof Error
@@ -4621,9 +4582,7 @@ export default function App() {
         resetInactivityReminder();
         trackerRef.current = null;
         void Promise.resolve(tracker.stop()).catch((stopError) => {
-          console.error("Could not stop restored location tracking", {
-            error: stopError,
-          });
+          console.error("Could not stop restored location tracking", { error: errorDiagnostic(stopError) });
         });
         finalizeRecordedWalk();
         setPassiveLocationStatus(
@@ -4649,14 +4608,12 @@ export default function App() {
         resetInactivityReminder();
         trackerRef.current = null;
         void Promise.resolve(tracker.stop()).catch((stopError) => {
-          console.error("Could not stop failed restored location tracking", {
-            error: stopError,
-          });
+          console.error("Could not stop failed restored location tracking", { error: errorDiagnostic(stopError) });
         });
         finalizeRecordedWalk();
         setPassiveLocationStatus("idle");
         setTracking("unavailable");
-        console.error("Could not restore active location tracking", { error });
+        console.error("Could not restore active location tracking", { error: errorDiagnostic(error) });
       });
   }, [accountUserId, resetInactivityReminder, tracking]);
 
@@ -5190,7 +5147,7 @@ export default function App() {
       .catch((error) => {
         console.warn(
           "Saved places could not be loaded from the database",
-          error,
+          errorDiagnostic(error),
         );
       });
     return () => {
@@ -5241,7 +5198,7 @@ export default function App() {
       upsertFavoritePlacesInDatabase(supabase, accountUserId, changedPlaces),
       deleteFavoritePlacesFromDatabase(supabase, accountUserId, removedIds),
     ]).catch((error) => {
-      console.warn("Saved places will retry syncing later", error);
+      console.warn("Saved places will retry syncing later", errorDiagnostic(error));
     });
   };
 
@@ -5889,7 +5846,7 @@ export default function App() {
                 void openLocationSettings()
                   .then(() => setLocationPermissionToastVisible(false))
                   .catch((error: Error) => {
-                    console.warn("Could not open location settings", { error });
+                    console.warn("Could not open location settings", { error: errorDiagnostic(error) });
                     setLocationSettingsError(
                       "Could not open Settings. Enable location for Hecate in your device Settings.",
                     );
@@ -5920,7 +5877,7 @@ export default function App() {
             disabled={locationDisplayStatus !== "denied"}
             onClick={() => {
               void openLocationSettings().catch((error: Error) => {
-                console.warn("Could not open location settings", { error });
+                console.warn("Could not open location settings", { error: errorDiagnostic(error) });
                 setLocationSettingsError(
                   "Could not open Settings. Enable location for Hecate in device Settings.",
                 );
@@ -6488,7 +6445,7 @@ export default function App() {
               ).catch((error) =>
                 console.warn(
                   "Could not sync achievement acknowledgement",
-                  error,
+                  errorDiagnostic(error),
                 ),
               );
             setAchievementCelebrations((current) => current.slice(1));

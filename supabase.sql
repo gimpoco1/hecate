@@ -1,4 +1,5 @@
--- Hecate spatial storage. Safe to rerun after the legacy discovery_points
+-- Bootstrap spatial storage; apply tracked supabase/migrations afterward.
+-- Safe to rerun after the legacy discovery_points
 -- table has been retired.
 
 create schema if not exists extensions;
@@ -166,7 +167,8 @@ create policy "Users update their own discovered cities" on public.discovered_ci
 create policy "Users delete their own discovered cities" on public.discovered_cities
   for delete using ((select auth.uid()) = user_id);
 
-grant select, insert, update, delete on public.walks to authenticated;
+revoke insert, update on public.walks from authenticated;
+grant select, delete on public.walks to authenticated;
 grant select, insert, update, delete on public.discovery_cells to authenticated;
 grant select, insert, update, delete on public.discovered_cities to authenticated;
 
@@ -179,8 +181,8 @@ create or replace function public.save_walk(
   p_achievement_eligible boolean
 ) returns void
 language plpgsql
-security invoker
-set search_path = public, extensions
+security definer
+set search_path = ''
 as $$
 declare
   v_user_id uuid := auth.uid();
@@ -189,12 +191,24 @@ begin
   if v_user_id is null then
     raise exception 'Authentication required';
   end if;
-  if jsonb_typeof(p_coordinates) <> 'array'
+  if p_coordinates is null or p_point_count is null or jsonb_typeof(p_coordinates) <> 'array'
      or jsonb_array_length(p_coordinates) < 2
      or jsonb_array_length(p_coordinates) > 20000
      or p_point_count <> jsonb_array_length(p_coordinates) then
     raise exception 'A walk must contain between 2 and 20000 coordinates';
   end if;
+
+  if exists (
+    select 1 from jsonb_array_elements(p_coordinates) as points(coordinate)
+    where case when jsonb_typeof(coordinate) = 'array' and jsonb_array_length(coordinate) = 2 then
+      jsonb_typeof(coordinate -> 0) <> 'number' or jsonb_typeof(coordinate -> 1) <> 'number'
+      or not ((coordinate ->> 0)::double precision between -180 and 180)
+      or not ((coordinate ->> 1)::double precision between -90 and 90)
+    else true end
+  ) then
+    raise exception 'Each walk coordinate must be a numeric [longitude, latitude] pair within geographic bounds.' using errcode = '22023';
+  end if;
+  perform private.consume_quota(v_user_id::text, 'walk-minute', 60, 60);
 
   select extensions.st_setsrid(
     extensions.st_makeline(
@@ -212,6 +226,9 @@ begin
   -- on the order in which cells are unlocked, so simplifying a line here would
   -- make the total change after an app restart.
 
+  if exists (select 1 from public.walks where id = p_walk_id and user_id <> v_user_id) then
+    raise exception 'This walk ID belongs to another account.' using errcode = '42501';
+  end if;
   insert into public.walks (
     id, user_id, started_at, finished_at, point_count, distance_m, route,
     achievement_eligible
@@ -599,32 +616,24 @@ as $$
 $$;
 
 create or replace function public.unpublish_leaderboard_snapshot()
-returns void
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare
-  v_user_id uuid := auth.uid();
-  v_entry_id uuid;
+returns void language plpgsql security definer set search_path = '' as $$
+declare v_user_id uuid := auth.uid();
 begin
-  if v_user_id is null then
-    raise exception 'Authentication required';
-  end if;
-  select entry_id into v_entry_id
-  from public.leaderboard_profiles
-  where user_id = v_user_id;
-  if v_entry_id is not null then
-    delete from public.leaderboard_entries where entry_id = v_entry_id;
-  end if;
+  if v_user_id is null then raise exception 'Authentication required' using errcode = '42501'; end if;
+  delete from private.leaderboard_publish_requests where user_id = v_user_id;
+  delete from public.leaderboard_entries where entry_id in (
+    select entry_id from public.leaderboard_profiles where user_id = v_user_id
+  );
 end;
 $$;
+revoke all on function public.unpublish_leaderboard_snapshot() from public, anon;
+grant execute on function public.unpublish_leaderboard_snapshot() to authenticated;
 
 revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) from public, anon;
 revoke all on function public.get_my_leaderboard_entry_id() from public, anon;
 revoke all on function public.get_my_leaderboard_profile() from public, anon;
 revoke all on function public.unpublish_leaderboard_snapshot() from public, anon;
-grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) to authenticated;
+revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) from authenticated;
 grant execute on function public.get_my_leaderboard_entry_id() to authenticated;
 grant execute on function public.get_my_leaderboard_profile() to authenticated;
 grant execute on function public.unpublish_leaderboard_snapshot() to authenticated;

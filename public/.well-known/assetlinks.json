@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.gimpoco.hecate",
+      "sha256_cert_fingerprints": [
+        "E1:01:A8:5E:2C:8E:47:1D:A8:AC:FE:4C:E5:BD:7A:FA:AA:F1:C9:78:38:71:F1:CC:CE:16:E6:2F:F8:A8:D3:1F"
+      ]
+    }
+  }
+]

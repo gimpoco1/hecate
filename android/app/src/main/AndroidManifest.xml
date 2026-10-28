@@ -16,11 +16,11 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:host="auth" android:pathPrefix="/callback" android:scheme="hecate" />
+                <data android:host="hecate-eta.vercel.app" android:path="/auth/callback" android:scheme="https" />
             </intent-filter>
         </activity>
 

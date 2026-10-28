@@ -114,7 +114,7 @@ describe('leaderboard ranking', () => {
         type: 'Polygon',
         coordinates: [[[2.1, 41.3], [2.2, 41.3], [2.2, 41.45], [2.1, 41.45], [2.1, 41.3]]],
       },
-    }])
+    }], "UTC")
     expect(snapshot.cities[0].discoveredKm).toBeGreaterThan(0)
     expect(snapshot.calculationVersion).toBe(3)
     expect(snapshot.totalDiscoveredKm).toBeCloseTo(snapshot.cities[0].discoveredKm)
@@ -134,7 +134,7 @@ describe('leaderboard ranking', () => {
         type: 'Polygon',
         coordinates: [[[-82.6, 35.5], [-82.5, 35.5], [-82.5, 35.7], [-82.6, 35.7], [-82.6, 35.5]]],
       },
-    }])
+    }], "UTC")
     expect(snapshot.cities[0].discoveredKm).toBeGreaterThan(0)
     expect(snapshot.totalDiscoveredKm).toBeGreaterThan(0)
   })

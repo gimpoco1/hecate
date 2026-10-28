@@ -1,3 +1,4 @@
+import { errorDiagnostic } from './diagnostics'
 import { CityNotFoundError, fetchCityBoundary, isPointInCity, type CityBoundary } from "./city";
 import { distanceKm, isUsableGpsPoint } from "./geo";
 import type { LocationTracker, LocationTrackerError } from "./location";
@@ -28,7 +29,7 @@ async function verifyJourneyCity(point: Coordinate, signal: AbortSignal): Promis
       return await fetchCityBoundary(point, request.signal);
     } catch (error) {
       if (signal.aborted || error instanceof CityNotFoundError || attempt === 3) throw error;
-      console.warn("Journey city verification failed; retrying", { point, attempt, error });
+      console.warn("Journey city verification failed; retrying", { attempt, error: errorDiagnostic(error) });
       await new Promise<void>((resolve) => setTimeout(resolve, attempt * 300));
     } finally {
       clearTimeout(timeout);
@@ -72,7 +73,7 @@ export function createJourneyRecordingTracker(tracker: LocationTracker, cities: 
           if (active) onPoint(point);
         }).catch((error: Error) => {
           if (!active) return;
-          console.warn("Journey location could not be verified", { point, error });
+          console.warn("Journey location could not be verified", { error: errorDiagnostic(error) });
           fail({
             code: "journey-stopped",
             message: error instanceof CityNotFoundError

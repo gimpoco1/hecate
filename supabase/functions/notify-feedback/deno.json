@@ -1,5 +1,5 @@
 {
   "imports": {
-    "nodemailer": "npm:nodemailer@^9"
+    "nodemailer": "npm:nodemailer@10.2.1"
   }
 }

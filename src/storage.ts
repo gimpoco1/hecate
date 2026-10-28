@@ -1,3 +1,4 @@
+import { loadStoredWalkPoints, loadStoredCells, loadStoredCities } from './discoveryStorage'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from './geo'
 import type { CityBoundary } from './city'
@@ -7,23 +8,7 @@ type SyncedDiscovery = { points: Coordinate[]; cells: DiscoveryCell[] }
 
 export async function loadDiscoveredCities(expectedUserId: string): Promise<CityBoundary[]> {
   if (!supabase || !await hasExpectedSession(expectedUserId)) return []
-  const { data, error } = await supabase
-    .from('discovered_cities')
-    .select('city_id,name,geometry,first_discovered_at,last_discovered_at')
-    .order('last_discovered_at', { ascending: false })
-  if (error) throw error
-  return (data ?? []).flatMap(row => {
-    const geometry = row.geometry
-    if (!geometry || (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon')) return []
-    return [{
-      id: row.city_id,
-      name: row.name,
-      geometry,
-      fetchedAt: new Date(row.last_discovered_at).getTime(),
-      firstDiscoveredAt: new Date(row.first_discovered_at).getTime(),
-      lastDiscoveredAt: new Date(row.last_discovered_at).getTime(),
-    } as CityBoundary]
-  })
+  return loadStoredCities(supabase)
 }
 
 export async function syncDiscoveredCity(city: CityBoundary, expectedUserId: string) {
@@ -76,7 +61,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const isSyncConfigured = Boolean(supabaseUrl && supabaseKey)
 export const supabase: SupabaseClient | null = isSyncConfigured
-  ? createClient(supabaseUrl!, supabaseKey!, { auth: { persistSession: true } })
+  ? createClient(supabaseUrl!, supabaseKey!, { auth: { persistSession: true, flowType: 'pkce', detectSessionInUrl: false } })
   : null
 
 async function hasExpectedSession(expectedUserId: string) {
@@ -137,55 +122,11 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
   if (error) throw error
 }
 
-async function loadRemoteCells(): Promise<DiscoveryCell[]> {
-  if (!supabase) return []
-  const cells: DiscoveryCell[] = []
-  for (let offset = 0; ; offset += 1_000) {
-    const { data, error } = await supabase
-      .from('discovery_cells')
-      .select('cell_z,cell_x,cell_y,first_discovered_at')
-      .order('cell_z').order('cell_x').order('cell_y')
-      .range(offset, offset + 999)
-    if (error) throw error
-    cells.push(...(data ?? []).map(row => ({
-      z: row.cell_z,
-      x: row.cell_x,
-      y: row.cell_y,
-      discoveredAt: new Date(row.first_discovered_at).getTime(),
-    })))
-    if (!data || data.length < 1_000) break
-  }
-  return cells
-}
-
-async function loadRemoteWalkPoints(): Promise<Coordinate[]> {
-  if (!supabase) return []
-  const { data, error } = await supabase.rpc('get_walk_routes')
-  if (error) throw error
-  if (!Array.isArray(data)) throw new Error('Walk route response was invalid')
-  return data.flatMap(row => {
-    const coordinates = Array.isArray(row.coordinates) ? row.coordinates : []
-    const startedAt = new Date(row.started_at).getTime()
-    const finishedAt = new Date(row.finished_at).getTime()
-    return coordinates.flatMap((coordinate: unknown, index: number): Coordinate[] => {
-      if (!Array.isArray(coordinate) || coordinate.length < 2) return []
-      const progress = coordinates.length > 1 ? index / (coordinates.length - 1) : 0
-      return [{
-        lng: Number(coordinate[0]),
-        lat: Number(coordinate[1]),
-        recordedAt: startedAt + (finishedAt - startedAt) * progress,
-        walkId: row.walk_id,
-        achievementEligible: row.achievement_eligible !== false,
-      }]
-    })
-  })
-}
-
 export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
   if (!supabase || !await hasExpectedSession(expectedUserId)) return { points: [], cells: [] }
   const [walkPoints, cells] = await Promise.all([
-    loadRemoteWalkPoints(),
-    loadRemoteCells(),
+    loadStoredWalkPoints(supabase),
+    loadStoredCells(supabase),
   ])
   rememberSyncedCells(expectedUserId, cells)
   return {

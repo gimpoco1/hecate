@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { useState } from "react";
 import { mdiMonitorCellphone, mdiWeatherNight, mdiWhiteBalanceSunny } from "@mdi/js";
 import { setAppearancePreference, useAppearance, type AppearancePreference } from "../appearance";
@@ -19,7 +20,7 @@ export function AppearanceSettings() {
         <input type="radio" name="appearance" value={choice.value} checked={preference === choice.value} data-testid={`appearance-${choice.value}`} onChange={() => {
           try { setAppearancePreference(choice.value); setError(""); }
           catch (failure) {
-            console.error("Could not save appearance", { preference: choice.value, error: failure });
+            console.error("Could not save appearance", { preference: choice.value, error: errorDiagnostic(failure) });
             setError("Could not save your appearance. Check that device storage is available and try again.");
           }
         }} />

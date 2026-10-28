@@ -1,3 +1,4 @@
+import { errorDiagnostic } from './diagnostics'
 import { useSyncExternalStore } from "react";
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { Keyboard, KeyboardStyle } from "@capacitor/keyboard";
@@ -28,10 +29,10 @@ function applyAppearance(preference: AppearancePreference): void {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#151f27" : "#f7f4ed");
   if (Capacitor.isNativePlatform()) {
     void SystemBars.setStyle({ style: theme === "dark" ? SystemBarsStyle.Dark : SystemBarsStyle.Light })
-      .catch((error) => console.error("Could not update system bar appearance", { theme, error }));
+      .catch((error) => console.error("Could not update system bar appearance", { theme, error: errorDiagnostic(error) }));
     if (Capacitor.getPlatform() === "ios") {
       void Keyboard.setStyle({ style: theme === "dark" ? KeyboardStyle.Dark : KeyboardStyle.Light })
-        .catch((error) => console.error("Could not update keyboard appearance", { theme, error }));
+        .catch((error) => console.error("Could not update keyboard appearance", { theme, error: errorDiagnostic(error) }));
     }
   }
   listeners.forEach((listener) => listener());

@@ -1,7 +1,8 @@
+import { errorDiagnostic } from './diagnostics'
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Capacitor } from '@capacitor/core'
-import { initializeNativeAuthLinks } from './auth'
+import { initializeNativeAuthLinks, initializeWebAuth } from './auth'
 import { isLeaderboardPath, shouldRedirectBrowserToLeaderboard } from './routes'
 import './styles.css'
 import { initializeAppearance } from './appearance'
@@ -19,7 +20,8 @@ if (redirectingBrowser) {
 }
 
 const leaderboardRoute = !nativePlatform && (
-  redirectingBrowser || isLeaderboardPath(window.location.pathname)
+  redirectingBrowser || isLeaderboardPath(window.location.pathname) ||
+  window.location.pathname === '/auth/callback' || window.location.pathname === '/auth/web-callback'
 )
 const RootExperience = leaderboardRoute
   ? lazy(() => import('./components/WebLeaderboard').then(module => ({ default: module.WebLeaderboard })))
@@ -35,7 +37,14 @@ document.querySelector('meta[name="description"]')?.setAttribute(
     : 'Track your walks, reveal new ground, and discover your world with Hecate.',
 )
 
-createRoot(document.getElementById('root')!).render(<StrictMode><Suspense fallback={null}><RootExperience /></Suspense></StrictMode>)
+void initializeWebAuth().then(() => {
+  createRoot(document.getElementById('root')!).render(<StrictMode><Suspense fallback={null}><RootExperience /></Suspense></StrictMode>)
+}).catch((error: Error) => {
+  const message = document.createElement('p')
+  message.setAttribute('role', 'alert')
+  message.textContent = error.message
+  document.getElementById('root')!.replaceChildren(message)
+})
 void initializeNativeAuthLinks()
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
@@ -54,7 +63,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       const registration = await navigator.serviceWorker.register('/sw.js')
       await registration.update()
     } catch (error) {
-      console.error('Service worker registration failed', error)
+      console.error('Service worker registration failed', errorDiagnostic(error))
     }
   })
 }

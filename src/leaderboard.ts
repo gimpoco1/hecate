@@ -1,16 +1,9 @@
-import type { User } from '@supabase/supabase-js'
-import { earnedPersonalAchievementIds, isPersonalAchievementId, type PersonalAchievementId } from './achievements'
-import { canonicalCityForStoredBoundary, discoveredCityDistanceKm, discoveredCityPercentage, type CityBoundary } from './city'
-import { discoveredDistanceKm } from './geo'
+import { leaderboardSnapshotFromDiscovery, LEADERBOARD_CALCULATION_VERSION, type LeaderboardCity, type LeaderboardSnapshot } from './leaderboardSnapshot'
+export { leaderboardSnapshotFromDiscovery, leaderboardSnapshotForCities, refreshedPublishedSnapshot, LEADERBOARD_CALCULATION_VERSION, type LeaderboardCity, type LeaderboardSnapshot } from './leaderboardSnapshot'
+import { FunctionsHttpError, type User } from '@supabase/supabase-js'
+import { isPersonalAchievementId, type PersonalAchievementId } from './achievements'
+import { canonicalCityForStoredBoundary, type CityBoundary } from './city'
 import { loadDiscoveredCities, loadSyncedDiscovery, supabase } from './storage'
-import type { Coordinate, DiscoveryCell } from './types'
-
-export type LeaderboardCity = {
-  cityId: string
-  cityName: string
-  discoveredKm: number
-  discoveredPercentage: number
-}
 
 export type LeaderboardEntry = {
   entryId: string
@@ -42,15 +35,6 @@ type LeaderboardRow = {
     discovered_km: number | string
     discovered_percentage: number | string
   }>
-}
-
-export const LEADERBOARD_CALCULATION_VERSION = 3
-
-export type LeaderboardSnapshot = {
-  calculationVersion: number
-  totalDiscoveredKm: number
-  cities: LeaderboardCity[]
-  achievements: PersonalAchievementId[]
 }
 
 export type CityLeaderboardGroup = {
@@ -184,17 +168,6 @@ export function cityTreemapLayout(groups: CityLeaderboardGroup[]): CityTreemapIt
   return layout
 }
 
-export async function loadLeaderboard() {
-  if (!supabase) return []
-  const { data, error } = await supabase
-    .from('leaderboard_entries')
-    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
-    .eq('calculation_version', LEADERBOARD_CALCULATION_VERSION)
-    .order('total_discovered_km', { ascending: false })
-  if (error) throw error
-  return mapLeaderboardRows((data ?? []) as LeaderboardRow[])
-}
-
 export async function loadMyLeaderboardProfile(): Promise<LeaderboardProfile | null> {
   if (!supabase) return null
   const { data, error } = await supabase.rpc('get_my_leaderboard_profile')
@@ -224,65 +197,7 @@ export async function buildLeaderboardSnapshot(userId: string): Promise<Leaderbo
       lastDiscoveredAt: Math.max(existing.lastDiscoveredAt ?? 0, city.lastDiscoveredAt ?? 0),
     } : city)
   }
-  return leaderboardSnapshotFromDiscovery(points, cells, [...canonicalCities.values()])
-}
-
-export function leaderboardSnapshotFromDiscovery(
-  points: Coordinate[],
-  cells: DiscoveryCell[],
-  cities: CityBoundary[],
-): LeaderboardSnapshot {
-  const citySnapshots = cities
-    .map(city => ({
-      cityId: city.id,
-      cityName: city.name,
-      // Match the native city drawer exactly. Cells determine revealed area and
-      // percentage, but their ordered centers are only an approximate route and
-      // must never be used as a kilometre counter.
-      discoveredKm: discoveredCityDistanceKm(points, city),
-      discoveredPercentage: discoveredCityPercentage(cells, city),
-    }))
-    .sort((a, b) => b.discoveredPercentage - a.discoveredPercentage)
-
-  return {
-    calculationVersion: LEADERBOARD_CALCULATION_VERSION,
-    // Overall discovery is global new ground. City rows are clipped to their
-    // boundaries, so Barcelona can correctly show 17.9 km while the account's
-    // complete discovery total remains 18.3 km.
-    totalDiscoveredKm: discoveredDistanceKm(points),
-    cities: citySnapshots,
-    achievements: earnedPersonalAchievementIds(points, cities),
-  }
-}
-
-export function leaderboardSnapshotForCities(
-  snapshot: LeaderboardSnapshot,
-  selectedCityIds: Iterable<string>,
-): LeaderboardSnapshot {
-  const selected = new Set(selectedCityIds)
-  const cities = snapshot.cities.filter(city => selected.has(city.cityId))
-  return {
-    ...snapshot,
-    // A user who omits a city must not leak that city's distance through the
-    // aggregate total. The shared total is therefore limited to selected rows.
-    totalDiscoveredKm: cities.reduce((total, city) => total + city.discoveredKm, 0),
-    cities,
-  }
-}
-
-export function refreshedPublishedSnapshot(
-  snapshot: LeaderboardSnapshot,
-  publishedEntry: LeaderboardEntry,
-): LeaderboardSnapshot {
-  return {
-    ...leaderboardSnapshotForCities(
-      snapshot,
-      publishedEntry.cities.map(city => city.cityId),
-    ),
-    // Joining the leaderboard shares every earned achievement. City selection
-    // remains explicit because those aggregates carry location context.
-    achievements: snapshot.achievements,
-  }
+  return leaderboardSnapshotFromDiscovery(points, cells, [...canonicalCities.values()], Intl.DateTimeFormat().resolvedOptions().timeZone)
 }
 
 export async function refreshPublishedLeaderboardSnapshot(userId: string) {
@@ -290,39 +205,31 @@ export async function refreshPublishedLeaderboardSnapshot(userId: string) {
   const profile = await loadMyLeaderboardProfile()
   if (!profile?.entryId) return false
 
-  const [{ data, error }, snapshot] = await Promise.all([
-    supabase
-      .from('leaderboard_entries')
-      .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
-      .eq('entry_id', profile.entryId)
-      .maybeSingle(),
-    buildLeaderboardSnapshot(userId),
-  ])
-  if (error) throw error
-  if (!data) return false
-
-  const publishedEntry = mapLeaderboardRows([data as LeaderboardRow])[0]
-  await publishLeaderboardSnapshot(
-    publishedEntry.displayName,
-    refreshedPublishedSnapshot(snapshot, publishedEntry),
-  )
+  const publishedEntry = await loadLeaderboardEntry(profile.entryId)
+  if (!publishedEntry) return false
+  await publishLeaderboardCities(publishedEntry.displayName, publishedEntry.cities.map(city => city.cityId), Intl.DateTimeFormat().resolvedOptions().timeZone, userId)
   return true
 }
 
-export async function publishLeaderboardSnapshot(displayName: string, snapshot: LeaderboardSnapshot) {
+export async function publishLeaderboardSnapshot(displayName: string, snapshot: LeaderboardSnapshot, expectedUserId: string): Promise<void> {
+  await publishLeaderboardCities(displayName, snapshot.cities.map(city => city.cityId), Intl.DateTimeFormat().resolvedOptions().timeZone, expectedUserId)
+}
+
+async function publishLeaderboardCities(displayName: string, cityIds: string[], timeZone: string, expectedUserId: string): Promise<void> {
   if (!supabase) throw new Error('Hecate account sync is not configured')
-  const { error } = await supabase.rpc('publish_leaderboard_snapshot', {
-    p_display_name: displayName.trim(),
-    p_total_discovered_km: snapshot.totalDiscoveredKm,
-    p_calculation_version: snapshot.calculationVersion,
-    p_cities: snapshot.cities.map(city => ({
-      city_id: city.cityId,
-      city_name: city.cityName,
-      discovered_km: city.discoveredKm,
-      discovered_percentage: city.discoveredPercentage,
-    })),
-    p_achievements: snapshot.achievements,
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) throw sessionError
+  if (!session || session.user.id !== expectedUserId) throw new Error('The signed-in account changed before publishing. Sign in again and retry.')
+  const { error } = await supabase.functions.invoke('publish-leaderboard', {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+    body: { displayName: displayName.trim(), cityIds, timeZone },
   })
+  if (error instanceof FunctionsHttpError) {
+    const response: unknown = await error.context.json()
+    if (response && typeof response === 'object' && 'error' in response && typeof response.error === 'string') {
+      throw new Error(response.error)
+    }
+  }
   if (error) throw error
 }
 
@@ -330,4 +237,65 @@ export async function unpublishLeaderboardSnapshot() {
   if (!supabase) return
   const { error } = await supabase.rpc('unpublish_leaderboard_snapshot')
   if (error) throw error
+}
+
+export type LeaderboardCitySummary = CityLeaderboardGroup & { explorerCount: number }
+
+function responseObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function responseNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new TypeError('The leaderboard returned an invalid number.')
+  return value
+}
+
+function parseExplorer(value: unknown, cityId: string, cityName: string): CityLeaderboardGroup['explorers'][number] {
+  if (!responseObject(value) || typeof value.entry_id !== 'string' || typeof value.display_name !== 'string' ||
+      typeof value.updated_at !== 'string' || !Array.isArray(value.achievement_ids)) throw new TypeError('The leaderboard returned an invalid explorer.')
+  const city: LeaderboardCity = { cityId, cityName, discoveredKm: responseNumber(value.discovered_km),
+    discoveredPercentage: responseNumber(value.discovered_percentage) }
+  return { city, entry: { entryId: value.entry_id, displayName: value.display_name,
+    totalDiscoveredKm: responseNumber(value.total_discovered_km), cityCount: responseNumber(value.city_count),
+    updatedAt: value.updated_at, cities: [city], achievements: value.achievement_ids.filter(isPersonalAchievementId) } }
+}
+
+export async function loadLeaderboardCities(offset: number, citySlug: string | null): Promise<LeaderboardCitySummary[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('get_leaderboard_city_page', { p_offset: offset, p_limit: 50, p_city_slug: citySlug })
+  if (error) throw error
+  if (!Array.isArray(data)) throw new TypeError('The leaderboard city response must be an array.')
+  return data.map((value: unknown): LeaderboardCitySummary => {
+    if (!responseObject(value) || typeof value.city_id !== 'string' || typeof value.city_name !== 'string' || !Array.isArray(value.leaders)) {
+      throw new TypeError('The leaderboard returned an invalid city summary.')
+    }
+    const cityId = value.city_id
+    const cityName = value.city_name
+    return { cityId, cityName, totalDiscoveredKm: responseNumber(value.total_discovered_km), explorerCount: responseNumber(value.explorer_count),
+      explorers: value.leaders.map((leader: unknown) => parseExplorer(leader, cityId, cityName)) }
+  })
+}
+
+export async function loadCityExplorers(city: { cityId: string; cityName: string }, offset: number): Promise<CityLeaderboardGroup['explorers']> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('get_leaderboard_city_explorers', { p_city_id: city.cityId, p_offset: offset, p_limit: 50 })
+  if (error) throw error
+  if (!Array.isArray(data)) throw new TypeError('The city explorer response must be an array.')
+  return data.map((value: unknown) => parseExplorer(value, city.cityId, city.cityName))
+}
+
+export async function loadLeaderboardEntry(entryId: string): Promise<LeaderboardEntry | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.from('leaderboard_entries')
+    .select('entry_id,display_name,total_discovered_km,city_count,updated_at,calculation_version,achievement_ids,leaderboard_city_stats(city_id,city_name,discovered_km,discovered_percentage)')
+    .eq('entry_id', entryId).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  if (!responseObject(data) || !Array.isArray(data.leaderboard_city_stats)) throw new TypeError('The explorer profile response is invalid.')
+  const entry = parseExplorer({ ...data, discovered_km: 0, discovered_percentage: 0 }, '', '').entry
+  const cities = data.leaderboard_city_stats.map((value: unknown): LeaderboardCity => {
+    if (!responseObject(value) || typeof value.city_id !== 'string' || typeof value.city_name !== 'string') throw new TypeError('The explorer city response is invalid.')
+    return { cityId: value.city_id, cityName: value.city_name, discoveredKm: responseNumber(value.discovered_km), discoveredPercentage: responseNumber(value.discovered_percentage) }
+  })
+  return { ...entry, cities }
 }

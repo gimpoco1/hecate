@@ -21,11 +21,13 @@ import { CityLevelStars } from "./CityLevelStars";
 import { TopographyBackground } from "./TopographyBackground";
 import {
   buildLeaderboardSnapshot,
-  cityLeaderboardGroups,
   displayNameForUser,
   leaderboardSnapshotForCities,
   LEADERBOARD_CALCULATION_VERSION,
-  loadLeaderboard,
+  loadLeaderboardCities,
+  loadCityExplorers,
+  loadLeaderboardEntry,
+  type LeaderboardCitySummary,
   loadMyLeaderboardProfile,
   publishLeaderboardSnapshot,
   unpublishLeaderboardSnapshot,
@@ -98,6 +100,7 @@ function ExplorerProfilePanel({
     <div className="explorer-profile-backdrop" onClick={onClose}>
       <aside
         className="explorer-profile"
+        data-testid="leaderboard-explorer-profile"
         role="dialog"
         aria-modal="true"
         aria-labelledby="explorer-profile-title"
@@ -324,7 +327,7 @@ function LeaderboardAccountPanel({
     const { error: linkError } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: authRedirectUrl("/leaderboard"),
+        emailRedirectTo: authRedirectUrl(),
         shouldCreateUser: false,
       },
     });
@@ -362,7 +365,7 @@ function LeaderboardAccountPanel({
       await publishLeaderboardSnapshot(displayName, {
         ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
         achievements: currentSnapshot.achievements,
-      });
+      }, user.id);
       await onPublished();
       displayNameDirty.current = false;
       citySelectionDirty.current = false;
@@ -718,7 +721,15 @@ function LeaderboardAccountPanel({
 }
 
 export function WebLeaderboard() {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [cityGroups, setCityGroups] = useState<LeaderboardCitySummary[]>([]);
+  const [linkedCity, setLinkedCity] = useState<LeaderboardCitySummary | null>(null);
+  const [hasMoreCities, setHasMoreCities] = useState(false);
+  const [cityExplorers, setCityExplorers] = useState<LeaderboardCitySummary['explorers']>([]);
+  const [myEntry, setMyEntry] = useState<LeaderboardEntry | null>(null);
+  const [focusedEntry, setFocusedEntry] = useState<LeaderboardEntry | null>(null);
+  const [pagePending, setPagePending] = useState(false);
+  const refreshPending = useRef(false);
+  const cityPageCount = useRef(1);
   const [focusedCitySlug, setFocusedCitySlug] = useState<string | null>(() =>
     leaderboardCitySlugFromHash(window.location.hash),
   );
@@ -764,12 +775,22 @@ export function WebLeaderboard() {
   }, []);
 
   const refresh = async () => {
+    if (refreshPending.current) return;
+    refreshPending.current = true;
     try {
-      setEntries(await loadLeaderboard());
+      const pages: LeaderboardCitySummary[] = [];
+      for (let page = 0; page < cityPageCount.current; page += 1) {
+        const cities = await loadLeaderboardCities(page * 50, null);
+        pages.push(...cities);
+        if (cities.length < 50) break;
+      }
+      setCityGroups(pages);
+      setHasMoreCities(pages.length === cityPageCount.current * 50);
       setLoadError("");
     } catch {
       setLoadError("The live leaderboard is temporarily unavailable.");
     } finally {
+      refreshPending.current = false;
       setLoading(false);
     }
   };
@@ -782,6 +803,7 @@ export function WebLeaderboard() {
     ]);
     if (userIdRef.current !== expectedUserId) return;
     setMyProfile(profile);
+    setMyEntry(profile?.entryId ? await loadLeaderboardEntry(profile.entryId) : null);
     setProfileLoadedUserId(expectedUserId);
   };
 
@@ -798,6 +820,11 @@ export function WebLeaderboard() {
     const client = supabase;
     let disposed = false;
     let fallbackInterval: number | null = null;
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (disposed || refreshTimer !== null || document.visibilityState === "hidden") return;
+      refreshTimer = window.setTimeout(() => { refreshTimer = null; void refresh(); }, 2000);
+    };
     const stopFallbackPolling = () => {
       if (fallbackInterval === null) return;
       window.clearInterval(fallbackInterval);
@@ -813,12 +840,12 @@ export function WebLeaderboard() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "leaderboard_entries" },
-        () => void refresh(),
+        scheduleRefresh,
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "leaderboard_city_stats" },
-        () => void refresh(),
+        scheduleRefresh,
       )
       .subscribe((status) => {
         if (disposed) return;
@@ -835,6 +862,7 @@ export function WebLeaderboard() {
     return () => {
       disposed = true;
       stopFallbackPolling();
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       void client.removeChannel(channel);
     };
@@ -868,17 +896,22 @@ export function WebLeaderboard() {
   useEffect(() => {
     if (!user) {
       setMyProfile(null);
+      setMyEntry(null);
       setProfileLoadedUserId(null);
       return;
     }
     const expectedUserId = user.id;
     let active = true;
     setMyProfile(null);
+    setMyEntry(null);
     setProfileLoadedUserId(null);
     void loadMyLeaderboardProfile()
-      .then((profile) => {
-        if (active && userIdRef.current === expectedUserId)
+      .then(async (profile) => {
+        const entry = profile?.entryId ? await loadLeaderboardEntry(profile.entryId) : null;
+        if (active && userIdRef.current === expectedUserId) {
           setMyProfile(profile);
+          setMyEntry(entry);
+        }
       })
       .catch(() => {
         if (active && userIdRef.current === expectedUserId) setMyProfile(null);
@@ -892,12 +925,19 @@ export function WebLeaderboard() {
     };
   }, [user?.id]);
 
-  const cityGroups = useMemo(() => cityLeaderboardGroups(entries), [entries]);
   const remainingCities = cityGroups.slice(9);
   const focusedCity =
     cityGroups.find(
       (group) => leaderboardCitySlug(group.cityName) === focusedCitySlug,
-    ) ?? null;
+    ) ?? linkedCity;
+  useEffect(() => {
+    setLinkedCity(null);
+    if (!focusedCitySlug || cityGroups.some(group => leaderboardCitySlug(group.cityName) === focusedCitySlug)) return;
+    let active = true;
+    void loadLeaderboardCities(0, focusedCitySlug).then(groups => { if (active) setLinkedCity(groups[0] ?? null); })
+      .catch(() => { if (active) setLoadError("This city could not be loaded. Try again."); });
+    return () => { active = false; };
+  }, [focusedCitySlug, cityGroups]);
   useEffect(() => {
     if (!focusedCity && !showingMoreCities) return;
     boardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -905,12 +945,48 @@ export function WebLeaderboard() {
   const profileLoaded = !user || profileLoadedUserId === user.id;
   const currentProfile = profileLoaded ? myProfile : null;
   const myEntryId = currentProfile?.entryId ?? null;
-  const myEntry = entries.find((entry) => entry.entryId === myEntryId) ?? null;
-  const focusedEntry =
-    entries.find((entry) => entry.entryId === focusedEntryId) ?? null;
+
+  useEffect(() => {
+    setFocusedEntry(null);
+    if (!focusedEntryId) return;
+    let active = true;
+    void loadLeaderboardEntry(focusedEntryId).then(entry => { if (active) setFocusedEntry(entry); })
+      .catch(() => { if (active) setLoadError("This explorer’s profile could not be loaded. Try again."); });
+    return () => { active = false; };
+  }, [focusedEntryId]);
+
+  useEffect(() => {
+    setCityExplorers([]);
+    if (!focusedCity) return;
+    let active = true;
+    void loadCityExplorers(focusedCity, 0).then(explorers => { if (active) setCityExplorers(explorers); })
+      .catch(() => { if (active) setLoadError("This city’s ranking could not be loaded. Try again."); });
+    return () => { active = false; };
+  }, [focusedCity]);
+
+  const moreCities = async (): Promise<void> => {
+    setPagePending(true);
+    try {
+      const page = await loadLeaderboardCities(cityPageCount.current * 50, null);
+      cityPageCount.current += 1;
+      setCityGroups(current => [...current, ...page]);
+      setHasMoreCities(page.length === 50);
+    } catch { setLoadError("More cities could not be loaded. Try again."); }
+    finally { setPagePending(false); }
+  };
+
+  const moreExplorers = async (): Promise<void> => {
+    if (!focusedCity) return;
+    setPagePending(true);
+    try {
+      const page = await loadCityExplorers(focusedCity, cityExplorers.length);
+      setCityExplorers(current => [...current, ...page]);
+    } catch { setLoadError("More explorers could not be loaded. Try again."); }
+    finally { setPagePending(false); }
+  };
 
   return (
-    <main className="leaderboard-page">
+    <main className="leaderboard-page" data-testid="leaderboard-page">
       {rankingToast && (
         <div
           className="account-toast account-toast--success"
@@ -1017,8 +1093,8 @@ export function WebLeaderboard() {
             <div className="city-detail-total">
               <strong>{formatDistance(focusedCity.totalDiscoveredKm)}</strong>
               <span>
-                {focusedCity.explorers.length}{" "}
-                {focusedCity.explorers.length === 1 ? "explorer" : "explorers"}{" "}
+                {focusedCity.explorerCount}{" "}
+                {focusedCity.explorerCount === 1 ? "explorer" : "explorers"}{" "}
                 · discovered together
               </span>
             </div>
@@ -1090,6 +1166,7 @@ export function WebLeaderboard() {
                 >
                   <button
                     className="city-treemap__open-card"
+                    data-testid={`leaderboard-city-${group.cityId}`}
                     type="button"
                     aria-label={`View the ${group.cityName} ranking`}
                     onClick={() => navigateToCity(group.cityName)}
@@ -1155,7 +1232,7 @@ export function WebLeaderboard() {
                   </span>
                 </article>
               );
-              return remainingCities.length > 0 && index === 8 ? (
+              return (remainingCities.length > 0 || hasMoreCities) && index === 8 ? (
                 <div
                   key={group.cityId}
                   className="city-treemap__last"
@@ -1174,7 +1251,7 @@ export function WebLeaderboard() {
                   >
                     <strong>More cities</strong>
                     <span>
-                      {remainingCities.length} more <ChevronIcon size={16} />
+                      {remainingCities.length}{hasMoreCities ? "+" : ""} more <ChevronIcon size={16} />
                     </span>
                   </button>
                 </div>
@@ -1207,12 +1284,17 @@ export function WebLeaderboard() {
           </ol>
         )}
 
+        {showingMoreCities && hasMoreCities && (
+          <button type="button" data-testid="leaderboard-more-cities" disabled={pagePending} onClick={() => void moreCities()}>Load more cities</button>
+        )}
+
         {focusedCity && (
           <ol
             className="city-detail-list"
+            data-testid="leaderboard-city-explorers"
             aria-label={`Top explorers in ${focusedCity.cityName}`}
           >
-            {focusedCity.explorers.map(({ entry, city }, index) => (
+            {cityExplorers.map(({ entry, city }, index) => (
               <li
                 key={entry.entryId}
                 className={
@@ -1221,6 +1303,7 @@ export function WebLeaderboard() {
               >
                 <button
                   type="button"
+                  data-testid={`leaderboard-explorer-${entry.entryId}`}
                   onClick={() => setFocusedEntryId(entry.entryId)}
                   aria-label={`View ${entry.displayName}'s explorer passport`}
                 >
@@ -1241,6 +1324,9 @@ export function WebLeaderboard() {
               </li>
             ))}
           </ol>
+        )}
+        {focusedCity && cityExplorers.length > 0 && cityExplorers.length < focusedCity.explorerCount && (
+          <button type="button" data-testid="leaderboard-more-explorers" disabled={pagePending} onClick={() => void moreExplorers()}>Load more explorers</button>
         )}
       </section>
 

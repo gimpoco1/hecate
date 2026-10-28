@@ -12,3 +12,7 @@ The app lets you move seamlessly between two views:
 You can begin from a globe, zoom into any city, follow your position as you travel, and watch the world appear smoothly around you. Your discoveries are stored privately and can follow you across your devices when you sign in.
 
 Hecate is designed for everyday journeys, unfamiliar places, and the quiet satisfaction of seeing how much of the world has become yours.
+
+## Security
+
+See [Security](SECURITY.md) for the implemented protections, issues addressed, verification evidence, remaining limitations, and how to report a suspected vulnerability.

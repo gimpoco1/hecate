@@ -1,3 +1,4 @@
+import { errorDiagnostic } from './diagnostics'
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type {
   BackgroundGeolocationPlugin,
@@ -148,11 +149,7 @@ async function retryNativeOperation(
       return;
     } catch (error) {
       lastError = error;
-      console.warn("Native location operation failed; retrying", {
-        operation: operationName,
-        attempt,
-        error,
-      });
+      console.warn("Native location operation failed; retrying", { operation: operationName, attempt, error: errorDiagnostic(error) });
       await Promise.resolve();
     }
   }
@@ -294,7 +291,7 @@ class NativeLocationTracker implements LocationTracker {
       try {
         await registration;
       } catch (cause) {
-        console.warn("Removing native location state after failed registration", { mode: this.mode, journeyId: this.journeyId, cause });
+        console.warn("Removing native location state after failed registration", { mode: this.mode, journeyId: this.journeyId, cause: errorDiagnostic(cause) });
         await retryNativeOperation(() => HecateBackgroundGeolocation.removeAllWatchers(), "removeAllWatchers");
       }
       if (!this.watcherId) return;

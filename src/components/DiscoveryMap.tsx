@@ -1,3 +1,4 @@
+import { errorDiagnostic } from '../diagnostics'
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import * as maplibregl from "maplibre-gl";
@@ -274,7 +275,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
           return;
         console.warn(
           "Map style could not be patched; using the original style",
-          error,
+          errorDiagnostic(error),
         );
         setMapStyle(MAP_STYLE_URL);
       });
@@ -353,7 +354,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       "bottom-right",
     );
     map.on("error", (event) =>
-      console.error("Map rendering error", event.error),
+      console.error("Map rendering error", errorDiagnostic(event.error)),
     );
     map.on("style.load", () => {
       baseStyleRef.current = map.getStyle();

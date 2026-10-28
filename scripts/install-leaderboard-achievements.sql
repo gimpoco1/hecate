@@ -161,7 +161,7 @@ end;
 $$;
 
 revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) from public, anon;
-grant execute on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) to authenticated;
+revoke all on function public.publish_leaderboard_snapshot(text, double precision, jsonb, smallint, jsonb) from authenticated;
 
 do $$
 begin

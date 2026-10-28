@@ -1,4 +1,4 @@
-import type { Coordinate, DiscoveryCell } from './types'
+import type { Coordinate, DiscoveryCell } from './types.ts'
 
 const EARTH_RADIUS_KM = 6371
 const WEB_MERCATOR_CIRCUMFERENCE_M = 2 * Math.PI * 6378137

@@ -5,3 +5,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 supabase/.temp/
+.vercel
+.env*
+!.env.example
