@@ -37,7 +37,7 @@ export function SocialSignIn({ disabled, onPendingChange }: Props) {
   };
 
   return (
-    <div className="social-signin" aria-label={t("Sign in or create an account")}>
+    <div className="social-signin" role="group" aria-label={t("Sign in or create an account")}>
       <button type="button" className="social-signin__button social-signin__button--google"
         data-testid="auth-google" disabled={disabled || pending !== null} aria-busy={pending === "google"}
         onClick={() => void signIn("google")}>
