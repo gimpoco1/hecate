@@ -29,6 +29,7 @@ describe("CitiesSheet", () => {
         loading
         cityProgresses={[{ city, percentage: 12.5, distance: 3 }]}
         onCitySelect={() => undefined}
+        onKeepsake={() => undefined}
         onBack={() => undefined}
         onClose={() => undefined}
       />,

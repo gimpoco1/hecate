@@ -1,3 +1,4 @@
+import { mdiCubeOutline, mdiDotsVertical, mdiMapMarkerOutline } from "@mdi/js";
 import { formatNumber, t, useAppTranslation } from "../i18n";
 import { personalAchievementDefinition, type AchievementEvaluation } from "../achievements";
 import {
@@ -21,6 +22,7 @@ type CitiesSheetProps = {
   loading: boolean;
   cityProgresses: ExploredCityProgress[];
   onCitySelect: (city: CityBoundary) => void;
+  onKeepsake: (city: CityBoundary, discoveredKm: number) => void;
   onBack: () => void;
   onClose: () => void;
 };
@@ -48,6 +50,7 @@ export function CitiesSheet({
   loading,
   cityProgresses,
   onCitySelect,
+  onKeepsake,
   onBack,
   onClose,
 }: CitiesSheetProps) {
@@ -66,6 +69,11 @@ export function CitiesSheet({
         aria-modal="true"
         role="dialog"
         aria-labelledby="cities-sheet-title"
+        onPointerDownCapture={event => {
+          if (event.target instanceof Element && !event.target.closest(".cities-collection-list__actions")) {
+            event.currentTarget.querySelectorAll<HTMLDetailsElement>(".cities-collection-list__actions[open]").forEach(menu => { menu.open = false; });
+          }
+        }}
       >
         <button
           className="icon-button walking-stats-back"
@@ -85,7 +93,7 @@ export function CitiesSheet({
         </button>
         <div className="eyebrow">{t("Your map")}</div>
         <h2 id="cities-sheet-title">{t("Cities explored")}</h2>
-        <p>{t("Choose a city to see your discoveries there on the map.")}</p>
+        <p>{t("Use a city’s menu to find it on the map or view its artwork.")}</p>
 
         <section className="profile-collection-summary" aria-label={t("Cities summary")}>
           <span>
@@ -109,7 +117,7 @@ export function CitiesSheet({
               const next = cityMilestoneProgress(distance).next;
               return (
                 <li key={city.id}>
-                  <button type="button" onClick={() => onCitySelect(city)}>
+                  <div className="cities-collection-list__overview" data-testid={`city-info-${city.id}`}>
                     <span className="cities-collection-list__identity">
                       <strong>{city.name}</strong>
                       <small>
@@ -122,7 +130,26 @@ export function CitiesSheet({
                       <CityLevelStars level={earned.length} />
                       <strong>{formatDiscoveryPercentage(percentage)}</strong>
                     </span>
-                  </button>
+                  </div>
+                  <details className="cities-collection-list__actions" name="city-actions">
+                    <summary data-testid={`city-actions-${city.id}`} aria-label={t("Actions for {{city}}", { city: city.name })} title={t("City actions")}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiDotsVertical} /></svg>
+                    </summary>
+                    <div>
+                      <button type="button" data-testid={`city-map-${city.id}`}
+                        aria-label={t("Go to {{city}}", { city: city.name })}
+                        onClick={() => onCitySelect(city)}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiMapMarkerOutline} /></svg>
+                        {t("Go to city")}
+                      </button>
+                      <button type="button" data-testid={`city-keepsake-${city.id}`}
+                        aria-label={t("View artwork for {{city}}", { city: city.name })}
+                        onClick={() => onKeepsake(city, distance)}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiCubeOutline} /></svg>
+                        {t("View artwork")}
+                      </button>
+                    </div>
+                  </details>
                 </li>
               );
             })}

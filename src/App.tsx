@@ -87,6 +87,7 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { CityKeepsake } from "./components/CityKeepsake";
 import { requestDeviceHeadingPermission } from "./deviceHeading";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
@@ -879,6 +880,7 @@ export default function App() {
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
+  const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
@@ -5367,6 +5369,17 @@ export default function App() {
     [showRouteOnMap],
   );
 
+  const openKeepsake = (city: CityBoundary, discoveredKm: number): void => {
+    const map = mapRef.current;
+    if (!map) throw new Error("The map must be ready before creating a city keepsake.");
+    suspendFollowCamera();
+    map.stop();
+    setCitiesOpen(false);
+    setSyncOpen(false);
+    settleJourneySheet(false);
+    setKeepsake({ city, cells: [...cells], map, discoveredKm });
+  };
+
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
@@ -5398,7 +5411,7 @@ export default function App() {
 
   return (
     <main
-      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`}
+      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
       style={
         routePlannerOpen
           ? ({
@@ -6276,9 +6289,12 @@ export default function App() {
           setSyncOpen(false);
           focusDiscoveredCity(city);
         }}
+        onKeepsake={openKeepsake}
         onBack={() => setCitiesOpen(false)}
         onClose={closeProfileDialog}
       />
+      {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm}
+        onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
         open={Boolean(accountUserId && achievementsOpen)}
         achievementEvaluations={achievementEvaluations}

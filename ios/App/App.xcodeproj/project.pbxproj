@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CE2600290000000000000011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000012 /* PrivacyInfo.xcprivacy */; };
 		CE2600290000000000000003 /* GoogleAuthCallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000004 /* GoogleAuthCallback.swift */; };
 		CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000002 /* GoogleSignInPlugin.swift */; };
 		CE2600280000000000000001 /* AppleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600280000000000000002 /* AppleSignInPlugin.swift */; };
@@ -59,6 +60,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CE2600290000000000000012 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CE2600290000000000000004 /* GoogleAuthCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthCallback.swift; sourceTree = "<group>"; };
 		CE2600290000000000000002 /* GoogleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInPlugin.swift; sourceTree = "<group>"; };
 		CE2600280000000000000002 /* AppleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInPlugin.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
+				CE2600290000000000000012 /* PrivacyInfo.xcprivacy */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A2C4E7A02DB6000100A2C4E7 /* SceneDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -294,6 +297,7 @@
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
+				CE2600290000000000000011 /* PrivacyInfo.xcprivacy in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				D2A7006CED384ED9936ED14A /* InfoPlist.strings in Resources */,
