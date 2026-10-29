@@ -1034,5 +1034,6 @@
   "City actions": "Azioni della città",
   "View artwork for {{city}}": "Vedi opera d’arte di {{city}}",
   "Go to city": "Vai alla città",
-  "Go to {{city}}": "Vai a {{city}}"
+  "Go to {{city}}": "Vai a {{city}}",
+  "Could not load the Hecate logo. Reopen the artwork and try again.": "Impossibile caricare il logo di Hecate. Riapri l’opera d’arte e riprova."
 }

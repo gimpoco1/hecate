@@ -2,8 +2,17 @@ import { formatNumber, t } from "./i18n";
 
 export type ReliefShareDetails = { cityName: string; discoveredKm: number };
 
+function loadHecateLogo(): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const logo = new Image();
+    logo.onload = () => resolve(logo);
+    logo.onerror = () => reject(new Error(t("Could not load the Hecate logo. Reopen the artwork and try again.")));
+    logo.src = `${import.meta.env.BASE_URL}icon.svg`;
+  });
+}
+
 /** Keeps the preview's framing and replaces its controls with a city-specific distance card. */
-export function createReliefShareImage(
+export async function createReliefShareImage(
   artwork: HTMLCanvasElement,
   background: HTMLCanvasElement,
   details: ReliefShareDetails,
@@ -62,8 +71,18 @@ export function createReliefShareImage(
   context.fillText(distance, width / 2, height - 112 * scale);
   context.font = `400 ${13 * scale}px ${font}`;
   context.fillText(t("New ground in {{city}}", { city: details.cityName }), width / 2, height - 84 * scale, width - 48 * scale);
+  // The artwork is already copied, so loading the logo cannot race the live canvas resize.
+  const logo = await loadHecateLogo();
   context.font = `500 ${11 * scale}px ${font}`;
-  context.fillText("Hecate", width / 2, height - 48 * scale);
+  const logoSize = 24 * scale;
+  const brandWidth = logoSize + 4 * scale + context.measureText("Hecate").width;
+  const brandLeft = (width - brandWidth) / 2;
+  context.save();
+  context.textAlign = "left";
+  context.shadowBlur = 4 * scale;
+  context.drawImage(logo, brandLeft, height - 64 * scale, logoSize, logoSize);
+  context.fillText("Hecate", brandLeft + logoSize + 4 * scale, height - 48 * scale);
+  context.restore();
   context.fillStyle = "#d4dcd2";
   context.font = `400 ${9 * scale}px ${font}`;
   context.fillText("© OpenStreetMap · OpenMapTiles", width / 2, height - 22 * scale, width - 40 * scale);

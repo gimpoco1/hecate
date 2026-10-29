@@ -1047,5 +1047,6 @@
   "City actions": "Radnje za grad",
   "View artwork for {{city}}": "Pogledaj umjetničko djelo grada {{city}}",
   "Go to city": "Idi u grad",
-  "Go to {{city}}": "Idi u {{city}}"
+  "Go to {{city}}": "Idi u {{city}}",
+  "Could not load the Hecate logo. Reopen the artwork and try again.": "Nije moguće učitati logotip Hecate. Ponovno otvori umjetničko djelo i pokušaj opet."
 }
