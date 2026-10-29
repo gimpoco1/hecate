@@ -2709,7 +2709,7 @@ export default function App() {
     }
   };
 
-  const refreshLiveLeaderboard = async (userId: string) => {
+  const publishCompletedJourneyLeaderboard = async (userId: string) => {
     if (!isAutomaticUpdatesEnabled()) {
       setAutomaticUpdatePending(userId, false);
       return true;
@@ -2719,9 +2719,9 @@ export default function App() {
       setAutomaticUpdatePending(userId, false);
       return true;
     } catch (error) {
-      // Discovery syncing is the source of truth. A later completed session or
-      // online retry can safely rebuild the public aggregate snapshot.
-      console.warn("Could not refresh live leaderboard data", errorDiagnostic(error));
+      // Keep publication tied to journey completion. A later completed journey
+      // can rebuild the public snapshot if this attempt fails.
+      console.warn("Could not publish completed journey leaderboard data", errorDiagnostic(error));
       return false;
     }
   };
@@ -2729,7 +2729,7 @@ export default function App() {
   useEffect(() => {
     if (!accountUserId) return;
     let retrying = false;
-    let attemptedInitialRefresh = false;
+    let attemptedInitialSync = false;
     let retryTimer: number | null = null;
     const scheduleRetry = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
@@ -2748,9 +2748,9 @@ export default function App() {
         return;
       }
       const pending = isAutomaticUpdatePending(accountUserId);
-      if (!pending && attemptedInitialRefresh) return;
+      if (!pending && attemptedInitialSync) return;
       if (retrying) return;
-      attemptedInitialRefresh = true;
+      attemptedInitialSync = true;
       retrying = true;
       if (!pending) setAutomaticUpdatePending(accountUserId, true);
       void (async () => {
@@ -2759,7 +2759,8 @@ export default function App() {
         if (cellsRef.current.length) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
-        await refreshLiveLeaderboard(accountUserId);
+        // This retry only syncs private history; publishing happens when a journey ends.
+        setAutomaticUpdatePending(accountUserId, false);
       })()
         .catch(() => undefined)
         .finally(() => {
@@ -3662,7 +3663,7 @@ export default function App() {
         (walk) => walk.id === completed.id,
       );
       if (completedWalkSynced && discoverySynced) {
-        await refreshLiveLeaderboard(walkOwner);
+        await publishCompletedJourneyLeaderboard(walkOwner);
       }
       if (started) {
         const completedCells = cellsRef.current;
@@ -3920,7 +3921,6 @@ export default function App() {
     lastPointRef.current = mergedPoints.at(-1);
     setPoints(mergedPoints);
     setCells(mergedCells);
-    await refreshLiveLeaderboard(userId);
     const addedKm = Math.max(
       0,
       discoveredDistanceKm(mergedPoints) - previousDistance,
