@@ -1166,7 +1166,7 @@ button {
   padding: 0;
 }
 .cities-collection-list {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(var(--theme-border-rgb, 26, 58, 47), 0.1);
   border-radius: 20px;
   padding: 0 16px;
@@ -1175,6 +1175,7 @@ button {
 .cities-collection-list li + li {
   border-top: 1px solid rgba(var(--theme-border-rgb, 34, 65, 53), 0.09);
 }
+.cities-collection-list__overview,
 .cities-collection-list button {
   width: 100%;
   min-height: 68px;
@@ -1187,8 +1188,19 @@ button {
   background: transparent;
   color: var(--forest);
   text-align: left;
-  cursor: pointer;
 }
+.cities-collection-list__overview { min-width: 0; }
+.cities-collection-list button { cursor: pointer; }
+.cities-collection-list li { display: grid; grid-template-columns: minmax(0, 1fr) 44px; align-items: center; gap: 8px; }
+.cities-collection-list__actions { position: relative; }
+.cities-collection-list__actions summary { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--theme-text-muted, #748078); list-style: none; cursor: pointer; }
+.cities-collection-list__actions summary::-webkit-details-marker { display: none; }
+.cities-collection-list__actions summary:hover, .cities-collection-list__actions[open] summary { background: rgba(var(--theme-accent-rgb, 120, 144, 59), .10); color: var(--forest); }
+.cities-collection-list__actions div { position: absolute; z-index: 2; top: 42px; right: 0; width: max-content; max-width: calc(100vw - 80px); padding: 4px; border: 1px solid rgba(var(--theme-border-rgb, 26, 58, 47), .12); border-radius: 14px; background: var(--theme-surface, white); box-shadow: 0 8px 24px rgba(var(--theme-border-rgb, 26, 58, 47), .14); }
+.cities-collection-list li:last-child .cities-collection-list__actions div { top: auto; bottom: 42px; }
+.cities-collection-list__actions div button { justify-content: flex-start; min-height: 44px; padding: 8px 12px; gap: 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.cities-collection-list__actions div button:hover { background: rgba(var(--theme-accent-rgb, 120, 144, 59), .08); }
+.cities-collection-list__actions summary:focus-visible, .cities-collection-list__actions button:focus-visible { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
 .cities-collection-list__identity {
   min-width: 0;
   display: grid;
@@ -1220,6 +1232,7 @@ button {
     sans-serif;
   font-variant-numeric: tabular-nums;
 }
+@media (max-width: 420px) { .cities-collection-list__metrics { flex-direction: column; align-items: flex-end; gap: 5px; } }
 .achievements-collection-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

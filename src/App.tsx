@@ -87,6 +87,7 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { CityKeepsake } from "./components/CityKeepsake";
 import { requestDeviceHeadingPermission } from "./deviceHeading";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
@@ -879,6 +880,7 @@ export default function App() {
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
+  const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
@@ -2707,7 +2709,7 @@ export default function App() {
     }
   };
 
-  const refreshLiveLeaderboard = async (userId: string) => {
+  const publishCompletedJourneyLeaderboard = async (userId: string) => {
     if (!isAutomaticUpdatesEnabled()) {
       setAutomaticUpdatePending(userId, false);
       return true;
@@ -2717,9 +2719,9 @@ export default function App() {
       setAutomaticUpdatePending(userId, false);
       return true;
     } catch (error) {
-      // Discovery syncing is the source of truth. A later completed session or
-      // online retry can safely rebuild the public aggregate snapshot.
-      console.warn("Could not refresh live leaderboard data", errorDiagnostic(error));
+      // Keep publication tied to journey completion. A later completed journey
+      // can rebuild the public snapshot if this attempt fails.
+      console.warn("Could not publish completed journey leaderboard data", errorDiagnostic(error));
       return false;
     }
   };
@@ -2727,7 +2729,7 @@ export default function App() {
   useEffect(() => {
     if (!accountUserId) return;
     let retrying = false;
-    let attemptedInitialRefresh = false;
+    let attemptedInitialSync = false;
     let retryTimer: number | null = null;
     const scheduleRetry = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
@@ -2746,9 +2748,9 @@ export default function App() {
         return;
       }
       const pending = isAutomaticUpdatePending(accountUserId);
-      if (!pending && attemptedInitialRefresh) return;
+      if (!pending && attemptedInitialSync) return;
       if (retrying) return;
-      attemptedInitialRefresh = true;
+      attemptedInitialSync = true;
       retrying = true;
       if (!pending) setAutomaticUpdatePending(accountUserId, true);
       void (async () => {
@@ -2757,7 +2759,8 @@ export default function App() {
         if (cellsRef.current.length) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
-        await refreshLiveLeaderboard(accountUserId);
+        // This retry only syncs private history; publishing happens when a journey ends.
+        setAutomaticUpdatePending(accountUserId, false);
       })()
         .catch(() => undefined)
         .finally(() => {
@@ -3660,7 +3663,7 @@ export default function App() {
         (walk) => walk.id === completed.id,
       );
       if (completedWalkSynced && discoverySynced) {
-        await refreshLiveLeaderboard(walkOwner);
+        await publishCompletedJourneyLeaderboard(walkOwner);
       }
       if (started) {
         const completedCells = cellsRef.current;
@@ -3918,7 +3921,6 @@ export default function App() {
     lastPointRef.current = mergedPoints.at(-1);
     setPoints(mergedPoints);
     setCells(mergedCells);
-    await refreshLiveLeaderboard(userId);
     const addedKm = Math.max(
       0,
       discoveredDistanceKm(mergedPoints) - previousDistance,
@@ -5367,6 +5369,17 @@ export default function App() {
     [showRouteOnMap],
   );
 
+  const openKeepsake = (city: CityBoundary, discoveredKm: number, percentage: number): void => {
+    const map = mapRef.current;
+    if (!map) throw new Error("The map must be ready before creating a city keepsake.");
+    suspendFollowCamera();
+    map.stop();
+    setCitiesOpen(false);
+    setSyncOpen(false);
+    settleJourneySheet(false);
+    setKeepsake({ city, cells: [...cells], map, discoveredKm, percentage });
+  };
+
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
@@ -5398,7 +5411,7 @@ export default function App() {
 
   return (
     <main
-      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`}
+      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
       style={
         routePlannerOpen
           ? ({
@@ -6276,9 +6289,12 @@ export default function App() {
           setSyncOpen(false);
           focusDiscoveredCity(city);
         }}
+        onKeepsake={openKeepsake}
         onBack={() => setCitiesOpen(false)}
         onClose={closeProfileDialog}
       />
+      {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm} percentage={keepsake.percentage}
+        onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
         open={Boolean(accountUserId && achievementsOpen)}
         achievementEvaluations={achievementEvaluations}
