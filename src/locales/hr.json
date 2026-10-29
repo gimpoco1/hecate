@@ -1017,7 +1017,6 @@
   "Reset view": "Vrati početni prikaz",
   "Save image": "Spremi sliku",
   "Saving…": "Spremanje…",
-  "Your image is ready.": "Tvoja je slika spremna.",
   "Could not create your 3D map. Close this view and try again.": "Nije moguće izraditi tvoju 3D kartu. Zatvori ovaj prikaz i pokušaj ponovno.",
   "Could not save your 3D map. Check available storage and try again.": "Nije moguće spremiti tvoju 3D kartu. Provjeri slobodan prostor i pokušaj ponovno.",
   "3D discovery map of {{city}}. Use arrow keys to rotate and plus or minus to zoom.": "3D karta tvojih otkrića u gradu {{city}}. Koristi strelice za rotaciju te plus ili minus za zumiranje.",
@@ -1041,11 +1040,12 @@
   "One finger to move · Two fingers to rotate · Pinch to zoom": "Jedan prst za pomicanje · Dva prsta za rotaciju · Raširi prste za zumiranje",
   "The map is still loading. Check your connection and reopen the 3D view.": "Karta se još učitava. Provjeri vezu i ponovno otvori 3D prikaz.",
   "View artwork": "Pogledaj umjetničko djelo",
-  "New ground in {{city}}": "Novo područje u gradu {{city}}",
   "Actions for {{city}}": "Radnje za {{city}}",
   "City actions": "Radnje za grad",
   "View artwork for {{city}}": "Pogledaj umjetničko djelo grada {{city}}",
   "Go to city": "Idi u grad",
   "Go to {{city}}": "Idi u {{city}}",
-  "Could not load the Hecate logo. Reopen the artwork and try again.": "Nije moguće učitati logotip Hecate. Ponovno otvori umjetničko djelo i pokušaj opet."
+  "Could not load the Hecate logo. Reopen the artwork and try again.": "Nije moguće učitati logotip Hecate. Ponovno otvori umjetničko djelo i pokušaj opet.",
+  "of new ground": "novog područja",
+  "{{percentage}} explored · {{date}}": "{{percentage}} grada istraženo · {{date}}"
 }

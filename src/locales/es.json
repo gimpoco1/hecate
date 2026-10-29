@@ -1004,7 +1004,6 @@
   "Reset view": "Restablecer vista",
   "Save image": "Guardar imagen",
   "Saving…": "Guardando…",
-  "Your image is ready.": "Tu imagen está lista.",
   "Could not create your 3D map. Close this view and try again.": "No se pudo crear tu mapa 3D. Cierra esta vista e inténtalo de nuevo.",
   "Could not save your 3D map. Check available storage and try again.": "No se pudo guardar tu mapa 3D. Comprueba el espacio disponible e inténtalo de nuevo.",
   "3D discovery map of {{city}}. Use arrow keys to rotate and plus or minus to zoom.": "Mapa 3D de tus descubrimientos en {{city}}. Usa las flechas para girar y más o menos para ampliar.",
@@ -1028,11 +1027,12 @@
   "One finger to move · Two fingers to rotate · Pinch to zoom": "Un dedo para mover · Dos dedos para girar · Pellizca para ampliar",
   "The map is still loading. Check your connection and reopen the 3D view.": "El mapa sigue cargando. Comprueba tu conexión y vuelve a abrir la vista 3D.",
   "View artwork": "Ver obra de arte",
-  "New ground in {{city}}": "Terreno nuevo en {{city}}",
   "Actions for {{city}}": "Acciones de {{city}}",
   "City actions": "Acciones de la ciudad",
   "View artwork for {{city}}": "Ver obra de arte de {{city}}",
   "Go to city": "Ir a la ciudad",
   "Go to {{city}}": "Ir a {{city}}",
-  "Could not load the Hecate logo. Reopen the artwork and try again.": "No se pudo cargar el logotipo de Hecate. Vuelve a abrir la obra de arte e inténtalo de nuevo."
+  "Could not load the Hecate logo. Reopen the artwork and try again.": "No se pudo cargar el logotipo de Hecate. Vuelve a abrir la obra de arte e inténtalo de nuevo.",
+  "of new ground": "de terreno nuevo",
+  "{{percentage}} explored · {{date}}": "{{percentage}} de la ciudad · {{date}}"
 }

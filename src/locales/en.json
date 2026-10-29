@@ -1004,7 +1004,6 @@
   "Reset view": "Reset view",
   "Save image": "Save image",
   "Saving…": "Saving…",
-  "Your image is ready.": "Your image is ready.",
   "Could not create your 3D map. Close this view and try again.": "Could not create your 3D map. Close this view and try again.",
   "Could not save your 3D map. Check available storage and try again.": "Could not save your 3D map. Check available storage and try again.",
   "3D discovery map of {{city}}. Use arrow keys to rotate and plus or minus to zoom.": "3D discovery map of {{city}}. Use arrow keys to rotate and plus or minus to zoom.",
@@ -1028,11 +1027,12 @@
   "One finger to move · Two fingers to rotate · Pinch to zoom": "One finger to move · Two fingers to rotate · Pinch to zoom",
   "The map is still loading. Check your connection and reopen the 3D view.": "The map is still loading. Check your connection and reopen the 3D view.",
   "View artwork": "View artwork",
-  "New ground in {{city}}": "New ground in {{city}}",
   "Actions for {{city}}": "Actions for {{city}}",
   "City actions": "City actions",
   "View artwork for {{city}}": "View artwork for {{city}}",
   "Go to city": "Go to city",
   "Go to {{city}}": "Go to {{city}}",
-  "Could not load the Hecate logo. Reopen the artwork and try again.": "Could not load the Hecate logo. Reopen the artwork and try again."
+  "Could not load the Hecate logo. Reopen the artwork and try again.": "Could not load the Hecate logo. Reopen the artwork and try again.",
+  "of new ground": "of new ground",
+  "{{percentage}} explored · {{date}}": "{{percentage}} explored · {{date}}"
 }

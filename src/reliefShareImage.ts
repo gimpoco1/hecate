@@ -1,6 +1,8 @@
-import { formatNumber, t } from "./i18n";
+import { currentLanguage, formatNumber, t } from "./i18n";
 
-export type ReliefShareDetails = { cityName: string; discoveredKm: number };
+import { formatDiscoveryPercentage } from "./cityProgressFormat";
+
+export type ReliefShareDetails = { cityName: string; discoveredKm: number; percentage: number; createdAt: number };
 
 function loadHecateLogo(): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -43,7 +45,7 @@ export async function createReliefShareImage(
   topGradient.addColorStop(1, "transparent");
   context.fillStyle = topGradient;
   context.fillRect(0, 0, width, 145 * scale);
-  const footerTop = height - 205 * scale;
+  const footerTop = height - 230 * scale;
   const footerGradient = context.createLinearGradient(0, footerTop, 0, height);
   footerGradient.addColorStop(0, "transparent");
   footerGradient.addColorStop(1, "rgb(15 24 20 / .65)");
@@ -68,9 +70,14 @@ export async function createReliefShareImage(
   const distance = details.discoveredKm < 1
     ? `${formatNumber(details.discoveredKm * 1000, 0)} m`
     : `${formatNumber(details.discoveredKm, 1)} km`;
-  context.fillText(distance, width / 2, height - 112 * scale);
+  context.fillText(distance, width / 2, height - 140 * scale);
   context.font = `400 ${13 * scale}px ${font}`;
-  context.fillText(t("New ground in {{city}}", { city: details.cityName }), width / 2, height - 84 * scale, width - 48 * scale);
+  context.fillText(t("of new ground"), width / 2, height - 116 * scale, width - 48 * scale);
+  context.font = `400 ${11 * scale}px ${font}`;
+  context.fillStyle = "#d4dcd2";
+  const date = new Intl.DateTimeFormat(currentLanguage(), { dateStyle: "medium" }).format(details.createdAt);
+  context.fillText(t("{{percentage}} explored · {{date}}", { percentage: formatDiscoveryPercentage(details.percentage), date }), width / 2, height - 88 * scale, width - 48 * scale);
+  context.fillStyle = "#f0eee6";
   // The artwork is already copied, so loading the logo cannot race the live canvas resize.
   const logo = await loadHecateLogo();
   context.font = `500 ${11 * scale}px ${font}`;

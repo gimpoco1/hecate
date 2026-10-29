@@ -880,7 +880,7 @@ export default function App() {
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
-  const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number } | null>(null);
+  const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
@@ -5369,7 +5369,7 @@ export default function App() {
     [showRouteOnMap],
   );
 
-  const openKeepsake = (city: CityBoundary, discoveredKm: number): void => {
+  const openKeepsake = (city: CityBoundary, discoveredKm: number, percentage: number): void => {
     const map = mapRef.current;
     if (!map) throw new Error("The map must be ready before creating a city keepsake.");
     suspendFollowCamera();
@@ -5377,7 +5377,7 @@ export default function App() {
     setCitiesOpen(false);
     setSyncOpen(false);
     settleJourneySheet(false);
-    setKeepsake({ city, cells: [...cells], map, discoveredKm });
+    setKeepsake({ city, cells: [...cells], map, discoveredKm, percentage });
   };
 
   const handleMapClick = useCallback(() => {
@@ -6293,7 +6293,7 @@ export default function App() {
         onBack={() => setCitiesOpen(false)}
         onClose={closeProfileDialog}
       />
-      {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm}
+      {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm} percentage={keepsake.percentage}
         onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
         open={Boolean(accountUserId && achievementsOpen)}

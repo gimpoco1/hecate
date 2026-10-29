@@ -1,4 +1,5 @@
 import { mdiCubeOutline, mdiDotsVertical, mdiMapMarkerOutline } from "@mdi/js";
+import { formatDiscoveryPercentage } from "../cityProgressFormat";
 import { formatNumber, t, useAppTranslation } from "../i18n";
 import { personalAchievementDefinition, type AchievementEvaluation } from "../achievements";
 import {
@@ -22,7 +23,7 @@ type CitiesSheetProps = {
   loading: boolean;
   cityProgresses: ExploredCityProgress[];
   onCitySelect: (city: CityBoundary) => void;
-  onKeepsake: (city: CityBoundary, discoveredKm: number) => void;
+  onKeepsake: (city: CityBoundary, discoveredKm: number, percentage: number) => void;
   onBack: () => void;
   onClose: () => void;
 };
@@ -39,11 +40,6 @@ function formatDistance(distance: number): string {
   return `${formatNumber(distance, distance >= 10 ? 1 : 2)} km`;
 }
 
-function formatDiscoveryPercentage(percentage: number): string {
-  if (percentage > 0 && percentage < 0.1) return "<0.1%";
-  if (percentage < 10) return `${formatNumber(percentage, 1)}%`;
-  return `${Math.round(percentage)}%`;
-}
 
 export function CitiesSheet({
   open,
@@ -144,7 +140,7 @@ export function CitiesSheet({
                       </button>
                       <button type="button" data-testid={`city-keepsake-${city.id}`}
                         aria-label={t("View artwork for {{city}}", { city: city.name })}
-                        onClick={() => onKeepsake(city, distance)}>
+                        onClick={() => onKeepsake(city, distance, percentage)}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiCubeOutline} /></svg>
                         {t("View artwork")}
                       </button>

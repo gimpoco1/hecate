@@ -16,6 +16,7 @@ import "./CityKeepsake.css";
 type Props = {
   city: CityBoundary;
   discoveredKm: number;
+  percentage: number;
   cells: readonly DiscoveryCell[];
   map: MapLibreMap;
   onClose: () => void;
@@ -25,7 +26,7 @@ function KeepsakeControlIcon({ path }: { path: string }) {
   return <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={path} /></svg>;
 }
 
-export function CityKeepsake({ city, cells, map, discoveredKm, onClose }: Props) {
+export function CityKeepsake({ city, cells, map, discoveredKm, percentage, onClose }: Props) {
   useAppTranslation();
   const dialog = useRef<HTMLDialogElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -39,7 +40,6 @@ export function CityKeepsake({ city, cells, map, discoveredKm, onClose }: Props)
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   useEffect(() => {
     const element = dialog.current!;
     const previouslyFocused = document.activeElement;
@@ -171,12 +171,10 @@ export function CityKeepsake({ city, cells, map, discoveredKm, onClose }: Props)
   const save = async (): Promise<void> => {
     if (!scene.current || saving) return;
     setSaving(true);
-    setSaved(false);
     setError("");
     try {
-      const blob = await scene.current.image({ cityName: city.name, discoveredKm });
-      const result = await saveReliefImage(blob, city.name);
-      setSaved(result === "saved");
+      const blob = await scene.current.image({ cityName: city.name, discoveredKm, percentage, createdAt: Date.now() });
+      await saveReliefImage(blob, city.name);
     } catch (failure) {
       console.error("City relief export failed", { cityId: city.id, failure });
       setError(failure instanceof Error ? failure.message : t("Could not save your 3D map. Check available storage and try again."));
@@ -247,7 +245,6 @@ export function CityKeepsake({ city, cells, map, discoveredKm, onClose }: Props)
       <p role={!ready && !error ? "status" : undefined}>{!ready && !error ? t("Creating your artwork…") : t("A relief of the places you discovered. Yours to keep.")}</p>
       <small>{touchControls && interaction === "move" ? t("One finger to move · Two fingers to rotate · Pinch to zoom") : interaction === "move" ? t("Drag to move · Pinch to zoom") : t("Drag to rotate · Pinch to zoom")}</small>
       {error && <p role="alert">{error}</p>}
-      {saved && <p role="status">{t("Your image is ready.")}</p>}
 
     </footer>
   </dialog>;
