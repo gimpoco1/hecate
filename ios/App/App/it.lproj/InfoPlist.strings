@@ -1,0 +1,3 @@
+"NSMotionUsageDescription" = "Hecate usa i dati di movimento per gestire i controlli GPS dei promemoria di esplorazione. Questi dati non vengono salvati né sincronizzati.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Hecate usa la posizione in background durante un’uscita avviata da te, o con i promemoria attivi, per suggerire di registrare percorsi in nuove aree. Le posizioni dei promemoria non vengono salvate nella mappa o nell’account.";
+"NSLocationWhenInUseUsageDescription" = "Hecate usa la tua posizione per mostrarti sulla mappa, aggiungere i luoghi che esplori durante un’uscita e suggerirti di registrarla se attivi i promemoria.";

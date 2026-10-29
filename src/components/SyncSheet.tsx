@@ -1,5 +1,8 @@
+import { Trans } from "react-i18next";
+import { formatNumber, t, useAppTranslation, currentLanguage } from "../i18n";
+import { LanguageButton, LanguageSettings } from "./LanguageSettings";
 import { AuthEntry } from "./AuthEntry";
-import { errorDiagnostic } from '../diagnostics'
+import { errorDiagnostic } from "../diagnostics";
 import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -144,8 +147,8 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
     );
   } catch (error) {
     console.warn("Could not persist GPX import history", { error: errorDiagnostic(error instanceof Error
-          ? error.message
-          : "Web Storage failed with an unknown error.") });
+      ? error.message
+      : "Web Storage failed with an unknown error.") });
   }
 }
 
@@ -181,6 +184,7 @@ export function SyncSheet({
   onAchievementsOpen,
   onSavedPlacesOpen,
 }: Props) {
+  useAppTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -199,6 +203,7 @@ export function SyncSheet({
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
   const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const { preference: appearancePreference } = useAppearance();
   const [notificationSettingsSheetOpen, setNotificationSettingsSheetOpen] =
     useState(false);
@@ -218,7 +223,7 @@ export function SyncSheet({
         }
       }).catch((error: Error) => {
         if (active) setLocationAuthorizationError(
-          "Could not check location access. Check Location in device Settings.",
+          t("Could not check location access. Check Location in device Settings."),
         );
         console.warn("Could not read location authorization", { error: errorDiagnostic(error) });
       });
@@ -312,6 +317,7 @@ export function SyncSheet({
       setConfirmingDelete(false);
       setNotificationSettingsSheetOpen(false);
       setAppearanceSheetOpen(false);
+      setLanguageSheetOpen(false);
       return;
     }
     if (!supabase) {
@@ -378,12 +384,12 @@ export function SyncSheet({
       if (signInMethod === "password") {
         if (passwordIntent === "signup") {
           if (password.length < 8) {
-            setMessage("Use at least 8 characters for your password.");
+            setMessage(t("Use at least 8 characters for your password."));
             setMessageTone("error");
             return;
           }
           if (password !== confirmPassword) {
-            setMessage("The passwords do not match.");
+            setMessage(t("The passwords do not match."));
             setMessageTone("error");
             return;
           }
@@ -402,7 +408,7 @@ export function SyncSheet({
             setPassword("");
             setConfirmPassword("");
             setMessage(
-              "Check your inbox to confirm your account. If you cannot see the email, check your spam folder. The link will bring you back to Hecate.",
+              t("Check your inbox to confirm your account. If you cannot see the email, check your spam folder. The link will bring you back to Hecate."),
             );
             setMessageTone("success");
           }
@@ -427,13 +433,13 @@ export function SyncSheet({
         setMessage(
           error
             ? error.message
-            : "Check your inbox for a one-time sign-in link.",
+            : t("Check your inbox for a one-time sign-in link."),
         );
         setMessageTone(error ? "error" : "success");
       }
     } catch {
       setMessage(
-        "Unable to reach your account right now. Check your connection and try again.",
+        t("Unable to reach your account right now. Check your connection and try again."),
       );
       setMessageTone("error");
     } finally {
@@ -477,7 +483,7 @@ export function SyncSheet({
       else onClose();
     } catch {
       setMessage(
-        "Unable to delete your account right now. Check your connection and try again.",
+        t("Unable to delete your account right now. Check your connection and try again."),
       );
       setMessageTone("error");
     } finally {
@@ -488,7 +494,7 @@ export function SyncSheet({
   const accountDisplayName = user
     ? displayNameForUser(user, publishedDisplayName)
     : "";
-  const accountEmail = user?.email ?? "Signed-in account";
+  const accountEmail = user?.email ?? t("Signed-in account");
   const accountInitial = (accountDisplayName || accountEmail)
     .trim()
     .charAt(0)
@@ -546,12 +552,12 @@ export function SyncSheet({
   };
 
   const formatGpxImportDate = (addedAt: number) =>
-    new Intl.DateTimeFormat(undefined, {
+    new Intl.DateTimeFormat(currentLanguage(), {
       dateStyle: "medium",
       timeStyle: "short",
     }).format(addedAt);
   const formatGpxImportDistance = (distanceKm: number) =>
-    `${distanceKm < 10 ? distanceKm.toFixed(2) : distanceKm.toFixed(1)} km`;
+    `${distanceKm < 10 ? formatNumber(distanceKm, 2) : formatNumber(distanceKm, 1)} km`;
 
   const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
@@ -580,7 +586,7 @@ export function SyncSheet({
           message:
             error instanceof Error
               ? error.message
-              : "The GPX import failed for an unknown reason.",
+              : t("The GPX import failed for an unknown reason."),
         });
       })
       .finally(() => setGpxImportPending(false));
@@ -617,9 +623,7 @@ export function SyncSheet({
                 onShowGpxImport(points);
                 setGpxToast(null);
               }}
-            >
-              Show on map
-            </button>
+            >{t("Show on map")}</button>
           )}
         </div>
       )}
@@ -633,30 +637,29 @@ export function SyncSheet({
         <button
           className="icon-button sheet__close"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           <XIcon />
         </button>
         <div className="eyebrow">
-          {user ? "Account & sync" : "Private by design"}
+          {user ? t("Account & sync") : t("Private by design")}
         </div>
         {!user && (
           <div className="sync-privacy-subtitle">
-            <span /> Your recorded discoveries stay private to your account.
-          </div>
+            <span />  {t("Your recorded discoveries stay private to your account.")} </div>
         )}
         <h2 id="sync-title">
-          {user ? "Profile" : "Carry your map everywhere."}
+          {user ? t("Profile") : t("Carry your map everywhere.")}
         </h2>
         <p>
           {user
-            ? "Your private discoveries, progress, and account settings in one place."
-            : "Sign in or create an account to sync your discoveries."}
+            ? t("Your private discoveries, progress, and account settings in one place.")
+            : t("Sign in or create an account to sync your discoveries.")}
         </p>
+        {!user && <div className="sync-language-setting"><LanguageButton onClick={() => setLanguageSheetOpen(true)} /></div>}
+        {languageSheetOpen && <LanguageSettings onBack={() => setLanguageSheetOpen(false)} onClose={() => { setLanguageSheetOpen(false); onClose(); }} />}
         {authLoading ? (
-          <div className="account-loading" role="status">
-            Checking your account…
-          </div>
+          <div className="account-loading" role="status">{t("Checking your account…")}</div>
         ) : user ? (
           <>
             <div className="account-card">
@@ -671,16 +674,16 @@ export function SyncSheet({
                   </span>
                 </div>
               </div>
-              <nav className="account-navigation" aria-label="Profile features">
+              <nav className="account-navigation" aria-label={t("Profile features")}>
                 <div className="account-navigation__heading">
-                  <strong>Your activity</strong>
-                  <small>Progress, discoveries, and collections</small>
+                  <strong>{t("Your activity")}</strong>
+                  <small>{t("Progress, discoveries, and collections")}</small>
                 </div>
                 <div className="account-activity-grid">
                   <button
                     type="button"
                     className="account-feature-tile"
-                    aria-label={`Open walking stats. Current global rank: ${currentWorldRank.title}.`}
+                    aria-label={t("Open walking stats. Current global rank: {{value0}}.", { value0: currentWorldRank.title })}
                     onClick={onWalkingStatsOpen}
                   >
                     <span
@@ -689,14 +692,14 @@ export function SyncSheet({
                     >
                       <WorldMilestoneIcon icon={currentWorldRank.icon} />
                     </span>
-                    <strong>Walking stats</strong>
-                    <small>Stats and milestones</small>
+                    <strong>{t("Walking stats")}</strong>
+                    <small>{t("Stats and milestones")}</small>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                   <button
                     type="button"
                     className="account-feature-tile"
-                    aria-label={`Open cities explored. ${discoveredCityCount} ${discoveredCityCount === 1 ? "city" : "cities"}.`}
+                    aria-label={t("Open cities explored. {{value0}} {{value1}}.", { value0: discoveredCityCount, value1: t("cityLabel", { count: discoveredCityCount }).toLocaleLowerCase() })}
                     onClick={onCitiesOpen}
                   >
                     <span
@@ -705,14 +708,14 @@ export function SyncSheet({
                     >
                       <CitiesIcon size={18} />
                     </span>
-                    <strong>Cities</strong>
-                    <small>{discoveredCityCount} explored</small>
+                    <strong>{t("Cities")}</strong>
+                    <small>{t("{{value0}} explored", { value0: discoveredCityCount })}</small>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                   <button
                     type="button"
                     className="account-feature-tile"
-                    aria-label={`Open achievements. ${earnedAchievementCount} of ${achievementCount} earned.`}
+                    aria-label={t("Open achievements. {{value0}} of {{value1}} earned.", { value0: earnedAchievementCount, value1: achievementCount })}
                     onClick={onAchievementsOpen}
                   >
                     <span
@@ -721,17 +724,15 @@ export function SyncSheet({
                     >
                       <AchievementsIcon size={18} />
                     </span>
-                    <strong>Achievements</strong>
-                    <small>
-                      {earnedAchievementCount} of {achievementCount} earned
-                    </small>
+                    <strong>{t("Achievements")}</strong>
+                    <small>{t("{{value0}} of {{value1}} earned", { value0: earnedAchievementCount, value1: achievementCount })}</small>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                   <button
                     type="button"
                     className="account-feature-tile"
                     onClick={onSavedPlacesOpen}
-                    aria-label={`Open saved places. ${favoritePlaces.length} saved across ${favoriteCollectionCount} collections.`}
+                    aria-label={t("Open saved places. {{value0}} saved across {{value1}} collections.", { value0: favoritePlaces.length, value1: favoriteCollectionCount })}
                   >
                     <span
                       className="account-feature-tile__mark"
@@ -739,28 +740,26 @@ export function SyncSheet({
                     >
                       <SaveIcon size={18} strokeWidth={2} />
                     </span>
-                    <strong>Saved places</strong>
+                    <strong>{t("Saved places")}</strong>
                     <small>
                       {favoritePlaces.length}{" "}
-                      {favoritePlaces.length === 1 ? "place" : "places"}
+                      {t("placeLabel", { count: favoritePlaces.length })}
                     </small>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                 </div>
                 <div className="account-navigation__heading account-navigation__heading--community">
-                  <strong>Community</strong>
-                  <small>
-                    Compare your progress and keep your public snapshot current
-                  </small>
+                  <strong>{t("Community")}</strong>
+                  <small>{t("Compare your progress and keep your public snapshot current")}</small>
                 </div>
                 <section
                   className="account-community-card"
-                  aria-label="Community"
+                  aria-label={t("Community")}
                 >
                   <button
                     type="button"
                     className="account-community-link account-community-link--grouped"
-                    aria-label="Open the public leaderboard"
+                    aria-label={t("Open the public leaderboard")}
                     onClick={() => {
                       void openLeaderboard();
                     }}
@@ -772,75 +771,72 @@ export function SyncSheet({
                       <LeaderboardIcon size={18} />
                     </span>
                     <span>
-                      <strong>Leaderboard</strong>
-                      <small>Compare your city and worldwide ranking</small>
+                      <strong>{t("Leaderboard")}</strong>
+                      <small>{t("Compare your city and worldwide ranking")}</small>
                     </span>
                     <span
                       className="account-community-link__action"
                       aria-hidden="true"
                     >
-                      <small>Open</small>
+                      <small>{t("Open")}</small>
                       <ChevronIcon size={16} strokeWidth={2.3} />
                     </span>
                   </button>
                   <section
                     className="account-community-settings"
-                    aria-label="Community settings"
+                    aria-label={t("Community settings")}
                   >
                     <div className="account-setting">
                       <div>
-                        <strong>Live data</strong>
-                        <p>
-                          Refresh your leaderboard, badges, and public snapshot
-                          after each completed tracking session unless you
-                          switch this off.
-                        </p>
+                        <strong>{t("Live data")}</strong>
+                        <p>{t("Refresh your leaderboard, badges, and public snapshot after each completed tracking session unless you switch this off.")}</p>
                       </div>
                       <button
                         type="button"
                         role="switch"
                         aria-checked={autoUpdatesEnabled}
-                        aria-label="Automatic updates"
+                        aria-label={t("Automatic updates")}
                         onClick={() => {
                           const next = !autoUpdatesEnabled;
                           setAutoUpdatesEnabled(next);
                           setAutomaticUpdatesEnabled(next);
                         }}
                       >
-                        {autoUpdatesEnabled ? "On" : "Off"}
+                        {autoUpdatesEnabled ? t("On") : t("Off")}
                       </button>
                     </div>
                   </section>
                 </section>
               </nav>
               <div className="account-navigation__heading account-navigation__heading--settings">
-                <strong>Settings</strong>
-                <small>Manage your alerts, imports, and app preferences</small>
+                <strong>{t("Settings")}</strong>
+                <small>{t("Manage your alerts, imports, and app preferences")}</small>
               </div>
               <section
                 className="account-settings-panel account-settings-panel--links"
-                aria-label="Account settings"
+                aria-label={t("Account settings")}
               >
                 <button
                   type="button"
                   className="account-settings-link"
                   data-testid="appearance-open"
-                  aria-label="Open appearance settings"
+                  aria-label={t("Open appearance settings")}
                   onClick={() => setAppearanceSheetOpen(true)}
                 >
                   <span className="account-settings-link__mark" aria-hidden="true">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiPaletteOutline} /></svg>
                   </span>
                   <span>
-                    <strong>Appearance</strong>
-                    <small>{appearancePreference === "system" ? "System · follows your device" : appearancePreference === "dark" ? "Dark mode" : "Light mode"}</small>
+                    <strong>{t("Appearance")}</strong>
+                    <small>{appearancePreference === "system" ? t("System · follows your device") : appearancePreference === "dark" ? t("Dark mode") : t("Light mode")}</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
+                <LanguageButton onClick={() => setLanguageSheetOpen(true)} />
                 <button
                   type="button"
                   className="account-settings-link"
-                  aria-label="Open notification settings"
+                  aria-label={t("Open notification settings")}
                   onClick={() => setNotificationSettingsSheetOpen(true)}
                 >
                   <span
@@ -850,15 +846,15 @@ export function SyncSheet({
                     <BellIcon size={18} />
                   </span>
                   <span>
-                    <strong>Notifications</strong>
-                    <small>Choose the discovery nudges you want to receive</small>
+                    <strong>{t("Notifications")}</strong>
+                    <small>{t("Choose the discovery nudges you want to receive")}</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
                 <button
                   type="button"
                   className="account-settings-link"
-                  aria-label="Open GPX import"
+                  aria-label={t("Open GPX import")}
                   onClick={() => setGpxImportSheetOpen(true)}
                 >
                   <span
@@ -868,10 +864,8 @@ export function SyncSheet({
                     <RouteIcon size={18} strokeWidth={2} />
                   </span>
                   <span>
-                    <strong>Import GPX</strong>
-                    <small>
-                      Add past routes from Strava or other services
-                    </small>
+                    <strong>{t("Import GPX")}</strong>
+                    <small>{t("Add past routes from Strava or other services")}</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
@@ -883,8 +877,7 @@ export function SyncSheet({
                 disabled={authPending}
               >
                 <SignOutIcon size={18} />
-                Sign out
-              </button>
+                {t("Sign out")} </button>
               {!confirmingDelete ? (
                 <button
                   className="delete-account-button"
@@ -894,9 +887,7 @@ export function SyncSheet({
                     setMessage("");
                   }}
                   disabled={authPending}
-                >
-                  Delete account
-                </button>
+                >{t("Delete account")}</button>
               ) : (
                 <div
                   className="delete-confirmation"
@@ -904,31 +895,24 @@ export function SyncSheet({
                   aria-labelledby="delete-account-title"
                   aria-describedby="delete-account-description"
                 >
-                  <strong id="delete-account-title">
-                    Delete your account?
-                  </strong>
-                  <p id="delete-account-description">
-                    All your discoveries, routes, and account data will be
-                    permanently deleted. This cannot be recovered.
-                  </p>
+                  <strong id="delete-account-title">{t("Delete your account?")}</strong>
+                  <p id="delete-account-description">{t("All your discoveries, routes, and account data will be permanently deleted. This cannot be recovered.")}</p>
                   {user.identities?.some(identity => identity.provider === "apple") && (
-                    <p>After deletion, remove Hecate from Sign in with Apple in your Apple Account settings to revoke Apple's authorization.</p>
+                    <p>{t("After deletion, remove Hecate from Sign in with Apple in your Apple Account settings to revoke Apple's authorization.")}</p>
                   )}
                   <div className="delete-confirmation__actions">
                     <button
                       type="button"
                       onClick={() => setConfirmingDelete(false)}
                       disabled={authPending}
-                    >
-                      Cancel
-                    </button>
+                    >{t("Cancel")}</button>
                     <button
                       className="delete-confirmation__confirm"
                       type="button"
                       onClick={deleteAccount}
                       disabled={authPending}
                     >
-                      {authPending ? "Deleting…" : "Delete permanently"}
+                      {authPending ? t("Deleting…") : t("Delete permanently")}
                     </button>
                   </div>
                 </div>
@@ -951,16 +935,16 @@ export function SyncSheet({
                   data-testid="appearance-panel" onClick={(event) => event.stopPropagation()}
                   aria-modal="true" role="dialog" aria-labelledby="appearance-settings-title">
                   <button className="icon-button walking-stats-back" type="button"
-                    data-testid="appearance-back" aria-label="Back to profile" onClick={() => setAppearanceSheetOpen(false)}>
+                    data-testid="appearance-back" aria-label={t("Back to profile")} onClick={() => setAppearanceSheetOpen(false)}>
                     <ArrowLeftIcon />
                   </button>
                   <button className="icon-button sheet__close" type="button"
-                    data-testid="appearance-close" aria-label="Close appearance settings" onClick={() => {
+                    data-testid="appearance-close" aria-label={t("Close appearance settings")} onClick={() => {
                       setAppearanceSheetOpen(false);
                       onClose();
                     }}><XIcon /></button>
-                  <div className="eyebrow">Make it yours</div>
-                  <h2 id="appearance-settings-title">Appearance</h2>
+                  <div className="eyebrow">{t("Make it yours")}</div>
+                  <h2 id="appearance-settings-title">{t("Appearance")}</h2>
                   <AppearanceSettings />
                 </section>
               </div>
@@ -984,7 +968,7 @@ export function SyncSheet({
                     className="icon-button walking-stats-back"
                     type="button"
                     onClick={() => setGpxImportSheetOpen(false)}
-                    aria-label="Back to profile"
+                    aria-label={t("Back to profile")}
                   >
                     <ArrowLeftIcon />
                   </button>
@@ -995,25 +979,17 @@ export function SyncSheet({
                       setGpxImportSheetOpen(false);
                       onClose();
                     }}
-                    aria-label="Close GPX import"
+                    aria-label={t("Close GPX import")}
                   >
                     <XIcon />
                   </button>
-                  <div className="eyebrow">Your data</div>
-                  <h2 id="gpx-import-sheet-title">Import GPX</h2>
+                  <div className="eyebrow">{t("Your data")}</div>
+                  <h2 id="gpx-import-sheet-title">{t("Import GPX")}</h2>
                   <div className="gpx-import-sheet__content">
-                    <p className="gpx-import-sheet__file-description">
-                      Export a GPX file from Strava or most activity apps, then
-                      add it to your map here.
-                    </p>
+                    <p className="gpx-import-sheet__file-description">{t("Export a GPX file from Strava or most activity apps, then add it to your map here.")}</p>
                     <section className="gpx-import-sheet__privacy">
-                      <strong>Your import stays private</strong>
-                      <p>
-                        Imported routes add new ground to your map but don’t
-                        unlock achievements. Cities from an import are only
-                        added to the leaderboard when you add them to your
-                        public snapshot.
-                      </p>
+                      <strong>{t("Your import stays private")}</strong>
+                      <p>{t("Imported routes add new ground to your map but don’t unlock achievements. Cities from an import are only added to the leaderboard when you add them to your public snapshot.")}</p>
                       <a
                         className="account-import-help"
                         href="https://www.youtube.com/watch?v=zpBD1PVCqhY"
@@ -1021,12 +997,11 @@ export function SyncSheet({
                         rel="noreferrer"
                       >
                         <InfoIcon size={13} strokeWidth={2} />
-                        Exporting from Strava
-                      </a>
+                        {t("Exporting from Strava")} </a>
                     </section>
                     <section
                       className="gpx-import-sheet__file"
-                      aria-label="Import a GPX file from your device"
+                      aria-label={t("Import a GPX file from your device")}
                     >
                       <span
                         className="gpx-import-sheet__file-mark"
@@ -1035,7 +1010,7 @@ export function SyncSheet({
                         <RouteIcon size={20} strokeWidth={2} />
                       </span>
                       <span>
-                        <strong>Choose a GPX file</strong>
+                        <strong>{t("Choose a GPX file")}</strong>
                       </span>
                       <label
                         className={
@@ -1045,7 +1020,7 @@ export function SyncSheet({
                         }
                         htmlFor="gpx-file-input"
                       >
-                        {gpxImportPending ? "Importing…" : "Select file"}
+                        {gpxImportPending ? t("Importing…") : t("Select file")}
                         <input
                           id="gpx-file-input"
                           className="account-import-input"
@@ -1061,14 +1036,9 @@ export function SyncSheet({
                       className="gpx-import-sheet__history"
                       aria-labelledby="gpx-import-history-title"
                     >
-                      <strong id="gpx-import-history-title">
-                        Imported routes
-                      </strong>
+                      <strong id="gpx-import-history-title">{t("Imported routes")}</strong>
                       {gpxImportedRoutes.length === 0 ? (
-                        <p>
-                          No GPX routes imported yet. Routes you import will
-                          appear here.
-                        </p>
+                        <p>{t("No GPX routes imported yet. Routes you import will appear here.")}</p>
                       ) : (
                         <ul>
                           {gpxImportedRoutes.map((route) => (
@@ -1077,7 +1047,7 @@ export function SyncSheet({
                                 type="button"
                                 className="gpx-import-sheet__history-route"
                                 onClick={() => onShowGpxImportRoute(route.id)}
-                                aria-label={`Show imported route ${route.title} on the map`}
+                                aria-label={t("Show imported route {{value0}} on the map", { value0: route.title })}
                               >
                                 <strong>{route.title}</strong>
                                 <span className="gpx-import-sheet__history-meta">
@@ -1085,14 +1055,9 @@ export function SyncSheet({
                                     dateTime={new Date(
                                       route.addedAt,
                                     ).toISOString()}
-                                  >
-                                    Added {formatGpxImportDate(route.addedAt)}
-                                  </time>
+                                  >{t("Added {{value0}}", { value0: formatGpxImportDate(route.addedAt) })}</time>
                                   {route.addedKm > 0 && (
-                                    <span>
-                                      +{formatGpxImportDistance(route.addedKm)}{" "}
-                                      added
-                                    </span>
+                                    <span>{t("+{{value0}}{{value1}} added", { value0: formatGpxImportDistance(route.addedKm), value1: " " })}</span>
                                   )}
                                 </span>
                               </button>
@@ -1124,7 +1089,7 @@ export function SyncSheet({
                     className="icon-button walking-stats-back"
                     type="button"
                     onClick={() => setNotificationSettingsSheetOpen(false)}
-                    aria-label="Back to profile"
+                    aria-label={t("Back to profile")}
                   >
                     <ArrowLeftIcon />
                   </button>
@@ -1135,26 +1100,22 @@ export function SyncSheet({
                       setNotificationSettingsSheetOpen(false);
                       onClose();
                     }}
-                    aria-label="Close notification settings"
+                    aria-label={t("Close notification settings")}
                   >
                     <XIcon />
                   </button>
-                    <div className="eyebrow">
-                      Your reminders
-                  </div>
-                  <h2 id="notification-settings-sheet-title">Notifications</h2>
+                  <div className="eyebrow">{t("Your reminders")}</div>
+                  <h2 id="notification-settings-sheet-title">{t("Notifications")}</h2>
                   <div className="notification-settings-sheet__content">
-                    <p>Choose which reminders you receive.</p>
+                    <p>{t("Choose which reminders you receive.")}</p>
                     {notificationWarning === "notifications" && (
                       <div id="notification-permission-warning" className="notification-permission-notice" role="status">
                         <span className="notification-permission-notice__icon" aria-hidden="true">
                           <WarningIcon size={22} />
                         </span>
                         <div>
-                          <strong>Notifications are off</strong>
-                          <p>
-                            Enable Hecate notifications in Settings.
-                          </p>
+                          <strong>{t("Notifications are off")}</strong>
+                          <p>{t("Enable Hecate notifications in Settings.")}</p>
                           <button
                             type="button"
                             className="notification-permission-notice__action"
@@ -1166,22 +1127,19 @@ export function SyncSheet({
                                 .catch((error: Error) => {
                                   console.warn("Could not open device settings", { error: errorDiagnostic(error) });
                                   setNotificationError(
-                                    "Could not open Settings. Open your device Settings and enable notifications for Hecate.",
+                                    t("Could not open Settings. Open your device Settings and enable notifications for Hecate."),
                                   );
                                 })
                                 .finally(() => setNotificationPending(false));
                             }}
                           >
-                            Open Settings
-                            <ChevronIcon size={14} strokeWidth={2} />
+                            {t("Open Settings")} <ChevronIcon size={14} strokeWidth={2} />
                           </button>
                         </div>
                       </div>
                     )}
                     {notificationPermissionReady === null && (
-                      <div className="form-message" role="status">
-                        Checking system notification permission…
-                      </div>
+                      <div className="form-message" role="status">{t("Checking system notification permission…")}</div>
                     )}
                     {notificationWarning === "error" && (
                       <div
@@ -1194,12 +1152,12 @@ export function SyncSheet({
                     )}
                     <section
                       className="account-settings-panel"
-                      aria-label="Notification settings"
+                      aria-label={t("Notification settings")}
                     >
                       <div className="account-setting account-setting--all">
                         <div>
-                          <strong>All notifications</strong>
-                          <p>Control all reminders at once.</p>
+                          <strong>{t("All notifications")}</strong>
+                          <p>{t("Control all reminders at once.")}</p>
                         </div>
                         <button
                           type="button"
@@ -1207,8 +1165,8 @@ export function SyncSheet({
                           aria-checked={allNotificationsEnabled}
                           aria-label={
                             allNotificationsEnabled
-                              ? "Turn all notifications off"
-                              : "Turn all notifications on"
+                              ? t("Turn all notifications off")
+                              : t("Turn all notifications on")
                           }
                           disabled={
                             notificationPermissionReady !== true ||
@@ -1228,48 +1186,47 @@ export function SyncSheet({
                           }}
                         >
                           {allNotificationsEnabled
-                            ? "Turn all off"
-                            : "Turn all on"}
+                            ? t("Turn all off")
+                            : t("Turn all on")}
                         </button>
                       </div>
                       <div className="discovery-reminder-setting" role="group" aria-labelledby="discovery-reminders-title">
                         <div className="account-setting">
                           <div>
-                            <strong id="discovery-reminders-title">Undiscovered area reminders</strong>
+                            <strong id="discovery-reminders-title">{t("Undiscovered area reminders")}</strong>
                             <p>
-                              Remind me after{" "}
-                              <ReminderDuration
-                                title="Discovery reminder delay"
-                                value={activityNotificationPreferences.discoveryReminderMinutes}
-                                options={DISCOVERY_REMINDER_DURATIONS}
-                                disabled={notificationPending || reminderPending}
-                                onChange={onDiscoveryReminderDurationChange}
-                              />{" "}
-                              in new areas, or{" "}
-                              <ReminderDuration
-                                title="Inactivity reminder delay"
-                                value={activityNotificationPreferences.inactivityReminderMinutes}
-                                options={INACTIVITY_REMINDER_DURATIONS}
-                                disabled={notificationPending || reminderPending}
-                                onChange={onInactivityReminderDurationChange}
-                              />{" "}
-                              without moving during a journey.
+                              <Trans i18nKey="settings.reminderTiming" components={{
+                                discovery: <ReminderDuration
+                                  title={t("Discovery reminder delay")}
+                                  value={activityNotificationPreferences.discoveryReminderMinutes}
+                                  options={DISCOVERY_REMINDER_DURATIONS}
+                                  disabled={notificationPending || reminderPending}
+                                  onChange={onDiscoveryReminderDurationChange}
+                                />,
+                                inactivity: <ReminderDuration
+                                  title={t("Inactivity reminder delay")}
+                                  value={activityNotificationPreferences.inactivityReminderMinutes}
+                                  options={INACTIVITY_REMINDER_DURATIONS}
+                                  disabled={notificationPending || reminderPending}
+                                  onChange={onInactivityReminderDurationChange}
+                                />,
+                              }} />
                             </p>
                             <label className="account-reminder-option">
                               <input
                                 type="checkbox"
-                                aria-label="Journey reminders in discovered areas"
+                                aria-label={t("Journey reminders in discovered areas")}
                                 checked={activityNotificationPreferences.discoveredAreaReminders}
                                 disabled={!reminderEnabled || notificationPermissionReady !== true || !discoveryRemindersAllowed || reminderPending || notificationPending}
                                 onChange={(event) => setReminderError(onDiscoveredAreaRemindersChange(
                                   event.target.checked,
                                 ) ?? "")}
                               />
-                              <span>Also remind me in discovered areas</span>
+                              <span>{t("Also remind me in discovered areas")}</span>
                             </label>
                           </div>
                           {discoveryReminderBlocked ? (
-                            <span className="account-setting__warning" role="img" aria-label="Discovery reminders need permission"
+                            <span className="account-setting__warning" role="img" aria-label={t("Discovery reminders need permission")}
                               aria-describedby={notificationWarning === "error" ? "notification-settings-error" : notificationWarning ? "notification-permission-warning" : undefined}>
                               <WarningIcon size={24} />
                             </span>
@@ -1278,7 +1235,7 @@ export function SyncSheet({
                               type="button"
                               role="switch"
                               aria-checked={notificationPermissionReady === true && discoveryRemindersAllowed && reminderEnabled}
-                              aria-label="Undiscovered area reminders"
+                              aria-label={t("Undiscovered area reminders")}
                               disabled={notificationPermissionReady !== true || !discoveryRemindersAllowed || reminderPending || notificationPending}
                               onClick={() => {
                                 setReminderPending(true);
@@ -1288,7 +1245,7 @@ export function SyncSheet({
                                   .finally(() => setReminderPending(false));
                               }}
                             >
-                              {notificationPermissionReady === true && discoveryRemindersAllowed && reminderEnabled ? "On" : "Off"}
+                              {notificationPermissionReady === true && discoveryRemindersAllowed && reminderEnabled ? t("On") : t("Off")}
                             </button>
                           )}
                         </div>
@@ -1300,18 +1257,18 @@ export function SyncSheet({
                             <div>
                               <strong>
                                 {locationAuthorizationError
-                                  ? "Check location access"
+                                  ? t("Check location access")
                                   : locationAuthorization === "whenInUse"
-                                    ? "Location is allowed only while using the app"
+                                    ? t("Location is allowed only while using the app")
                                     : locationAuthorization === "notDetermined"
-                                      ? "Location permission isn’t set"
-                                      : "Location access is off"}
+                                      ? t("Location permission isn’t set")
+                                      : t("Location access is off")}
                               </strong>
                               <p>
                                 {locationAuthorizationError ||
                                   (Capacitor.getPlatform() === "android"
-                                    ? "Choose “Allow all the time” so Hecate can check for undiscovered areas and send reminders in the background."
-                                    : "Choose “Always” so Hecate can check for undiscovered areas and send reminders in the background.")}
+                                    ? t("Choose “Allow all the time” so Hecate can check for undiscovered areas and send reminders in the background.")
+                                    : t("Choose “Always” so Hecate can check for undiscovered areas and send reminders in the background."))}
                               </p>
                               <button
                                 type="button"
@@ -1320,13 +1277,12 @@ export function SyncSheet({
                                   void openLocationSettings().catch((error: Error) => {
                                     console.warn("Could not open location settings", { error: errorDiagnostic(error) });
                                     setLocationAuthorizationError(
-                                      "Could not open Settings. Open Hecate's app settings and allow background location.",
+                                      t("Could not open Settings. Open Hecate's app settings and allow background location."),
                                     );
                                   });
                                 }}
                               >
-                                Open Settings
-                                <ChevronIcon size={14} strokeWidth={2} />
+                                {t("Open Settings")} <ChevronIcon size={14} strokeWidth={2} />
                               </button>
                             </div>
                           </div>
@@ -1337,14 +1293,14 @@ export function SyncSheet({
                               <WarningIcon size={22} />
                             </span>
                             <div>
-                              <strong>{reminderMotionPermissionLabel()} access is off</strong>
+                              <strong>{t("{{value0}} access is off", { value0: reminderMotionPermissionLabel() })}</strong>
                               <p>{reminderMotionError}</p>
                               <button type="button" className="notification-permission-notice__action" onClick={() => {
                                 void openLocationSettings().catch((cause) => {
                                   console.error("Could not open motion permission settings", { cause: errorDiagnostic(cause) });
-                                  setReminderError(`Open Hecate’s device settings and allow ${reminderMotionPermissionLabel()}.`);
+                                  setReminderError(t("Open Hecate’s device settings and allow {{value0}}.", { value0: reminderMotionPermissionLabel() }));
                                 });
-                              }}>Open Settings <ChevronIcon size={14} /></button>
+                              }}>{t("Open Settings")} <ChevronIcon size={14} /></button>
                             </div>
                           </div>
                         )}
@@ -1352,18 +1308,18 @@ export function SyncSheet({
                       {[
                         [
                           "morningInvite",
-                          "Daily discovery reminder",
-                          "A daily nudge to explore.",
+                          t("Daily discovery reminder"),
+                          t("A daily nudge to explore."),
                         ] as const,
                         [
                           "weeklyRecap",
-                          "Weekly progress summary",
-                          "Your distance, new ground and streak every Sunday.",
+                          t("Weekly progress summary"),
+                          t("Your distance, new ground and streak every Sunday."),
                         ] as const,
                         [
                           "streakReminder",
-                          "Streak reminder",
-                          "A reminder to protect your streak.",
+                          t("Streak reminder"),
+                          t("A reminder to protect your streak."),
                         ] as const,
                       ].map(([category, title, description]) => (
                         <div className="account-setting" key={category}>
@@ -1371,27 +1327,19 @@ export function SyncSheet({
                             <strong>{title}</strong>
                             <p>
                               {category === "streakReminder" ? (
-                                <>
-                                  Remind me at{" "}
-                                  <ReminderTime
-                                    title="Streak reminder time"
-                                    value={activityNotificationPreferences.streakReminderTime}
-                                    disabled={notificationPending || reminderPending}
-                                    onChange={onStreakReminderTimeChange}
-                                  />{" "}
-                                  if I haven’t walked and my streak is at risk.
-                                </>
+                                <Trans i18nKey="settings.streakReminder" components={{ time: <ReminderTime
+                                  title={t("Streak reminder time")}
+                                  value={activityNotificationPreferences.streakReminderTime}
+                                  disabled={notificationPending || reminderPending}
+                                  onChange={onStreakReminderTimeChange}
+                                /> }} />
                               ) : category === "morningInvite" ? (
-                                <>
-                                  A daily nudge at{" "}
-                                  <ReminderTime
-                                    title="Daily reminder time"
-                                    value={activityNotificationPreferences.dailyReminderTime}
-                                    disabled={notificationPending || reminderPending}
-                                    onChange={onDailyReminderTimeChange}
-                                  />{" "}
-                                  to explore.
-                                </>
+                                <Trans i18nKey="settings.dailyReminder" components={{ time: <ReminderTime
+                                  title={t("Daily reminder time")}
+                                  value={activityNotificationPreferences.dailyReminderTime}
+                                  disabled={notificationPending || reminderPending}
+                                  onChange={onDailyReminderTimeChange}
+                                /> }} />
                               ) : description}
                             </p>
                           </div>
@@ -1418,8 +1366,8 @@ export function SyncSheet({
                             }}
                           >
                             {notificationPermissionReady === true && activityNotificationPreferences[category]
-                              ? "On"
-                              : "Off"}
+                              ? t("On")
+                              : t("Off")}
                           </button>
                         </div>
                       ))}
@@ -1432,9 +1380,7 @@ export function SyncSheet({
         ) : isSyncConfigured ? (
           <div className="auth-panel">
             {appleAccessRemoval && (
-              <p className="form-message form-message--success" role="status">
-                Your Hecate account and data have been deleted. To remove Apple's authorization too, open Settings → your Apple Account → Sign in with Apple → Hecate → Stop Using Apple.
-              </p>
+              <p className="form-message form-message--success" role="status">{t("Your Hecate account and data have been deleted. To remove Apple's authorization too, open Settings → your Apple Account → Sign in with Apple → Hecate → Stop Using Apple.")}</p>
             )}
             <AuthEntry disabled={authPending} onPendingChange={setAuthPending}>
               <div
@@ -1442,8 +1388,8 @@ export function SyncSheet({
                 role="tablist"
                 aria-label={
                   passwordIntent === "signup"
-                    ? "Account action"
-                    : "Sign-in method"
+                    ? t("Account action")
+                    : t("Sign-in method")
                 }
               >
                 {passwordIntent === "signup" ? (
@@ -1454,9 +1400,7 @@ export function SyncSheet({
                       aria-selected="true"
                       className="active"
                       onClick={beginAccountCreation}
-                    >
-                      Sign up
-                    </button>
+                    >{t("Sign up")}</button>
                     <button
                       type="button"
                       role="tab"
@@ -1468,9 +1412,7 @@ export function SyncSheet({
                         setConfirmPassword("");
                         setMessage("");
                       }}
-                    >
-                      Log in
-                    </button>
+                    >{t("Log in")}</button>
                   </>
                 ) : (
                   <>
@@ -1484,9 +1426,7 @@ export function SyncSheet({
                         setSignInMethod("password");
                         setMessage("");
                       }}
-                    >
-                      Password
-                    </button>
+                    >{t("Password")}</button>
                     <button
                       type="button"
                       role="tab"
@@ -1497,28 +1437,26 @@ export function SyncSheet({
                         setSignInMethod("link");
                         setMessage("");
                       }}
-                    >
-                      Email link
-                    </button>
+                    >{t("Email link")}</button>
                   </>
                 )}
               </div>
               <form className="auth-form" onSubmit={signIn}>
                 <fieldset className="auth-form-fields" disabled={authPending}>
-                  <label htmlFor="email">Email address</label>
+                  <label htmlFor="email">{t("Email address")}</label>
                   <input
                     id="email"
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="you@example.com"
+                    placeholder={t("you@example.com")}
                     autoComplete="email"
                     onFocus={keepAuthFieldVisible}
                     required
                   />
                   {signInMethod === "password" && (
                     <>
-                      <label htmlFor="password">Password</label>
+                      <label htmlFor="password">{t("Password")}</label>
                       <input
                         id="password"
                         type="password"
@@ -1526,8 +1464,8 @@ export function SyncSheet({
                         onChange={(event) => setPassword(event.target.value)}
                         placeholder={
                           passwordIntent === "signup"
-                            ? "At least 8 characters"
-                            : "Your password"
+                            ? t("At least 8 characters")
+                            : t("Your password")
                         }
                         autoComplete={
                           passwordIntent === "signup"
@@ -1540,7 +1478,7 @@ export function SyncSheet({
                       />
                       {passwordIntent === "signup" && (
                         <>
-                          <label htmlFor="confirm-password">Confirm password</label>
+                          <label htmlFor="confirm-password">{t("Confirm password")}</label>
                           <input
                             id="confirm-password"
                             type="password"
@@ -1548,7 +1486,7 @@ export function SyncSheet({
                             onChange={(event) =>
                               setConfirmPassword(event.target.value)
                             }
-                            placeholder="Type your password again"
+                            placeholder={t("Type your password again")}
                             autoComplete="new-password"
                             onFocus={keepAuthFieldVisible}
                             minLength={8}
@@ -1565,30 +1503,26 @@ export function SyncSheet({
                   >
                     {authPending
                       ? passwordIntent === "signup" && signInMethod === "password"
-                        ? "Creating account…"
+                        ? t("Creating account…")
                         : signInMethod === "password"
-                          ? "Signing in…"
-                          : "Sending…"
+                          ? t("Signing in…")
+                          : t("Sending…")
                       : signInMethod === "link"
-                        ? "Send sign-in link"
+                        ? t("Send sign-in link")
                         : passwordIntent === "signup"
-                          ? "Create account"
-                          : "Sign in"}
+                          ? t("Create account")
+                          : t("Sign in")}
                   </button>
                   {signInMethod === "password" && passwordIntent === "signin" && (
                     <div className="auth-switch">
-                      <span>New to Hecate?</span>
-                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>
-                        Create account
-                      </button>
+                      <span>{t("New to Hecate?")}</span>
+                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>{t("Create account")}</button>
                     </div>
                   )}
                   {signInMethod === "link" && (
                     <div className="auth-switch">
-                      <span>New to Hecate?</span>
-                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>
-                        Create account
-                      </button>
+                      <span>{t("New to Hecate?")}</span>
+                      <button type="button" data-testid="auth-create-account" onClick={beginAccountCreation}>{t("Create account")}</button>
                     </div>
                   )}
                 </fieldset>
@@ -1605,34 +1539,26 @@ export function SyncSheet({
           </div>
         ) : (
           <div className="setup-note">
-            <span>Sync preview</span>
-            Add Supabase keys from <code>.env.example</code> to enable private
-            account sync.
-          </div>
+            <span>{t("Sync preview")}</span>
+            {t("Add Supabase keys from")} <code>{t(".env.example")}</code>  {t("to enable private account sync.")} </div>
         )}
-        {user && <section className="account-project-support" aria-label="Support Hecate">
-          <strong>Enjoying Hecate?</strong>
-          <p>
-            If Hecate adds a little discovery to your day, consider buying me a
-            coffee to support its development.
-          </p>
+        {user && <section className="account-project-support" aria-label={t("Support Hecate")}>
+          <strong>{t("Enjoying Hecate?")}</strong>
+          <p>{t("If Hecate adds a little discovery to your day, consider buying me a coffee to support its development.")}</p>
           <div className="account-project-support__actions">
             <button
               type="button"
               onClick={() => void openCoffeeSupport()}
             >
               <CoffeeIcon size={18} />
-              Buy me a coffee
-            </button>
-            <button type="button" className="account-feedback-button" data-testid="profile-feedback" onClick={onFeedbackOpen}>
-              Share feedback
-            </button>
+              {t("Buy me a coffee")} </button>
+            <button type="button" className="account-feedback-button" data-testid="profile-feedback" onClick={onFeedbackOpen}>{t("Share feedback")}</button>
           </div>
         </section>}
-        <nav className="account-legal-links" aria-label="Legal and support">
-          <a href="/privacy-policy.html">Privacy Policy</a>
+        <nav className="account-legal-links" aria-label={t("Legal and support")}>
+          <a href="/privacy-policy.html">{t("Privacy Policy")}</a>
           <span aria-hidden="true">·</span>
-          <a href="/support.html">Support</a>
+          <a href="/support.html">{t("Support")}</a>
         </nav>
       </section>
     </div>

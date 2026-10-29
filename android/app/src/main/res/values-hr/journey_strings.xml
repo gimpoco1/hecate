@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journey_channel">Putovanja</string>
+    <string name="journey_channel_description">Prijeđena udaljenost, nove dionice, proteklo vrijeme i kontrole putovanja uživo</string>
+    <string name="journey_exploring">Istraživanje…</string>
+    <string name="journey_complete">Putovanje završeno</string>
+    <string name="journey_stop">Završi putovanje</string>
+    <string name="journey_walk">ovo putovanje</string>
+    <string name="journey_walked">prijeđeno</string>
+    <string name="journey_new_area">nove dionice</string>
+</resources>

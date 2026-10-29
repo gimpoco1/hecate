@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { registerPlugin } from "@capacitor/core";
 
 export type AppIconChoice = "original" | "dark";
@@ -9,10 +10,10 @@ interface AppIconPlugin {
 export const AppIcon = registerPlugin<AppIconPlugin>("AppIcon");
 
 export function parseAppIconState(value: unknown): AppIconState {
-  if (!value || typeof value !== "object") throw new TypeError("The device returned an invalid app icon state.");
+  if (!value || typeof value !== "object") throw new TypeError(t("The device returned an invalid app icon state."));
   const state = value as Partial<AppIconState>;
   if (typeof state.supported !== "boolean" || (state.icon !== "original" && state.icon !== "dark")) {
-    throw new TypeError("The device returned an unrecognized app icon or support status.");
+    throw new TypeError(t("The device returned an unrecognized app icon or support status."));
   }
   return { supported: state.supported, icon: state.icon };
 }

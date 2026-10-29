@@ -1,4 +1,5 @@
-import { errorDiagnostic } from './diagnostics'
+import { t } from "./i18n";
+import { errorDiagnostic } from "./diagnostics";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type {
   BackgroundGeolocationPlugin,
@@ -50,7 +51,7 @@ class WebLocationTracker implements LocationTracker {
     onPoint: (point: Coordinate) => void,
     onError: (error: LocationTrackerError) => void,
   ) {
-    if (!navigator.geolocation) throw new Error("Geolocation is unavailable");
+    if (!navigator.geolocation) throw new Error(t("Geolocation is unavailable"));
     this.active = true;
     this.watchId = navigator.geolocation.watchPosition(
       ({ coords, timestamp }) => {
@@ -101,7 +102,7 @@ interface HecateBackgroundGeolocationPlugin extends BackgroundGeolocationPlugin 
 }
 
 export function reminderMotionPermissionLabel(): string {
-  return Capacitor.getPlatform() === "android" ? "Physical activity" : "Motion & Fitness";
+  return Capacitor.getPlatform() === "android" ? t("Physical activity") : t("Motion & Fitness");
 }
 
 export type ReminderMotionAuthorization = "authorized" | "denied" | "restricted" | "notDetermined" | "unavailable";
@@ -111,7 +112,7 @@ export async function readReminderMotionAuthorization(): Promise<ReminderMotionA
   if (!Capacitor.isNativePlatform()) return "authorized";
   const { status } = await HecateBackgroundGeolocation.getMotionAuthorizationStatus();
   if (status !== "authorized" && status !== "denied" && status !== "restricted" && status !== "notDetermined" && status !== "unavailable")
-    throw new Error("Unrecognized Motion & Fitness authorization status: " + status);
+    throw new Error(t("Unrecognized Motion & Fitness authorization status: ") + status);
   return status;
 }
 
@@ -119,7 +120,7 @@ export async function readReminderMotionAuthorization(): Promise<ReminderMotionA
 export async function requestReminderMotionPermission(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return true;
   const result = await HecateBackgroundGeolocation.requestMotionPermission();
-  if (typeof result.granted !== "boolean") throw new Error("Native Motion & Fitness permission response is missing a boolean granted value.");
+  if (typeof result.granted !== "boolean") throw new Error(t("Native Motion & Fitness permission response is missing a boolean granted value."));
   return result.granted;
 }
 
@@ -129,7 +130,7 @@ export async function readLocationAuthorization(): Promise<LocationAuthorization
   const { status } = await HecateBackgroundGeolocation.getAuthorizationStatus();
   if (status !== "always" && status !== "whenInUse" &&
       status !== "denied" && status !== "notDetermined")
-    throw new Error("Unrecognized location authorization status: " + status);
+    throw new Error(t("Unrecognized location authorization status: ") + status);
   return status;
 }
 
@@ -187,11 +188,11 @@ function nativeError(error: CallbackError | unknown): LocationTrackerError {
       candidate?.code === "AIRPLANE_MODE"
         ? "journey-stopped"
         : candidate?.code === "MOTION_NOT_AUTHORIZED" || candidate?.code === "MOTION_UNAVAILABLE"
-        ? "permission-denied"
-        : candidate?.code === "NOT_AUTHORIZED"
-        ? "permission-denied"
-        : "unavailable",
-    message: candidate?.message || "Location is unavailable.",
+          ? "permission-denied"
+          : candidate?.code === "NOT_AUTHORIZED"
+            ? "permission-denied"
+            : "unavailable",
+    message: candidate?.message || t("Location is unavailable."),
   };
 }
 
@@ -235,16 +236,16 @@ class NativeLocationTracker implements LocationTracker {
       motionGated: this.mode === "reminder",
       ...(this.mode === "walk"
         ? {
-            backgroundTitle: "Hecate is revealing your path",
-            backgroundMessage:
-              "Your discovery is continuing in the background.",
-          }
+          backgroundTitle: t("Hecate is revealing your path"),
+          backgroundMessage:
+              t("Your discovery is continuing in the background."),
+        }
         : this.mode === "reminder"
           ? {
-              backgroundTitle: "Hecate is checking for walks",
-              backgroundMessage:
-                "Discovery reminders are on. No path is being recorded.",
-            }
+            backgroundTitle: t("Hecate is checking for walks"),
+            backgroundMessage:
+                t("Discovery reminders are on. No path is being recorded."),
+          }
           : {}),
       requestPermissions: true,
       // A recent cached fix makes the locate control useful immediately while

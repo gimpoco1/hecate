@@ -1,3 +1,4 @@
+import type { LanguagePreference } from "./i18n";
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 import type { Coordinate } from "./types";
@@ -16,7 +17,7 @@ export type JourneyActivitySnapshot = {
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
 
 interface JourneyActivityPlugin {
-  setAppearance(options: { preference: AppearancePreference; theme: ColorTheme }): Promise<void>;
+  setAppearance(options: { preference: AppearancePreference; theme: ColorTheme; language: LanguagePreference }): Promise<void>;
   start(snapshot: JourneyActivitySnapshot & { ownerId: string }): Promise<void>;
   update(snapshot: JourneyActivitySnapshot): Promise<void>;
   end(snapshot: JourneyActivitySnapshot & { finishedAt: number }): Promise<void>;

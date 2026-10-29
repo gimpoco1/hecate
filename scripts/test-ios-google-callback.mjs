@@ -1,11 +1,11 @@
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const directory = mkdtempSync(join(tmpdir(), 'hecate-google-callback-'))
+const directory = mkdtempSync(join(tmpdir(), "hecate-google-callback-"));
 try {
-  const source = readFileSync(new URL('../ios/App/App/GoogleAuthCallback.swift', import.meta.url), 'utf8')
+  const source = readFileSync(new URL("../ios/App/App/GoogleAuthCallback.swift", import.meta.url), "utf8");
   const tests = `
 let validCallbacks = [
     "com.gimpoco.hecate.auth://callback?code=test-code",
@@ -38,12 +38,12 @@ for (url, expected) in invalidCallbacks {
     precondition(failure == expected, "Callback must identify the failed validation boundary")
 }
 print("iOS Google callback: 13 Foundation URL cases passed")
-`
-  const main = join(directory, 'main.swift')
-  const executable = join(directory, 'google-callback-tests')
-  writeFileSync(main, source + tests)
-  execFileSync('swiftc', ['-module-cache-path', join(directory, 'cache'), main, '-o', executable], { stdio: 'inherit' })
-  execFileSync(executable, [], { stdio: 'inherit' })
+`;
+  const main = join(directory, "main.swift");
+  const executable = join(directory, "google-callback-tests");
+  writeFileSync(main, source + tests);
+  execFileSync("swiftc", ["-module-cache-path", join(directory, "cache"), main, "-o", executable], { stdio: "inherit" });
+  execFileSync(executable, [], { stdio: "inherit" });
 } finally {
-  rmSync(directory, { recursive: true, force: true })
+  rmSync(directory, { recursive: true, force: true });
 }

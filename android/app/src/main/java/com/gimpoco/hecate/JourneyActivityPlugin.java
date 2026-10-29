@@ -21,7 +21,7 @@ public class JourneyActivityPlugin extends Plugin {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final BroadcastReceiver appearanceReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            if (!"system".equals(notifications.appearance()) || notifications.active() == null) return;
+            if (notifications.active() == null || (!"system".equals(notifications.appearance()) && !"system".equals(notifications.languagePreference()))) return;
             JourneyNotifications.withService(context, service -> {
                 JourneyState active = notifications.active();
                 if (active != null && !service.updateJourneyNotification(active.walkId(), notifications.ongoing(active)))
@@ -84,6 +84,7 @@ public class JourneyActivityPlugin extends Plugin {
                 String theme = requiredString(call, "theme");
                 if (!"light".equals(theme) && !"dark".equals(theme)) throw new IllegalArgumentException("A resolved light or dark journey theme is required.");
                 notifications.setAppearance(requiredString(call, "preference"));
+                notifications.setLanguage(requiredString(call, "language"));
                 JourneyState active = notifications.active();
                 if (active == null) call.resolve();
                 else publish(call, active, 0);

@@ -1,3 +1,4 @@
+import { t, useAppTranslation } from "../i18n";
 import type { PersonalAchievementDefinition } from "../achievements";
 import { AchievementArtwork } from "./AchievementArtwork";
 
@@ -10,6 +11,7 @@ export function AchievementCelebration({
   remaining: number;
   onDismiss: () => void;
 }) {
+  useAppTranslation();
   return (
     <div className="achievement-celebration-backdrop" role="presentation">
       <section
@@ -24,9 +26,7 @@ export function AchievementCelebration({
             <span key={index} />
           ))}
         </div>
-        <div className="achievement-celebration__eyebrow">
-          Achievement unlocked
-        </div>
+        <div className="achievement-celebration__eyebrow">{t("Achievement unlocked")}</div>
         <div className="achievement-celebration__artwork">
           <AchievementArtwork
             image={achievement.image}
@@ -39,12 +39,10 @@ export function AchievementCelebration({
           {achievement.description}
         </p>
         <button type="button" onClick={onDismiss} autoFocus>
-          {remaining > 0 ? "Celebrate the next one" : "Keep exploring"}
+          {remaining > 0 ? t("Celebrate the next one") : t("Keep exploring")}
         </button>
         {remaining > 0 && (
-          <small>
-            {remaining} more new {remaining === 1 ? "achievement" : "achievements"}
-          </small>
+          <small>{t("moreAchievements", { count: remaining })}</small>
         )}
       </section>
     </div>

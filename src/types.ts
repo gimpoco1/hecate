@@ -7,14 +7,14 @@ export type Coordinate = {
   speed?: number
   walkId?: string
   achievementEligible?: boolean
-}
+};
 
 export type DiscoveryCell = {
   z: number
   x: number
   y: number
   discoveredAt: number
-}
+};
 
 export type PendingWalk = {
   id: string
@@ -22,8 +22,8 @@ export type PendingWalk = {
   finishedAt: number
   points: Coordinate[]
   achievementEligible?: boolean
-}
+};
 
-export type MapMode = 'discover' | 'map'
+export type MapMode = "discover" | "map";
 
-export type TrackingState = 'idle' | 'requesting' | 'tracking' | 'denied' | 'unavailable'
+export type TrackingState = "idle" | "requesting" | "tracking" | "denied" | "unavailable";

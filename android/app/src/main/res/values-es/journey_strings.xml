@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journey_channel">Recorridos</string>
+    <string name="journey_channel_description">Distancia, tramos nuevos, tiempo y controles del recorrido en directo</string>
+    <string name="journey_exploring">Explorando…</string>
+    <string name="journey_complete">Recorrido completado</string>
+    <string name="journey_stop">Terminar recorrido</string>
+    <string name="journey_walk">este recorrido</string>
+    <string name="journey_walked">recorridos</string>
+    <string name="journey_new_area">tramos nuevos</string>
+</resources>

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { RoutePoint, PlannedRoute } from "./explorationRouting";
 import type { RouteProgress } from "./routeProgress";
 import { distanceKm } from "./geo";
@@ -52,6 +53,6 @@ export function maneuverSymbol(type: string, modifier: string): TurnSymbol {
     case "sharp right": return "sharp-right";
     case "uturn": return "uturn";
     case "": case "straight": return "straight";
-    default: throw new RangeError(`Unsupported routing maneuver modifier: ${modifier}`);
+    default: throw new RangeError(t("Unsupported routing maneuver modifier: {{value0}}", { value0: modifier }));
   }
 }

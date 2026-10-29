@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journey_channel">Uscite</string>
+    <string name="journey_channel_description">Distanza, nuovi tratti, tempo trascorso e controlli dell’uscita in tempo reale</string>
+    <string name="journey_exploring">Esplorazione…</string>
+    <string name="journey_complete">Uscita completata</string>
+    <string name="journey_stop">Termina uscita</string>
+    <string name="journey_walk">quest’uscita</string>
+    <string name="journey_walked">percorsi</string>
+    <string name="journey_new_area">nuovi tratti</string>
+</resources>

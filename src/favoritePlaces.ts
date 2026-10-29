@@ -1,42 +1,43 @@
+import { t, currentLanguage } from "./i18n";
 export const FAVORITE_PLACE_ICONS = [
   {
     id: "star",
-    label: "General",
+    get label() { return t("General"); },
     path: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9-5.6 2.9 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>',
   },
   {
     id: "tree",
-    label: "Park",
+    get label() { return t("Park"); },
     path: '<path d="M12 3 7 10h3l-4 6h5v5h2v-5h5l-4-6h3l-5-7Z"/>',
   },
   {
     id: "restaurant",
-    label: "Restaurant",
+    get label() { return t("Restaurant"); },
     path: '<path d="M4 3v5M7 3v5M10 3v5M4 8a3 3 0 0 0 6 0M7 11v10M16 3c2.5 2 4 5 4 8h-4V3ZM16 11v10"/>',
   },
   {
     id: "cafe",
-    label: "Café",
+    get label() { return t("Café"); },
     path: '<path d="M5 8h11v6a5 5 0 0 1-5 5H10a5 5 0 0 1-5-5V8ZM16 10h2a2 2 0 0 1 0 4h-2M8 3v2M12 3v2"/>',
   },
   {
     id: "viewpoint",
-    label: "Viewpoint",
+    get label() { return t("Viewpoint"); },
     path: '<path d="m3 19 6-10 4 6 2-3 6 7H3ZM7 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>',
   },
   {
     id: "landmark",
-    label: "Landmark",
+    get label() { return t("Landmark"); },
     path: '<path d="m3 9 9-5 9 5H3ZM5 11v7M9 11v7M15 11v7M19 11v7M3 20h18"/>',
   },
   {
     id: "shop",
-    label: "Shop",
+    get label() { return t("Shop"); },
     path: '<path d="M6 8h12l1 13H5L6 8ZM9 9V6a3 3 0 0 1 6 0v3"/>',
   },
   {
     id: "sports",
-    label: "Sports",
+    get label() { return t("Sports"); },
     path: '<svg height="200px" width="200px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 330 330" xml:space="preserve"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path id="XMLID_852_" d="M330,164.994L330,164.994c0-44.072-17.161-85.505-48.324-116.667C250.511,17.163,209.076,0,165,0l0,0l0,0 h-0.001C74.019,0.004,0.001,74.02,0,164.994v0l0,0c0,0.001,0,0.001,0,0.001c0.003,44.075,17.167,85.512,48.331,116.678 C79.496,312.838,120.922,330,164.989,330c0.002,0,0.008,0,0.011,0c90.981,0,165-74.02,165-165.002 C330,164.997,330,164.996,330,164.994L330,164.994z M273.227,245.609c-26.071-22.643-58.829-36.634-93.227-39.81v-25.805h119.163 C296.452,204.406,287.214,226.877,273.227,245.609z M30.83,179.994H150v25.805c-34.419,3.178-67.196,17.189-93.276,39.86 C42.354,226.453,33.459,203.919,30.83,179.994z M56.776,84.387c26.071,22.645,58.829,36.636,93.224,39.813v25.795H30.838 C33.549,125.585,42.788,103.117,56.776,84.387z M180,30.829c26.954,2.961,52.142,13.875,72.793,31.607 C232.169,80.22,207.056,91.136,180,94.085V30.829z M150,94.084c-27.029-2.946-52.12-13.845-72.733-31.601 C97.303,45.313,122.41,33.904,150,30.838V94.084z M150,235.914v63.258c-26.949-2.96-52.137-13.875-72.787-31.609 C97.836,249.779,122.947,238.862,150,235.914z M180,235.914c27.032,2.946,52.124,13.845,72.737,31.601 c-20.037,17.173-45.145,28.583-72.737,31.648V235.914z M180,149.994v-25.795c34.422-3.178,67.203-17.189,93.283-39.861 c14.367,19.203,23.261,41.734,25.888,65.656H180z"></path> </g></svg>',
   },
 ] as const;
@@ -133,12 +134,12 @@ function isFavoritePlace(value: unknown): value is FavoritePlace {
 export function favoritePlacesFromUnknown(value: unknown): FavoritePlace[] {
   return Array.isArray(value)
     ? value
-        .filter(isFavoritePlace)
-        .map((place) => ({
-          ...place,
-          name: place.name === undefined ? "Saved place" : place.name,
-          icon: place.icon ?? "star",
-        }))
+      .filter(isFavoritePlace)
+      .map((place) => ({
+        ...place,
+        name: place.name === undefined ? t("Saved place") : place.name,
+        icon: place.icon ?? "star",
+      }))
     : [];
 }
 
@@ -300,11 +301,11 @@ export async function fetchFavoritePlaceName(
     `https://nominatim.openstreetmap.org/reverse?${query}`,
     {
       signal,
-      headers: { "Accept-Language": navigator.language || "en" },
+      headers: { "Accept-Language": currentLanguage() },
     },
   );
   if (!response.ok)
-    throw new Error(`Saved place lookup failed (${response.status})`);
+    throw new Error(t("Saved place lookup failed ({{value0}})", { value0: response.status }));
   return favoritePlaceNameFromReverseGeocode(
     (await response.json()) as ReverseGeocodeResult,
   );

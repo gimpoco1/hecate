@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { movementBearing } from "./routeCamera";
 import type { PlannedRoute, RoutePoint } from "./explorationRouting";
 import { advanceRouteProgress } from "./routeProgress";
@@ -31,7 +32,7 @@ export function deviatingNavigationPlayback(route: PlannedRoute): NavigationPlay
   });
   const deviations = candidates.map((point) => ({ point, separation: advanceRouteProgress(geometry, point, progress).distanceFromRouteM }));
   const farthest = deviations.reduce((best, candidate) => candidate.separation > best.separation ? candidate : best);
-  if (farthest.separation <= 50) throw new RangeError("The sample route has no clear off-route position within 200 m.");
+  if (farthest.separation <= 50) throw new RangeError(t("The sample route has no clear off-route position within 200 m."));
   const points = [route.points[0], ...geometry.segments.filter(({ endKm }) => endKm < departureKm).map(({ end }) => end), departure, farthest.point];
   return { points, durationSeconds: prepareRouteGeometry(points).distanceKm * 1000 / 1.4 };
 }

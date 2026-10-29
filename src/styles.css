@@ -4036,6 +4036,32 @@ button {
 .account-settings-link > svg {
   color: var(--theme-text-muted, #6e7b74);
 }
+.sync-language-setting { margin-bottom: 18px; }
+.sync-language-setting .account-settings-link { margin-top: 0; }
+.language-options {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0;
+  padding: 0;
+  border: 0;
+}
+.sheet .language-options > label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), 0.14);
+  border-radius: 14px;
+  color: var(--forest);
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.language-options > label:has(input:checked) { background: var(--theme-surface-alt, #eef1e8); border-color: var(--forest); }
+.language-options > label:has(input:focus-visible) { outline: 2px solid var(--forest); outline-offset: 3px; }
+.language-options input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; accent-color: var(--forest); }
+
 .gpx-import-sheet__content {
   flex: 1;
   display: flex;
@@ -4811,7 +4837,7 @@ button {
 .leaderboard-header nav > span {
   color: var(--forest);
 }
-.leaderboard-header nav button,
+.leaderboard-header .leaderboard-account-button,
 .leaderboard-primary-button,
 .leaderboard-empty button {
   border: 0;
@@ -4828,6 +4854,28 @@ button {
   font-weight: 700;
   cursor: pointer;
 }
+.leaderboard-language-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), 0.18);
+  border-radius: 999px;
+  background: var(--theme-surface, #f7f8f3);
+  color: var(--forest);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.leaderboard-language-button:hover { background: var(--theme-surface-alt, #eef1e8); }
+.leaderboard-language-button:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
+.leaderboard-language-button > svg { flex-shrink: 0; }
+.leaderboard-language-button > svg:last-child { transform: rotate(90deg); }
+.leaderboard-language-button__code { display: none; }
+
 .leaderboard-hero {
   width: min(900px, calc(100% - 48px));
   margin: 0 auto;
@@ -4862,6 +4910,7 @@ button {
   }
 }
 .leaderboard-hero h1 {
+  text-wrap: balance;
   margin: 23px 0 17px;
   color: var(--theme-text-accent, #15372b);
   font:
@@ -6212,11 +6261,15 @@ button {
     display: none;
   }
   .leaderboard-header nav {
-    gap: 0;
+    gap: 8px;
   }
-  .leaderboard-header nav button {
+  .leaderboard-header .leaderboard-account-button {
     padding: 10px 13px;
   }
+  .leaderboard-language-button__name { display: none; }
+  .leaderboard-language-button__code { display: inline; }
+  .leaderboard-language-button { gap: 5px; padding: 9px; }
+
   .leaderboard-hero {
     width: calc(100% - 32px);
     padding: 62px 0 46px;

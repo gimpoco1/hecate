@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export type CityMilestoneTier = {
   id: "first-footprint" | "pathfinder" | "city-cartographer";
   title: string;
@@ -41,21 +42,21 @@ export type WorldMilestoneTier = {
 export const CITY_MILESTONE_TIERS: readonly CityMilestoneTier[] = [
   {
     id: "first-footprint",
-    title: "First Footprint",
+    get title() { return t("First Footprint"); },
     image: "/achievements/first-footprint.png",
     thresholdKm: 5,
     level: 1,
   },
   {
     id: "pathfinder",
-    title: "Pathfinder",
+    get title() { return t("Pathfinder"); },
     image: "/achievements/pathfinder.png",
     thresholdKm: 25,
     level: 2,
   },
   {
     id: "city-cartographer",
-    title: "City Cartographer",
+    get title() { return t("City Cartographer"); },
     image: "/achievements/city-cartographer.png",
     thresholdKm: 100,
     level: 3,
@@ -63,48 +64,48 @@ export const CITY_MILESTONE_TIERS: readonly CityMilestoneTier[] = [
 ];
 
 export const WORLD_MILESTONE_TIERS: readonly WorldMilestoneTier[] = [
-  { id: "first-step", title: "First Step", thresholdKm: 0, icon: "step" },
-  { id: "wayfinder", title: "Wayfinder", thresholdKm: 5, icon: "map" },
+  { id: "first-step", get title() { return t("First Step"); }, thresholdKm: 0, icon: "step" },
+  { id: "wayfinder", get title() { return t("Wayfinder"); }, thresholdKm: 5, icon: "map" },
   {
     id: "neighbourhood-pioneer",
-    title: "Neighbourhood Pioneer",
+    get title() { return t("Neighbourhood Pioneer"); },
     thresholdKm: 15,
     icon: "home",
   },
-  { id: "marathon", title: "Marathon", thresholdKm: 42.2, icon: "run" },
+  { id: "marathon", get title() { return t("Marathon"); }, thresholdKm: 42.2, icon: "run" },
   {
     id: "edge-of-space",
-    title: "Edge of Space",
+    get title() { return t("Edge of Space"); },
     thresholdKm: 100,
     icon: "plane",
   },
   {
     id: "space-station",
-    title: "Space Station",
+    get title() { return t("Space Station"); },
     thresholdKm: 408,
     icon: "signal",
   },
   {
     id: "across-the-moon",
-    title: "Across the Moon",
+    get title() { return t("Across the Moon"); },
     thresholdKm: 3_476,
     icon: "moon",
   },
   {
     id: "through-the-earth",
-    title: "Through the Earth",
+    get title() { return t("Through the Earth"); },
     thresholdKm: 12_742,
     icon: "earth-depth",
   },
   {
     id: "around-the-world",
-    title: "Around the World",
+    get title() { return t("Around the World"); },
     thresholdKm: 40_075,
     icon: "globe",
   },
   {
     id: "to-the-moon",
-    title: "To the Moon",
+    get title() { return t("To the Moon"); },
     thresholdKm: 384_400,
     icon: "moon-stars",
   },

@@ -31,6 +31,7 @@
 		A2C4E7A12DB6000100A2C4E7 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C4E7A02DB6000100A2C4E7 /* SceneDelegate.swift */; };
 		B0CF8717134E5F788E967348 /* JourneyActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5CB8A6015E59759735FC04E /* JourneyActivityPlugin.swift */; };
 		C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */; };
+		D2A7006CED384ED9936ED14A /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A7AF39972CCD41DEBB584977 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,6 +86,11 @@
 		D5CB8A6015E59759735FC04E /* JourneyActivityPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JourneyActivityPlugin.swift; sourceTree = "<group>"; };
 		E00F3B7A2ED0D907F987B2A6 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
+		6E6B6E2E68B1407FAC1A5F40 /* en */ = {isa = PBXFileReference; name = en; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; includeInIndex = 0; };
+		5975612D4E7F480D94192A58 /* es */ = {isa = PBXFileReference; name = es; path = "es.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; includeInIndex = 0; };
+		2F453E42980A45DD81D8542C /* it */ = {isa = PBXFileReference; name = it; path = "it.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; includeInIndex = 0; };
+		8AE635971A3B459F98BB8300 /* hr */ = {isa = PBXFileReference; name = hr; path = "hr.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; includeInIndex = 0; };
+		3C4B52E479F24869861A6702 /* pt */ = {isa = PBXFileReference; name = pt; path = "pt.lproj/InfoPlist.strings"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = text.plist.strings; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -167,6 +173,7 @@
 				CE2600290000000000000002 /* GoogleSignInPlugin.swift */,
 				CE2600290000000000000004 /* GoogleAuthCallback.swift */,
 				47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */,
+				A7AF39972CCD41DEBB584977 /* InfoPlist.strings */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -262,6 +269,10 @@
 			knownRegions = (
 				en,
 				Base,
+				es,
+				it,
+				hr,
+				pt,
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
@@ -285,6 +296,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				D2A7006CED384ED9936ED14A /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -389,6 +401,18 @@
 				504EC3111FED79650016851F /* Base */,
 			);
 			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+		A7AF39972CCD41DEBB584977 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				6E6B6E2E68B1407FAC1A5F40 /* en */,
+				5975612D4E7F480D94192A58 /* es */,
+				2F453E42980A45DD81D8542C /* it */,
+				8AE635971A3B459F98BB8300 /* hr */,
+				3C4B52E479F24869861A6702 /* pt */,
+			);
+			name = InfoPlist.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */

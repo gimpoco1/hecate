@@ -1,3 +1,4 @@
+import { t, useAppTranslation } from "../i18n";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { simulationHeading, simulationPosition, type NavigationPlayback } from "../navigationSimulation";
 import { prepareRouteGeometry } from "../routeGeometry";
@@ -6,6 +7,7 @@ import type { Coordinate } from "../types";
 type Props = { route: NavigationPlayback; waitingForRoute: boolean; onFix: (point: Coordinate) => void; onStop: () => void; panelRef: RefObject<HTMLElement | null> };
 
 export function NavigationSimulation({ route, waitingForRoute, onFix, onStop, panelRef }: Props) {
+  useAppTranslation();
   const geometry = useMemo(() => prepareRouteGeometry(route.points), [route]);
   const elapsedRef = useRef(0);
   const [paused, setPaused] = useState(false);
@@ -38,13 +40,13 @@ export function NavigationSimulation({ route, waitingForRoute, onFix, onStop, pa
       document.removeEventListener("visibilitychange", resetClock);
     };
   }, [onFix, paused, route.durationSeconds, geometry, speed, waitingForRoute]);
-  return <section ref={panelRef} className="navigation-simulation" aria-label="Navigation preview">
-    <strong>{progress >= 1 ? "Preview complete" : "Navigation preview"}</strong>
-    <small>Simulated GPS · no journey or progress saved</small>
+  return <section ref={panelRef} className="navigation-simulation" aria-label={t("Navigation preview")}>
+    <strong>{progress >= 1 ? t("Preview complete") : t("Navigation preview")}</strong>
+    <small>{t("Simulated GPS · no journey or progress saved")}</small>
     <div>
-      <button type="button" aria-label={paused ? "Resume navigation preview" : "Pause navigation preview"} disabled={progress >= 1} onClick={() => setPaused(!paused)}>{paused ? "Resume" : "Pause"}</button>
-      <label>Speed <select aria-label="Navigation preview speed" value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>{[5, 10, 15, 20, 25].map((value) => <option key={value} value={value}>{value}×</option>)}</select></label>
-      <button type="button" aria-label="Stop navigation preview" onClick={onStop}>Stop preview</button>
+      <button type="button" aria-label={paused ? t("Resume navigation preview") : t("Pause navigation preview")} disabled={progress >= 1} onClick={() => setPaused(!paused)}>{paused ? t("Resume") : t("Pause")}</button>
+      <label>{t("Speed")} <select aria-label={t("Navigation preview speed")} value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>{[5, 10, 15, 20, 25].map((value) => <option key={value} value={value}>{value}×</option>)}</select></label>
+      <button type="button" aria-label={t("Stop navigation preview")} onClick={onStop}>{t("Stop preview")}</button>
     </div>
   </section>;
 }

@@ -1,8 +1,9 @@
+import { t, useAppTranslation } from "../i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { PersonalAchievementDefinition } from "../achievements";
 import { AchievementArtwork } from "./AchievementArtwork";
 
-const categoryLabels: Record<PersonalAchievementDefinition["category"], string> = {
+const categoryLabels: Record<PersonalAchievementDefinition["category"], "One-walk challenge" | "Consistency challenge" | "Places challenge"> = {
   "single-walk": "One-walk challenge",
   consistency: "Consistency challenge",
   places: "Places challenge",
@@ -33,7 +34,7 @@ export function AchievementCard({
   achievement,
   earned = true,
   progress = 1,
-  progressLabel = "Achievement unlocked",
+  progressLabel = t("Achievement unlocked"),
   compact = false,
 }: {
   achievement: PersonalAchievementDefinition;
@@ -42,10 +43,11 @@ export function AchievementCard({
   progressLabel?: string;
   compact?: boolean;
 }) {
+  useAppTranslation();
   const [flipped, setFlipped] = useState(false);
   const innerRef = useRef<HTMLSpanElement>(null);
   const mountedRef = useRef(false);
-  const status = earned ? "Earned" : progressLabel;
+  const status = earned ? t("achievement.earned") : progressLabel;
 
   useLayoutEffect(() => {
     if (!mountedRef.current) {
@@ -65,7 +67,7 @@ export function AchievementCard({
       data-category={achievement.category}
       data-achievement={achievement.id}
       aria-pressed={flipped}
-      aria-label={`${achievement.title}. ${achievement.description} ${status}. Activate to ${flipped ? "show the badge artwork" : "read the achievement details"}.`}
+      aria-label={t("achievement.cardLabel", { title: achievement.title, description: achievement.description, status, action: t(flipped ? "achievement.showArtwork" : "achievement.readDetails") })}
       onClick={() => setFlipped((current) => !current)}
     >
       <span ref={innerRef} className="achievement-card__inner" aria-hidden="true">
@@ -82,13 +84,13 @@ export function AchievementCard({
         </span>
         <span className="achievement-card__face achievement-card__back">
           <span className="achievement-card__category">
-            {categoryLabels[achievement.category]}
+            {t(categoryLabels[achievement.category])}
           </span>
           <strong>{achievement.title}</strong>
           <span className="achievement-card__description">
             {achievement.description}
           </span>
-          <small>{earned ? "Achievement unlocked" : progressLabel}</small>
+          <small>{earned ? t("Achievement unlocked") : progressLabel}</small>
           {!earned && (
             <span className="achievement-card__progress">
               <span style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%` }} />

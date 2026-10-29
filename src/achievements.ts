@@ -1,3 +1,4 @@
+import { t, type TranslationKey } from "./i18n";
 import { cityPointPredicate, type CityBoundary } from "./city.ts";
 import {
   discoveryJourneyMetricsByRegion,
@@ -37,61 +38,57 @@ export type PersonalAchievementDefinition = {
 export const PERSONAL_ACHIEVEMENTS: readonly PersonalAchievementDefinition[] = [
   {
     id: "the-long-way",
-    title: "The Long Way",
-    description: "Add 8 km of new places to your map during one walk.",
+    get title() { return t("The Long Way"); },
+    get description() { return t("Add 8 km of new places to your map during one walk."); },
     image: "/achievements/the-long-way.png",
     category: "single-walk",
   },
   {
     id: "mostly-uncharted",
-    title: "Mostly Uncharted",
-    description:
-      "Walk 5 km in one go, with at least 80% in places that are new to your map.",
+    get title() { return t("Mostly Uncharted"); },
+    get description() { return t("Walk 5 km in one go, with at least 80% in places that are new to your map."); },
     image: "/achievements/mostly-uncharted.png",
     category: "single-walk",
   },
   {
     id: "full-circle",
-    title: "Full Circle",
-    description:
-      "In one walk, travel 5 km, add 2 km to your map, and finish within 200 m of your start.",
+    get title() { return t("Full Circle"); },
+    get description() { return t("In one walk, travel 5 km, add 2 km to your map, and finish within 200 m of your start."); },
     image: "/achievements/full-circle.png",
     category: "single-walk",
   },
   {
     id: "three-day-spark",
-    title: "Three-Day Spark",
-    description: "Add at least 500 m to your map each day for 3 days in a row.",
+    get title() { return t("Three-Day Spark"); },
+    get description() { return t("Add at least 500 m to your map each day for 3 days in a row."); },
     image: "/achievements/three-day-spark.png",
     category: "consistency",
   },
   {
     id: "momentum",
-    title: "Momentum",
-    description: "Add at least 500 m to your map on 7 different days within 2 weeks.",
+    get title() { return t("Momentum"); },
+    get description() { return t("Add at least 500 m to your map on 7 different days within 2 weeks."); },
     image: "/achievements/momentum.png",
     category: "consistency",
   },
   {
     id: "local-ritual",
-    title: "Local Ritual",
-    description:
-      "In the same city, add at least 500 m to your map on 10 different days.",
+    get title() { return t("Local Ritual"); },
+    get description() { return t("In the same city, add at least 500 m to your map on 10 different days."); },
     image: "/achievements/local-ritual.png",
     category: "places",
   },
   {
     id: "city-hopper",
-    title: "City Hopper",
-    description: "Add at least 2 km to your map in each of 5 different cities.",
+    get title() { return t("City Hopper"); },
+    get description() { return t("Add at least 2 km to your map in each of 5 different cities."); },
     image: "/achievements/city-hopper.png",
     category: "places",
   },
   {
     id: "against-the-familiar",
-    title: "Against the Familiar",
-    description:
-      "In one 8 km walk, add 3 km to your map while at least half the route follows places already on your map.",
+    get title() { return t("Against the Familiar"); },
+    get description() { return t("In one 8 km walk, add 3 km to your map while at least half the route follows places already on your map."); },
     image: "/achievements/against-the-familiar.png",
     category: "single-walk",
   },
@@ -106,6 +103,7 @@ export type AchievementEvaluation = {
   earned: boolean;
   progress: number;
   progressLabel: string;
+  progressText: { key: TranslationKey; values: Record<string, string | number> };
 };
 
 export type AchievementCityDistance = {
@@ -242,11 +240,11 @@ export function evaluateAchievementsInTimeZone(
     },
   );
 
-  const states: Record<PersonalAchievementId, Omit<AchievementEvaluation, "definition">> = {
+  const states: Record<PersonalAchievementId, Omit<AchievementEvaluation, "definition" | "progressLabel">> = {
     "the-long-way": {
       earned: longestNewWalk >= 8,
       progress: Math.min(1, longestNewWalk / 8),
-      progressLabel: `${Math.min(longestNewWalk, 8).toFixed(1)} of 8 km added in one walk`,
+      progressText: { key: "{{value0, number(minimumFractionDigits:1; maximumFractionDigits:1; useGrouping:false)}} of 8 km added in one walk", values: { value0: Math.min(longestNewWalk, 8) } },
     },
     "mostly-uncharted": {
       earned: Boolean(
@@ -255,34 +253,32 @@ export function evaluateAchievementsInTimeZone(
           && bestUncharted.ratio >= 0.8,
       ),
       progress: Math.min(1, bestUncharted.progress),
-      progressLabel: bestUncharted.journey
-        ? `${Math.round(bestUncharted.ratio * 100)}% new on a ${bestUncharted.journey.travelledKm.toFixed(1)} km walk`
-        : "No completed walks yet",
+      progressText: bestUncharted.journey ? { key: "{{value0}}% new on a {{value1, number(minimumFractionDigits:1; maximumFractionDigits:1; useGrouping:false)}} km walk", values: { value0: Math.round(bestUncharted.ratio * 100), value1: bestUncharted.journey.travelledKm } } : { key: "No completed walks yet", values: {} },
     },
     "full-circle": {
       earned: fullCircle === 3,
       progress: fullCircle / 3,
-      progressLabel: `${fullCircle} of 3 walk goals complete`,
+      progressText: { key: "{{value0}} of 3 walk goals complete", values: { value0: fullCircle } },
     },
     "three-day-spark": {
       earned: consecutiveDays >= 3,
       progress: Math.min(1, consecutiveDays / 3),
-      progressLabel: `${Math.min(consecutiveDays, 3)} of 3 days in a row`,
+      progressText: { key: "{{value0}} of 3 days in a row", values: { value0: Math.min(consecutiveDays, 3) } },
     },
     momentum: {
       earned: momentumDays >= 7,
       progress: Math.min(1, momentumDays / 7),
-      progressLabel: `${Math.min(momentumDays, 7)} of 7 days within 2 weeks`,
+      progressText: { key: "{{value0}} of 7 days within 2 weeks", values: { value0: Math.min(momentumDays, 7) } },
     },
     "local-ritual": {
       earned: localRitualDays >= 10,
       progress: Math.min(1, localRitualDays / 10),
-      progressLabel: `${Math.min(localRitualDays, 10)} of 10 days in one city`,
+      progressText: { key: "{{value0}} of 10 days in one city", values: { value0: Math.min(localRitualDays, 10) } },
     },
     "city-hopper": {
       earned: qualifyingCities >= 5,
       progress: Math.min(1, qualifyingCities / 5),
-      progressLabel: `${Math.min(qualifyingCities, 5)} of 5 cities at 2 km`,
+      progressText: { key: "{{value0}} of 5 cities at 2 km", values: { value0: Math.min(qualifyingCities, 5) } },
     },
     "against-the-familiar": {
       earned: Boolean(
@@ -292,15 +288,14 @@ export function evaluateAchievementsInTimeZone(
           && againstFamiliar.familiarRatio >= 0.5,
       ),
       progress: Math.min(1, againstFamiliar.progress),
-      progressLabel: againstFamiliar.journey
-        ? `${againstFamiliar.journey.newGroundKm.toFixed(1)} km new · ${Math.round(againstFamiliar.familiarRatio * 100)}% familiar`
-        : "No completed walks yet",
+      progressText: againstFamiliar.journey ? { key: "{{value0, number(minimumFractionDigits:1; maximumFractionDigits:1; useGrouping:false)}} km new · {{value1}}% familiar", values: { value0: againstFamiliar.journey.newGroundKm, value1: Math.round(againstFamiliar.familiarRatio * 100) } } : { key: "No completed walks yet", values: {} },
     },
   };
 
   return PERSONAL_ACHIEVEMENTS.map((definition) => ({
     definition,
     ...states[definition.id],
+    get progressLabel() { const text = states[definition.id].progressText; return t(text.key, text.values); },
   }));
 }
 

@@ -1,4 +1,5 @@
-import { errorDiagnostic } from './diagnostics'
+import { t } from "./i18n";
+import { errorDiagnostic } from "./diagnostics";
 import { useSyncExternalStore } from "react";
 import { Capacitor, SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { Keyboard, KeyboardStyle } from "@capacitor/keyboard";
@@ -14,7 +15,7 @@ let initialized = false;
 export function parseAppearancePreference(value: string | null): AppearancePreference {
   if (value === null || value === "system") return "system";
   if (value === "light" || value === "dark") return value;
-  throw new TypeError(`Invalid saved appearance preference: ${value}`);
+  throw new TypeError(t("Invalid saved appearance preference: {{value0}}", { value0: value }));
 }
 
 export function resolveColorTheme(preference: AppearancePreference, systemDark: boolean): ColorTheme {

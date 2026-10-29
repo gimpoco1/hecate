@@ -88,11 +88,11 @@ export async function syncAchievementUnlocks(
   const rows = (data ?? []).flatMap((row) =>
     isPersonalAchievementId(row.achievement_id)
       ? [
-          {
-            achievementId: row.achievement_id,
-            acknowledged: typeof row.acknowledged_at === "string",
-          },
-        ]
+        {
+          achievementId: row.achievement_id,
+          acknowledged: typeof row.acknowledged_at === "string",
+        },
+      ]
       : [],
   );
   const currentlyEarnedSet = new Set(currentlyEarned);
@@ -150,8 +150,8 @@ export async function syncAchievementUnlocks(
   const locallyAcknowledged = new Set(
     localBeforeReconcile
       ? localBeforeReconcile.earned.filter(
-          (id) => !localBeforeReconcile.pending.includes(id),
-        )
+        (id) => !localBeforeReconcile.pending.includes(id),
+      )
       : [],
   );
   const acknowledgementsToSync = rows

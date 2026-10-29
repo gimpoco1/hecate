@@ -1,3 +1,4 @@
+import { t, useAppTranslation, currentLanguage } from "../i18n";
 import {
   mdiAccessPoint,
   mdiAirplane,
@@ -25,6 +26,7 @@ type WorldMilestoneIconProps = {
 };
 
 export function WorldMilestoneIcon({ icon }: WorldMilestoneIconProps) {
+  useAppTranslation();
   const paths: Record<WorldMilestoneTier["icon"], string> = {
     step: mdiWalk,
     map: mdiMapOutline,
@@ -46,14 +48,14 @@ export function WorldMilestoneIcon({ icon }: WorldMilestoneIconProps) {
 
 function formatWorldMilestoneDistance(distanceKm: number): string {
   const fractionDigits = Number.isInteger(distanceKm) ? 0 : 1;
-  return `${distanceKm.toLocaleString(undefined, {
+  return `${distanceKm.toLocaleString(currentLanguage(), {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   })} km`;
 }
 
 function formatWalkingStatDistance(distanceKm: number): string {
-  return `${distanceKm.toLocaleString(undefined, {
+  return `${distanceKm.toLocaleString(currentLanguage(), {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })} km`;
@@ -61,7 +63,7 @@ function formatWalkingStatDistance(distanceKm: number): string {
 
 function formatWalkingStatDate(timestamp: number | null): string {
   if (timestamp === null) return "—";
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(currentLanguage(), {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -69,7 +71,7 @@ function formatWalkingStatDate(timestamp: number | null): string {
 }
 
 function formatStreak(days: number): string {
-  return `${days} ${days === 1 ? "day" : "days"}`;
+  return t("day", { count: days });
 }
 
 type WorldMilestonesProps = {
@@ -77,6 +79,7 @@ type WorldMilestonesProps = {
 };
 
 export function WorldMilestones({ travelledKm }: WorldMilestonesProps) {
+  useAppTranslation();
   const current = currentWorldMilestone(travelledKm);
   const next = nextWorldMilestone(travelledKm);
   const remainingKm = next ? Math.max(0, next.thresholdKm - travelledKm) : 0;
@@ -84,8 +87,8 @@ export function WorldMilestones({ travelledKm }: WorldMilestonesProps) {
   return (
     <section className="world-milestones" aria-labelledby="world-milestones-title">
       <div className="world-milestones__heading">
-        <span id="world-milestones-title">Global milestones</span>
-        <small>{formatWorldMilestoneDistance(travelledKm)} travelled</small>
+        <span id="world-milestones-title">{t("Global milestones")}</span>
+        <small>{t("{{value0}} travelled", { value0: formatWorldMilestoneDistance(travelledKm) })}</small>
       </div>
       <ol>
         {WORLD_MILESTONE_TIERS.map((tier) => {
@@ -108,9 +111,7 @@ export function WorldMilestones({ travelledKm }: WorldMilestonesProps) {
                 <small>{formatWorldMilestoneDistance(tier.thresholdKm)}</small>
               </span>
               {isCurrent && next && (
-                <small className="world-milestones__remaining">
-                  {formatWorldMilestoneDistance(remainingKm)} to go
-                </small>
+                <small className="world-milestones__remaining">{t("{{value0}} to go", { value0: formatWorldMilestoneDistance(remainingKm) })}</small>
               )}
             </li>
           );
@@ -149,6 +150,7 @@ export function WalkingStatsOverview({
   walkingStats,
   discoveredCityCount,
 }: WalkingStatsOverviewProps) {
+  useAppTranslation();
   const current = currentWorldMilestone(travelledKm);
   const next = nextWorldMilestone(travelledKm);
   const level = WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === current.id) + 1;
@@ -156,7 +158,7 @@ export function WalkingStatsOverview({
   const progress = worldMilestoneProgress(travelledKm);
 
   return (
-    <section className="walking-stats-overview" aria-label="Walking overview">
+    <section className="walking-stats-overview" aria-label={t("Walking overview")}>
       <div className="walking-stats-overview__header">
         <div className="walking-stats-overview__rank">
           <span className="walking-stats-overview__icon" aria-hidden="true">
@@ -164,19 +166,19 @@ export function WalkingStatsOverview({
           </span>
           <span>
             <span>
-              <small>Lv. {level}</small>
+              <small>{t("Lv. {{value0}}", { value0: level })}</small>
               <strong>{current.title}</strong>
             </span>
             <small>
               {next
-                ? `${formatWalkingStatDistance(remainingKm)} to the next rank`
-                : "All global ranks complete"}
+                ? t("{{value0}} to the next rank", { value0: formatWalkingStatDistance(remainingKm) })
+                : t("All global ranks complete")}
             </small>
           </span>
         </div>
         <div className="walking-stats-overview__hero">
           <strong>{formatWalkingStatDistance(discoveryDistance)}</strong>
-          <small>New ground</small>
+          <small>{t("New ground")}</small>
         </div>
       </div>
       <div className="walking-stats-overview__progress" aria-hidden="true">
@@ -185,15 +187,15 @@ export function WalkingStatsOverview({
       <div className="walking-stats-overview__metrics">
         <span>
           <strong>{formatWalkingStatDistance(travelledKm)}</strong>
-          <small>Travelled</small>
+          <small>{t("Travelled")}</small>
         </span>
         <span>
           <strong>{walkingStats.walkCount}</strong>
-          <small>{walkingStats.walkCount === 1 ? "Walk" : "Walks"}</small>
+          <small>{t("walkLabel", { count: walkingStats.walkCount })}</small>
         </span>
         <span>
           <strong>{discoveredCityCount}</strong>
-          <small>{discoveredCityCount === 1 ? "City" : "Cities"}</small>
+          <small>{t("cityLabel", { count: discoveredCityCount })}</small>
         </span>
       </div>
     </section>
@@ -204,31 +206,32 @@ export function WalkingPersonalBests({
   walkingStats,
   headingId,
 }: WalkingPersonalBestsProps) {
+  useAppTranslation();
   return (
     <section className="walking-personal-bests" aria-labelledby={headingId}>
-      <h3 id={headingId}>Personal bests</h3>
+      <h3 id={headingId}>{t("Personal bests")}</h3>
       <dl>
         <div>
-          <dt>Longest walk</dt>
+          <dt>{t("Longest walk")}</dt>
           <dd>
             <strong>{formatWalkingStatDistance(walkingStats.longestWalkKm)}</strong>
             <small>{formatWalkingStatDate(walkingStats.longestWalkFinishedAt)}</small>
           </dd>
         </div>
         <div>
-          <dt>Average per walk</dt>
+          <dt>{t("Average per walk")}</dt>
           <dd>{formatWalkingStatDistance(walkingStats.averageWalkKm)}</dd>
         </div>
         <div>
-          <dt>Current streak</dt>
+          <dt>{t("Current streak")}</dt>
           <dd>{formatStreak(walkingStats.currentStreakDays)}</dd>
         </div>
         <div>
-          <dt>Best streak</dt>
+          <dt>{t("Best streak")}</dt>
           <dd>{formatStreak(walkingStats.bestStreakDays)}</dd>
         </div>
         <div>
-          <dt>First walk</dt>
+          <dt>{t("First walk")}</dt>
           <dd>{formatWalkingStatDate(walkingStats.firstWalkAt)}</dd>
         </div>
       </dl>
@@ -246,6 +249,7 @@ export function GlobalMilestonesSheet({
   onBack,
   onClose,
 }: GlobalMilestonesSheetProps) {
+  useAppTranslation();
   if (!open) return null;
 
   return (
@@ -269,13 +273,13 @@ export function GlobalMilestonesSheet({
           className="icon-button sheet__close"
           type="button"
           onClick={onClose}
-          aria-label="Close walking stats"
+          aria-label={t("Close walking stats")}
         >
           <XIcon />
         </button>
-        <div className="eyebrow">Your activity</div>
-        <h2 id="walking-stats-title">Walking stats</h2>
-        <p>Your recorded journeys, personal bests, and worldwide progress.</p>
+        <div className="eyebrow">{t("Your activity")}</div>
+        <h2 id="walking-stats-title">{t("Walking stats")}</h2>
+        <p>{t("Your recorded journeys, personal bests, and worldwide progress.")}</p>
         <WalkingStatsOverview
           discoveryDistance={discoveryDistance}
           travelledKm={travelledKm}

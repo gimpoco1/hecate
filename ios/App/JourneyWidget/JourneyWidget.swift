@@ -15,11 +15,11 @@ struct JourneyControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.gimpoco.hecate.journey-control") {
             ControlWidgetButton(action: JourneyControlIntent()) {
-                Label("Hecate journey", systemImage: "figure.walk")
+                Label(JourneyLocalization.text("Hecate journey", language: nil), systemImage: "figure.walk")
             }
         }
-        .displayName("Hecate journey")
-        .description("Open Hecate to start or stop a journey.")
+        .displayName(LocalizedStringResource(stringLiteral: JourneyLocalization.text("Hecate journey", language: nil)))
+        .description(LocalizedStringResource(stringLiteral: JourneyLocalization.text("Open Hecate to start or stop a journey.", language: nil)))
     }
 }
 
@@ -35,19 +35,19 @@ struct JourneyWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
                         JourneyIslandMark()
-                        Text(context.state.finishedAt == nil ? (context.isStale ? "Open Hecate to refresh" : "Exploring") : "Journey complete")
+                        Text(context.state.finishedAt == nil ? (context.isStale ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language) : JourneyLocalization.text("Exploring", language: context.state.language)) : JourneyLocalization.text("Journey complete", language: context.state.language))
                     }
                         .font(.caption.bold())
                         .foregroundStyle(JourneyPalette.lime)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if context.state.finishedAt == nil {
-                        StopJourneyButton(walkId: context.attributes.walkId)
+                        StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let turn = activeNavigation(context) { JourneyTurnRow(turn: turn) }
+                        if let turn = activeNavigation(context) { JourneyTurnRow(turn: turn, language: context.state.language) }
                         JourneyMetrics(context: context)
                     }
                         .foregroundStyle(.white)
@@ -124,11 +124,12 @@ private func activeNavigation(_ context: ActivityViewContext<JourneyActivityAttr
 
 private struct JourneyTurnRow: View {
     let turn: JourneyNavigation
+    let language: String?
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: turn.symbol.systemImage).font(.title2.bold()).frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(turn.distanceMeters <= 10 ? (turn.symbol == .arrive ? "Arrived" : "Now") : "In \(distanceLabel(turn.distanceMeters / 1000))")
+                Text(turn.distanceMeters <= 10 ? (turn.symbol == .arrive ? JourneyLocalization.text("Arrived", language: language) : JourneyLocalization.text("Now", language: language)) : JourneyLocalization.text("In {{value0}}", language: language).replacingOccurrences(of: "{{value0}}", with: distanceLabel(turn.distanceMeters / 1000)))
                     .font(.headline).monospacedDigit()
                 Text(turn.instruction).font(.caption).lineLimit(2)
             }
@@ -150,18 +151,18 @@ private struct JourneyPanel: View {
                 HStack(spacing: 6) {
                     HecateJourneyMark().frame(width: 28, height: 28)
                         .background(JourneyPalette.paper, in: Circle())
-                    Text(context.state.finishedAt == nil ? (context.isStale ? "OPEN HECATE TO REFRESH" : "EXPLORING…") : "JOURNEY COMPLETE")
+                    Text(context.state.finishedAt == nil ? (context.isStale ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language).uppercased() : JourneyLocalization.text("Exploring…", language: context.state.language).uppercased()) : JourneyLocalization.text("Journey complete", language: context.state.language).uppercased())
                         .font(.caption.bold())
                         .foregroundStyle(JourneyPalette.foreground(scheme))
                 }
                 if let turn = activeNavigation(context) {
-                    JourneyTurnRow(turn: turn).foregroundStyle(JourneyPalette.foreground(scheme))
+                    JourneyTurnRow(turn: turn, language: context.state.language).foregroundStyle(JourneyPalette.foreground(scheme))
                 }
                 JourneyMetrics(context: context)
                     .foregroundStyle(JourneyPalette.foreground(scheme))
             }
             if context.state.finishedAt == nil {
-                StopJourneyButton(walkId: context.attributes.walkId)
+                StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
             } else {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title)
@@ -213,15 +214,16 @@ private struct JourneyIslandMark: View {
 
 private struct StopJourneyButton: View {
     let walkId: String
+    let language: String?
 
     var body: some View {
         if #available(iOS 17.0, *) {
             Button(intent: StopJourneyIntent(walkId: walkId)) { icon }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Stop journey")
+                .accessibilityLabel(JourneyLocalization.text("Stop journey", language: language))
         } else {
             Link(destination: journeyURL(walkId, action: "stop")) { icon }
-                .accessibilityLabel("Open Hecate to stop journey")
+                .accessibilityLabel(JourneyLocalization.text("Open Hecate to stop journey", language: language))
         }
     }
 
@@ -239,9 +241,9 @@ private struct JourneyMetrics: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            metric(distanceLabel(context.state.distanceKm), label: context.state.finishedAt == nil ? "this walk" : "walked")
+            metric(distanceLabel(context.state.distanceKm), label: context.state.finishedAt == nil ? JourneyLocalization.text("this walk", language: context.state.language) : JourneyLocalization.text("walked", language: context.state.language))
             Divider().frame(height: 36)
-            metric(context.state.newGroundMeters.map { String(format: "+%.0f m", $0) } ?? "—", label: "new area")
+            metric(context.state.newGroundMeters.map { String(format: "+%.0f m", $0) } ?? "—", label: JourneyLocalization.text("new area", language: context.state.language))
             Divider().frame(height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 if let finishedAt = context.state.finishedAt {
@@ -254,7 +256,7 @@ private struct JourneyMetrics: View {
                     Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
                         .font(.headline).monospacedDigit()
                 }
-                Text("time").font(.caption).opacity(0.65)
+                Text(JourneyLocalization.text("time", language: context.state.language)).font(.caption).opacity(0.65)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
