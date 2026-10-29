@@ -1030,7 +1030,6 @@
   "Creating your artwork…": "Stvaranje tvog umjetničkog djela…",
   "The map’s building source is unavailable. Wait for the map to load and try again.": "Podaci o zgradama nisu dostupni. Pričekaj da se karta učita i pokušaj ponovno.",
   "This discovery is too large to create artwork on this device. Try a city with a smaller discovered area.": "Otkriveno područje preveliko je za stvaranje umjetničkog djela na ovom uređaju. Pokušaj s gradom s manjim otkrivenim područjem.",
-  "Distance travelled in {{city}}": "Prijeđena udaljenost u gradu {{city}}",
   "Drag to rotate · Two fingers to move and zoom": "Povuci za rotaciju · Dva prsta za pomicanje i zumiranje",
   "Drag to rotate · Right-drag to move · Scroll to zoom": "Povuci za rotaciju · Desna tipka za pomicanje · Kotačić za zumiranje",
   "3D discovery map of {{city}}. Use arrow keys to rotate, Shift and arrow keys to move, and plus or minus to zoom.": "3D karta tvojih otkrića u gradu {{city}}. Koristi strelice za rotaciju, Shift i strelice za pomicanje te plus ili minus za zumiranje.",
