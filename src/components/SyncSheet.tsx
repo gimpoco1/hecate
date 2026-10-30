@@ -943,7 +943,7 @@ export function SyncSheet({
                       setAppearanceSheetOpen(false);
                       onClose();
                     }}><XIcon /></button>
-                  <div className="eyebrow">{t("Make it yours")}</div>
+                  <div className="eyebrow">{t("Preferences")}</div>
                   <h2 id="appearance-settings-title">{t("Appearance")}</h2>
                   <AppearanceSettings />
                 </section>
@@ -1107,7 +1107,7 @@ export function SyncSheet({
                   <div className="eyebrow">{t("Your reminders")}</div>
                   <h2 id="notification-settings-sheet-title">{t("Notifications")}</h2>
                   <div className="notification-settings-sheet__content">
-                    <p>{t("Choose which reminders you receive.")}</p>
+                    <p>{t("Choose reminders to start recording, explore regularly, and follow your progress.")}</p>
                     {notificationWarning === "notifications" && (
                       <div id="notification-permission-warning" className="notification-permission-notice" role="status">
                         <span className="notification-permission-notice__icon" aria-hidden="true">

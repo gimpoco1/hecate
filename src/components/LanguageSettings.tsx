@@ -44,7 +44,7 @@ export function LanguageSettings({ onBack, onClose }: Props) {
       onClick={event => event.stopPropagation()} aria-modal="true" role="dialog" aria-labelledby="language-settings-title">
       <button type="button" className="icon-button walking-stats-back" data-testid="language-back" aria-label={t("Back")} onClick={onBack}><ArrowLeftIcon /></button>
       <button type="button" className="icon-button sheet__close" data-testid="language-close" aria-label={t("Close")} onClick={onClose}><XIcon /></button>
-      <div className="eyebrow">{t("Make it yours")}</div>
+      <div className="eyebrow">{t("Preferences")}</div>
       <h2 id="language-settings-title">{t("Language")}</h2>
       <p>{t("Choose your language, or follow your device settings.")}</p>
       <fieldset className="language-options" aria-label={t("App language")}>

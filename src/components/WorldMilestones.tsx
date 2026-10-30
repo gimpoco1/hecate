@@ -1,4 +1,5 @@
 import { t, useAppTranslation, currentLanguage } from "../i18n";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   mdiAccessPoint,
   mdiAirplane,
@@ -156,18 +157,54 @@ export function WalkingStatsOverview({
   const level = WORLD_MILESTONE_TIERS.findIndex(({ id }) => id === current.id) + 1;
   const remainingKm = next ? Math.max(0, next.thresholdKm - travelledKm) : 0;
   const progress = worldMilestoneProgress(travelledKm);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const rankRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const [heroFits, setHeroFits] = useState(false);
+  const discoveryLabel = t("New ground");
+  const discoveryValue = formatWalkingStatDistance(discoveryDistance);
+  const levelLabel = t("Lv. {{value0}}", { value0: level });
+
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const rank = rankRef.current;
+    const title = titleRef.current;
+    const hero = heroRef.current;
+    if (!header || !rank || !title || !hero) throw new Error("Journey overview layout elements are missing.");
+    const measure = (): void => {
+      const titleRow = title.parentElement;
+      const icon = rank.firstElementChild;
+      const badge = titleRow?.firstElementChild;
+      if (!titleRow || !icon || !badge) throw new Error("Journey overview level title, icon, or badge is missing.");
+      const requiredRankWidth = icon.getBoundingClientRect().width
+        + Number.parseFloat(getComputedStyle(rank).columnGap)
+        + badge.getBoundingClientRect().width
+        + Number.parseFloat(getComputedStyle(titleRow).columnGap)
+        + title.scrollWidth;
+      const gap = Number.parseFloat(getComputedStyle(header).columnGap);
+      setHeroFits(requiredRankWidth + gap + hero.getBoundingClientRect().width <= header.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    observer.observe(rank);
+    observer.observe(hero);
+    observer.observe(title);
+    return () => observer.disconnect();
+  }, [current.title, discoveryValue, discoveryLabel, levelLabel]);
 
   return (
-    <section className="walking-stats-overview" aria-label={t("Walking overview")}>
-      <div className="walking-stats-overview__header">
-        <div className="walking-stats-overview__rank">
+    <section className={`walking-stats-overview${heroFits ? "" : " walking-stats-overview--compact"}`} aria-label={t("Walking overview")}>
+      <div ref={headerRef} className="walking-stats-overview__header">
+        <div ref={rankRef} className="walking-stats-overview__rank">
           <span className="walking-stats-overview__icon" aria-hidden="true">
             <WorldMilestoneIcon icon={current.icon} />
           </span>
           <span>
             <span>
-              <small>{t("Lv. {{value0}}", { value0: level })}</small>
-              <strong>{current.title}</strong>
+              <small>{levelLabel}</small>
+              <strong ref={titleRef}>{current.title}</strong>
             </span>
             <small>
               {next
@@ -176,15 +213,19 @@ export function WalkingStatsOverview({
             </small>
           </span>
         </div>
-        <div className="walking-stats-overview__hero">
-          <strong>{formatWalkingStatDistance(discoveryDistance)}</strong>
-          <small>{t("New ground")}</small>
+        <div ref={heroRef} className="walking-stats-overview__hero" aria-hidden={!heroFits}>
+          <strong>{discoveryValue}</strong>
+          <small>{discoveryLabel}</small>
         </div>
       </div>
       <div className="walking-stats-overview__progress" aria-hidden="true">
         <span style={{ width: `${progress * 100}%` }} />
       </div>
       <div className="walking-stats-overview__metrics">
+        {!heroFits && <span>
+          <strong>{discoveryValue}</strong>
+          <small>{discoveryLabel}</small>
+        </span>}
         <span>
           <strong>{formatWalkingStatDistance(travelledKm)}</strong>
           <small>{t("Travelled")}</small>

@@ -1527,6 +1527,7 @@ button {
   background: var(--theme-surface, white);
 }
 .walking-stats-overview__header {
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -1535,6 +1536,7 @@ button {
 }
 .walking-stats-overview__rank {
   min-width: 0;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1569,6 +1571,7 @@ button {
   font-weight: 800;
 }
 .walking-stats-overview__rank strong {
+  min-width: 0;
   overflow: hidden;
   color: var(--forest);
   font-size: 15px;
@@ -1581,6 +1584,7 @@ button {
 }
 .walking-stats-overview__hero {
   flex: 0 0 auto;
+  margin-left: auto;
   display: grid;
   justify-items: end;
   gap: 3px;
@@ -1598,6 +1602,14 @@ button {
 .walking-stats-overview__hero small {
   color: var(--theme-text-muted, #748078);
   font-size: 10px;
+}
+.walking-stats-overview--compact .walking-stats-overview__hero {
+  position: absolute;
+  right: 0;
+  visibility: hidden;
+}
+.walking-stats-overview--compact .walking-stats-overview__metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .walking-stats-overview__progress {
   height: 5px;
@@ -1640,6 +1652,14 @@ button {
   color: var(--theme-text-muted, #748078);
   font-size: 9px;
   white-space: nowrap;
+}
+.walking-stats-overview--compact .walking-stats-overview__metrics > span {
+  padding: 0 3px;
+  align-content: start;
+}
+.walking-stats-overview--compact .walking-stats-overview__metrics small {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .walking-personal-bests {
   margin-top: 27px;
