@@ -45,6 +45,19 @@ describe("planned journey camera", () => {
     expect(frame.lng).toBeCloseTo(target.lng, 6);
     expect(frame.bearing).toBeCloseTo(361, 2);
   });
+  it("catches up with a stationary device turn within 400 ms without overshooting", () => {
+    const position = { lng: 2, lat: 41 };
+    let frame = { ...position, bearing: 350 };
+    for (let index = 0; index < 25; index += 1) {
+      const next = navigationCameraStep(frame, position, frame.bearing, 80, 16);
+      expect(next.bearing).toBeGreaterThan(frame.bearing);
+      expect(next.bearing).toBeLessThan(440);
+      expect(next.lng).toBe(position.lng);
+      expect(next.lat).toBe(position.lat);
+      frame = next;
+    }
+    expect(440 - frame.bearing).toBeLessThan(4);
+  });
   it("smooths navigation consistently at different frame rates", () => {
     const target = { lng: 2.001, lat: 41.001 };
     const run = (elapsed: number, frames: number): ReturnType<typeof navigationCameraStep> => {

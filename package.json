@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "pretest": "npm run check:achievement-ids && npm run check:translations",
     "test": "vitest run",
+    "test:ios-location": "node scripts/test-ios-location-watcher.mjs",
     "test:ios-motion": "node scripts/test-ios-reminder-motion.mjs",
     "test:ios-google-callback": "node scripts/test-ios-google-callback.mjs",
     "postinstall": "node scripts/patch-background-geolocation.mjs",

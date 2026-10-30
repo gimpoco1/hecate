@@ -160,6 +160,18 @@ if (!source.includes("@objc func removeAllWatchers")) {
 }
 writeFileSync(pluginPath, source);
 
+// Xcode 27.2 can emit a Date comparison call whose iOS runtime symbol is absent.
+// Compare reference timestamps to retain the stale-fix boundary without that operator.
+source = readFileSync(pluginPath, "utf8");
+const timestampComparison = "location.timestamp.timeIntervalSinceReferenceDate >= created.timeIntervalSinceReferenceDate";
+if (!source.includes(timestampComparison)) {
+  const dateComparison = "location.timestamp >= created";
+  if (!source.includes(dateComparison))
+    throw new Error("Background geolocation plugin changed; review the iOS stale-location comparison.");
+  source = source.replace(dateComparison, timestampComparison);
+  writeFileSync(pluginPath, source);
+}
+
 // A LiveActivityIntent runs in the app process without bringing its WebView to the foreground.
 // Stop only the matching recorded walk, preserving passive discovery-reminder watchers.
 source = readFileSync(pluginPath, "utf8");

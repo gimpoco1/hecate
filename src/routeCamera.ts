@@ -36,7 +36,7 @@ type RouteProjection = { index: number; progress: number; distanceSquared: numbe
 export function navigationCameraStep(center: RoutePoint, target: RoutePoint, bearing: number, targetBearing: number, elapsedMs: number): RoutePoint & { bearing: number } {
   const elapsed = Math.max(0, Math.min(50, elapsedMs));
   const positionBlend = 1 - Math.exp(-elapsed / 450);
-  const rotationBlend = 1 - Math.exp(-elapsed / 550);
+  const rotationBlend = 1 - Math.exp(-elapsed / 120);
   return {
     lng: center.lng + (((target.lng - center.lng + 540) % 360) - 180) * positionBlend,
     lat: center.lat + (target.lat - center.lat) * positionBlend,

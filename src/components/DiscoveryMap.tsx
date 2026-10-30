@@ -306,11 +306,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       );
       if (heading === undefined) return;
       pendingHeading = heading;
+      compassHeadingRef.current = heading;
+      onHeadingChangeRef.current?.(heading);
       if (headingFrame !== null) return;
       headingFrame = requestAnimationFrame(() => {
         headingFrame = null;
-        compassHeadingRef.current = pendingHeading;
-        if (pendingHeading !== undefined) onHeadingChangeRef.current?.(pendingHeading);
         const element = markerRef.current?.getElement();
         const map = mapRef.current;
         if (element && map)
