@@ -12,6 +12,7 @@
 		CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000002 /* GoogleSignInPlugin.swift */; };
 		CE2600280000000000000001 /* AppleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600280000000000000002 /* AppleSignInPlugin.swift */; };
 		CE2600270000000000000001 /* AppIconPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600270000000000000002 /* AppIconPlugin.swift */; };
+		CE2600300000000000000001 /* NavigationScreenPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600300000000000000002 /* NavigationScreenPlugin.swift */; };
 		CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
 		CE2600010000000000000002 /* JourneyControlIntent.swift in Widget Sources */ = {isa = PBXBuildFile; fileRef = CE2600010000000000000003 /* JourneyControlIntent.swift */; };
 		D88B31D74E80497781B0B003 /* JourneyTopographyBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */; };
@@ -65,6 +66,7 @@
 		CE2600290000000000000002 /* GoogleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInPlugin.swift; sourceTree = "<group>"; };
 		CE2600280000000000000002 /* AppleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInPlugin.swift; sourceTree = "<group>"; };
 		CE2600270000000000000002 /* AppIconPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPlugin.swift; sourceTree = "<group>"; };
+		CE2600300000000000000002 /* NavigationScreenPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationScreenPlugin.swift; sourceTree = "<group>"; };
 		CE2600010000000000000003 /* JourneyControlIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyControlIntent.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B004 /* JourneyTopographyBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyTopographyBackground.swift; sourceTree = "<group>"; };
 		D88B31D74E80497781B0B002 /* Widget Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				D5CB8A6015E59759735FC04E /* JourneyActivityPlugin.swift */,
 				CE2600270000000000000002 /* AppIconPlugin.swift */,
+				CE2600300000000000000002 /* NavigationScreenPlugin.swift */,
 				CE2600280000000000000002 /* AppleSignInPlugin.swift */,
 				CE2600290000000000000002 /* GoogleSignInPlugin.swift */,
 				CE2600290000000000000004 /* GoogleAuthCallback.swift */,
@@ -372,6 +375,7 @@
 				CE2600010000000000000001 /* JourneyControlIntent.swift in App Sources */,
 				B0CF8717134E5F788E967348 /* JourneyActivityPlugin.swift in Sources */,
 				CE2600270000000000000001 /* AppIconPlugin.swift in Sources */,
+				CE2600300000000000000001 /* NavigationScreenPlugin.swift in Sources */,
 				CE2600280000000000000001 /* AppleSignInPlugin.swift in Sources */,
 				CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */,
 				CE2600290000000000000003 /* GoogleAuthCallback.swift in Sources */,

@@ -176,7 +176,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: max(18px, env(safe-area-inset-top)) 22px 12px;
+  padding: max(18px, env(safe-area-inset-top))
+    max(22px, env(safe-area-inset-right)) 12px
+    max(22px, env(safe-area-inset-left));
   pointer-events: none;
 }
 .topbar button {
@@ -4672,8 +4674,8 @@ button {
 
 @media (max-width: 680px) {
   .topbar {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
   }
   .brand {
     width: auto;

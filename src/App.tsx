@@ -4,6 +4,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
 import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
+import { useNavigationScreen } from "./navigationScreen";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
@@ -921,6 +922,7 @@ export default function App() {
     route: PlannedRoute;
     deadline: number;
   } | null>(null);
+  useNavigationScreen(activeNavigationRoute !== null && arrival === null);
   const lastTurnInstructionRef = useRef("");
   const updateNavigationCue = useCallback(
     (route: PlannedRoute, point: Coordinate): NavigationCue | null => {
@@ -4647,7 +4649,7 @@ export default function App() {
 
   const handleLocationControl = (): void => {
     const point = simulationPointRef.current ?? (locationIsCurrent ? currentPoint : null);
-    if (!point || !userCenteredRef.current) {
+    if (!point || (!followCameraEnabledRef.current && !userCenteredRef.current)) {
       if (simulationPointRef.current) focusOnUserPoint(simulationPointRef.current);
       else locate();
       return;
@@ -5405,7 +5407,8 @@ export default function App() {
     [],
   );
 
-  const locationControlLabel = userCentered
+  const locationControlCentered = Boolean(simulationPoint || locationIsCurrent) && (followingUser || userCentered);
+  const locationControlLabel = locationControlCentered
     ? mapOrientation === "north-up" ? t("Switch to heading-up") : t("Switch to north-up")
     : (simulationPoint || locationIsCurrent) ? t("Center on my location") : t("Find my location");
 
@@ -5918,7 +5921,7 @@ export default function App() {
           </button>
         )}
         <button
-          className={`location-control${userCentered && mapOrientation === "heading-up" ? " active" : ""}${
+          className={`location-control${locationControlCentered && mapOrientation === "heading-up" ? " active" : ""}${
             passiveLocationStatus === "requesting" && tracking !== "tracking"
               ? " location-control--requesting"
               : ""
@@ -5928,9 +5931,9 @@ export default function App() {
           title={locationControlLabel}
           data-testid="map-location-control"
           data-orientation={mapOrientation}
-          data-centered={userCentered}
+          data-centered={locationControlCentered}
         >
-          {userCentered ? <CompassIcon size={21} /> : <LocateIcon size={21} />}
+          {locationControlCentered ? <CompassIcon size={21} /> : <LocateIcon size={21} />}
         </button>
         <button
           onClick={() =>
