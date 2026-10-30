@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Coordinate } from "./types";
 import type { RoutePoint } from "./explorationRouting";
 
@@ -23,7 +24,7 @@ export function cameraNeedsUpdate(center: RoutePoint, target: Coordinate, bearin
 
 /** Measures travel direction between two distinct locations. */
 export function movementBearing(start: RoutePoint, end: RoutePoint): number {
-  if (start.lng === end.lng && start.lat === end.lat) throw new RangeError("Travel direction requires two distinct locations.");
+  if (start.lng === end.lng && start.lat === end.lat) throw new RangeError(t("Travel direction requires two distinct locations."));
   const radians = Math.PI / 180;
   const latitude = (start.lat + end.lat) / 2 * radians;
   return (Math.atan2((end.lng - start.lng) * Math.cos(latitude), end.lat - start.lat) / radians + 360) % 360;
@@ -35,7 +36,7 @@ type RouteProjection = { index: number; progress: number; distanceSquared: numbe
 export function navigationCameraStep(center: RoutePoint, target: RoutePoint, bearing: number, targetBearing: number, elapsedMs: number): RoutePoint & { bearing: number } {
   const elapsed = Math.max(0, Math.min(50, elapsedMs));
   const positionBlend = 1 - Math.exp(-elapsed / 450);
-  const rotationBlend = 1 - Math.exp(-elapsed / 550);
+  const rotationBlend = 1 - Math.exp(-elapsed / 120);
   return {
     lng: center.lng + (((target.lng - center.lng + 540) % 360) - 180) * positionBlend,
     lat: center.lat + (target.lat - center.lat) * positionBlend,
@@ -45,7 +46,7 @@ export function navigationCameraStep(center: RoutePoint, target: RoutePoint, bea
 
 /** Faces the next meaningful forward stretch, skipping short access connectors and junction geometry. */
 export function routeCameraBearing(points: readonly RoutePoint[], origin: RoutePoint): number {
-  if (points.length < 2) throw new RangeError("A journey camera needs at least two route points.");
+  if (points.length < 2) throw new RangeError(t("A journey camera needs at least two route points."));
   const radians = Math.PI / 180;
   const longitudeScale = Math.cos(origin.lat * radians);
   const projections = points.slice(1).flatMap((end, index): RouteProjection[] => {
@@ -59,7 +60,7 @@ export function routeCameraBearing(points: readonly RoutePoint[], origin: RouteP
     const y = start.lat - origin.lat + progress * dy;
     return [{ index, progress, distanceSquared: x * x + y * y }];
   });
-  if (projections.length === 0) throw new RangeError("The journey route has no direction ahead of the user.");
+  if (projections.length === 0) throw new RangeError(t("The journey route has no direction ahead of the user."));
   const nearest = projections.reduce((best, projection) => projection.distanceSquared < best.distanceSquared ? projection : best);
   // At a junction, face the outgoing segment rather than the segment that just ended.
   const forward = nearest.progress >= 1

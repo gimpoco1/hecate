@@ -1,7 +1,10 @@
-import { errorDiagnostic } from './diagnostics'
+import { Trans } from "react-i18next";
+import { formatNumber, t, useAppTranslation, currentLanguage, languagePreference, setLanguagePreference } from "./i18n";
+import { errorDiagnostic } from "./diagnostics";
 import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
 import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
+import { useNavigationScreen } from "./navigationScreen";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
@@ -78,7 +81,6 @@ import {
 import {
   canonicalCityForStoredBoundary,
   cityForMapCenter,
-  discoveredCityDistanceKm,
   discoveredCityPercentage,
   fetchCityBoundary,
   isPointInCity,
@@ -86,6 +88,7 @@ import {
   type CityBoundary,
 } from "./city";
 import { DiscoveryMap } from "./components/DiscoveryMap";
+import { CityKeepsake } from "./components/CityKeepsake";
 import { requestDeviceHeadingPermission } from "./deviceHeading";
 import { AchievementCelebration } from "./components/AchievementCelebration";
 import { AccountLoadingScreen } from "./components/AccountLoadingScreen";
@@ -285,7 +288,7 @@ const JOURNEY_SETTLE_DURATION_MS = 220;
 const JOURNEY_MAP_TAP_CLOSE_DURATION_MS = 70;
 
 function reminderMessage(minutes: number): string {
-  return `You have been walking for ${minutes} minutes. Start recording your journey?`;
+  return t("You have been walking for {{value0}} minutes. Start recording your journey?", { value0: minutes });
 }
 
 async function sendReminderNotification(
@@ -297,7 +300,7 @@ async function sendReminderNotification(
     notifications: [
       {
         id: REMINDER_NOTIFICATION_ID,
-        title: "Ready to record your journey?",
+        title: t("Ready to record your journey?"),
         body: reminderMessage(minutes),
         isExactNotification: false,
         schedule: { at: new Date(Date.now() + 1_000) },
@@ -324,7 +327,7 @@ async function sendAchievementNotification(
         id: test
           ? ACHIEVEMENT_NOTIFICATION_ID_START + PERSONAL_ACHIEVEMENTS.length
           : ACHIEVEMENT_NOTIFICATION_ID_START + notificationIndex,
-        title: `Achievement unlocked: ${achievement.title}`,
+        title: t("Achievement unlocked: {{value0}}", { value0: achievement.title }),
         body: achievement.description,
         isExactNotification: false,
         sound: "default",
@@ -343,12 +346,12 @@ async function sendAchievementNotification(
 
 function formatDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`;
-  return `${distance.toFixed(distance >= 10 ? 1 : 2)} km`;
+  return `${formatNumber(distance, distance >= 10 ? 1 : 2)} km`;
 }
 
 function formatRemainingDistance(distance: number) {
   if (distance < 1) return `${Math.round(distance * 1000)} m`;
-  return `${distance.toFixed(1)} km`;
+  return `${formatNumber(distance, 1)} km`;
 }
 
 function formatDiscoveryPercentage(
@@ -358,7 +361,7 @@ function formatDiscoveryPercentage(
   if (loading) return "…";
   if (percentage === null) return "—";
   if (percentage > 0 && percentage < 0.1) return "<0.1%";
-  if (percentage < 10) return `${percentage.toFixed(1)}%`;
+  if (percentage < 10) return `${formatNumber(percentage, 1)}%`;
   return `${Math.round(percentage)}%`;
 }
 
@@ -513,10 +516,11 @@ const JourneyDetails = memo(function JourneyDetails({
   cityProgress,
   onWalkingStatsOpen,
 }: JourneyDetailsProps) {
+  useAppTranslation();
   return (
     <div
       className="journey-overview"
-      aria-label="Walking overview"
+      aria-label={t("Walking overview")}
       aria-hidden={!expanded}
     >
       {accountUserId ? (
@@ -526,35 +530,34 @@ const JourneyDetails = memo(function JourneyDetails({
             aria-labelledby="journey-global-stats-title"
           >
             <div className="journey-global-stats__heading">
-              <h3 id="journey-global-stats-title">Journey stats</h3>
+              <h3 id="journey-global-stats-title">{t("Journey stats")}</h3>
               <button
                 type="button"
-                aria-label="Open full walking stats"
+                aria-label={t("Open full walking stats")}
                 onClick={onWalkingStatsOpen}
               >
-                View all
-                <ChevronIcon size={14} strokeWidth={2.3} />
+                {t("View all")} <ChevronIcon size={14} strokeWidth={2.3} />
               </button>
             </div>
             <dl>
               <div>
-                <dt>New ground today</dt>
+                <dt>{t("New ground today")}</dt>
                 <dd>{formatDistance(todayDiscoveryDistance)}</dd>
               </div>
               <div>
-                <dt>Travelled today</dt>
+                <dt>{t("Travelled today")}</dt>
                 <dd>{formatDistance(todayTravelledDistance)}</dd>
               </div>
               <div>
-                <dt>Time active today</dt>
+                <dt>{t("Time active today")}</dt>
                 <dd>{formatElapsedDuration(todayActiveTimeMs)}</dd>
               </div>
               <div>
-                <dt>Current streak</dt>
+                <dt>{t("Current streak")}</dt>
                 <dd>{formatStreakDays(currentStreakDays)}</dd>
               </div>
               <div>
-                <dt>New ground this week</dt>
+                <dt>{t("New ground this week")}</dt>
                 <dd>
                   <span>{formatDistance(weekDiscoveryDistance)}</span>
                   <small
@@ -565,7 +568,7 @@ const JourneyDetails = memo(function JourneyDetails({
                 </dd>
               </div>
               <div>
-                <dt>Time active this week</dt>
+                <dt>{t("Time active this week")}</dt>
                 <dd>
                   <span>{formatElapsedDuration(weekActiveTimeMs)}</span>
                   <small
@@ -583,7 +586,7 @@ const JourneyDetails = memo(function JourneyDetails({
           {cityProgress && <CityMilestones progress={cityProgress} />}
         </>
       ) : (
-        <p>Sign in to see your walking stats and keep them in sync.</p>
+        <p>{t("Sign in to see your walking stats and keep them in sync.")}</p>
       )}
     </div>
   );
@@ -592,38 +595,38 @@ const JourneyDetails = memo(function JourneyDetails({
 function formatRecapPercentage(percentage: number) {
   if (percentage <= 0) return "0%";
   if (percentage < 0.01) return "<0.01%";
-  if (percentage < 1) return `${percentage.toFixed(2)}%`;
+  if (percentage < 1) return `${formatNumber(percentage, 2)}%`;
   return formatDiscoveryPercentage(percentage, false);
 }
 
 function formatDuration(startedAt: number, finishedAt: number) {
   const minutes = Math.max(1, Math.round((finishedAt - startedAt) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return t("{{value0}} min", { value0: minutes });
   const hours = Math.floor(minutes / 60);
-  return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+  return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
 }
 
 function formatElapsedDuration(durationMs: number) {
   const minutes = Math.max(0, Math.round(durationMs / 60_000));
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return t("{{value0}} min", { value0: minutes });
   const hours = Math.floor(minutes / 60);
-  return `${hours} hr ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim();
+  return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
 }
 
 function formatStreakDays(days: number) {
-  return `${days} ${days === 1 ? "day" : "days"}`;
+  return t("day", { count: days });
 }
 
 function formatWeekDistanceDelta(deltaKm: number) {
-  if (Math.abs(deltaKm) < 0.0005) return "No change vs last week";
+  if (Math.abs(deltaKm) < 0.0005) return t("No change vs last week");
   const sign = deltaKm > 0 ? "+" : "-";
-  return `${sign}${formatDistance(Math.abs(deltaKm))} vs last week`;
+  return t("{{value0}}{{value1}} vs last week", { value0: sign, value1: formatDistance(Math.abs(deltaKm)) });
 }
 
 function formatWeekTimeDelta(deltaMs: number) {
-  if (Math.abs(deltaMs) < 30_000) return "No change vs last week";
+  if (Math.abs(deltaMs) < 30_000) return t("No change vs last week");
   const sign = deltaMs > 0 ? "+" : "-";
-  return `${sign}${formatElapsedDuration(Math.abs(deltaMs))} vs last week`;
+  return t("{{value0}}{{value1}} vs last week", { value0: sign, value1: formatElapsedDuration(Math.abs(deltaMs)) });
 }
 
 function weekDeltaClassName(delta: number, deadZone = 0.0005) {
@@ -673,7 +676,7 @@ export function journeyDistanceCounter(
       places: integerCounterPlaces(value),
       prefix: "",
       suffix: " m",
-      label: `${value} metres`,
+      label: t("{{value0}} metres", { value0: value }),
     };
   }
   const decimalCount = distanceKm < 10 ? 2 : 1;
@@ -683,7 +686,7 @@ export function journeyDistanceCounter(
     places: decimalCounterPlaces(value, decimalCount),
     prefix: "",
     suffix: " km",
-    label: `${value.toFixed(decimalCount)} kilometres`,
+    label: t("{{value0}} kilometres", { value0: formatNumber(value, decimalCount) }),
   };
 }
 
@@ -694,7 +697,7 @@ export function journeyNewGroundCounter(meters: number): JourneyCounterDisplay {
     places: integerCounterPlaces(value),
     prefix: "+",
     suffix: " m",
-    label: `Plus ${value} metres of new ground`,
+    label: t("Plus {{value0}} metres of new ground", { value0: value }),
   };
 }
 
@@ -712,7 +715,7 @@ export function journeyTimeCounter(elapsedMs: number): {
       hours > 0
         ? `${hours}:${pad(minutes)}:${pad(seconds)}`
         : `${minutes}:${pad(seconds)}`,
-    label: `${hours > 0 ? `${hours} ${hours === 1 ? "hour" : "hours"}, ` : ""}${minutes} ${minutes === 1 ? "minute" : "minutes"}, ${seconds} ${seconds === 1 ? "second" : "seconds"}`,
+    label: [...(hours > 0 ? [t("hour", { count: hours })] : []), t("minute", { count: minutes }), t("second", { count: seconds })].join(", "),
   };
 }
 
@@ -721,6 +724,7 @@ type JourneyCounterValueProps = {
 };
 
 function JourneyCounterValue({ display }: JourneyCounterValueProps) {
+  useAppTranslation();
   return (
     <strong className="active-journey-value" aria-label={display.label}>
       <span aria-hidden="true">{display.prefix}</span>
@@ -770,7 +774,7 @@ async function retryGpxImportOperation(
   operationName: string,
   fileName: string,
 ): Promise<void> {
-  let lastError = new Error(`${operationName} did not run.`);
+  let lastError = new Error(t("{{value0}} did not run.", { value0: operationName }));
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       await operation();
@@ -779,8 +783,8 @@ async function retryGpxImportOperation(
       lastError =
         error instanceof Error
           ? error
-          : new Error(`${operationName} failed for an unknown reason.`);
-      console.warn("GPX import operation failed", { operation: operationName, attempt, error: errorDiagnostic(lastError) });
+          : new Error(t("{{value0}} failed for an unknown reason.", { value0: operationName }));
+      console.warn("GPX import operation failed", { operation: operationName, fileName, attempt, error: errorDiagnostic(lastError) });
       if (attempt < 3) {
         await new Promise((resolve) =>
           window.setTimeout(resolve, attempt * 300),
@@ -792,6 +796,7 @@ async function retryGpxImportOperation(
 }
 
 export default function App() {
+  useAppTranslation();
   const { preference: appearancePreference, theme: appearanceTheme } = useAppearance();
   const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(
     null,
@@ -846,7 +851,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   useEffect(() => {
     const onAuthError = (): void => {
-      setJourneyStopMessage("Sign-in failed. Request a new link from Hecate on this device.");
+      setJourneyStopMessage(t("Sign-in failed. Please try again from Account & sync."));
     };
     window.addEventListener("hecate:auth-error", onAuthError);
     return () => window.removeEventListener("hecate:auth-error", onAuthError);
@@ -876,6 +881,7 @@ export default function App() {
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
+  const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
@@ -916,6 +922,7 @@ export default function App() {
     route: PlannedRoute;
     deadline: number;
   } | null>(null);
+  useNavigationScreen(activeNavigationRoute !== null && arrival === null);
   const lastTurnInstructionRef = useRef("");
   const updateNavigationCue = useCallback(
     (route: PlannedRoute, point: Coordinate): NavigationCue | null => {
@@ -924,19 +931,19 @@ export default function App() {
         guidanceRef.current?.route === route
           ? guidanceRef.current.progress
           : {
-              distanceKm: 0,
-              fraction: 0,
-              position: route.points[0],
-              acceptedPosition: route.points[0],
-              distanceFromRouteM: 0,
-            };
+            distanceKm: 0,
+            fraction: 0,
+            position: route.points[0],
+            acceptedPosition: route.points[0],
+            distanceFromRouteM: 0,
+          };
       const geometry =
         guidanceRef.current?.route === route
           ? guidanceRef.current.geometry
           : prepareRouteGeometry(route.points);
       const progress = advanceRouteProgress(geometry, point, previous);
       const cue = hasReachedRouteDestination(route, point)
-        ? { instruction: "You have arrived at your destination.", symbol: "arrive" as const, distanceMeters: 0 }
+        ? { instruction: t("You have arrived at your destination."), symbol: "arrive" as const, distanceMeters: 0 }
         : navigationCue(route, progress);
       guidanceRef.current = { route, geometry, progress, cue };
       if (
@@ -1226,17 +1233,17 @@ export default function App() {
       const next =
         targetBearing !== null
           ? navigationCameraStep(
-              center,
-              target,
-              map.getBearing(),
-              targetBearing,
-              elapsed,
-            )
+            center,
+            target,
+            map.getBearing(),
+            targetBearing,
+            elapsed,
+          )
           : {
-              lng: center.lng + longitudeDelta * blend,
-              lat: center.lat + (target.lat - center.lat) * blend,
-              bearing: map.getBearing() + bearingDelta * blend,
-            };
+            lng: center.lng + longitudeDelta * blend,
+            lat: center.lat + (target.lat - center.lat) * blend,
+            bearing: map.getBearing() + bearingDelta * blend,
+          };
       map.jumpTo(
         {
           center: [next.lng, next.lat],
@@ -1358,11 +1365,11 @@ export default function App() {
     () =>
       viewCenter && isCityScale
         ? cityForMapCenter(
-            viewCenter,
-            [cityBoundary, ...discoveredCities, viewedCity].filter(
-              (city): city is CityBoundary => city !== null,
-            ),
-          )
+          viewCenter,
+          [cityBoundary, ...discoveredCities, viewedCity].filter(
+            (city): city is CityBoundary => city !== null,
+          ),
+        )
         : null,
     [cityBoundary, discoveredCities, isCityScale, viewCenter, viewedCity],
   );
@@ -1390,8 +1397,8 @@ export default function App() {
 
   const summaryCityProgress = summaryCity
     ? (discoveryProgress.cityMetrics.find(
-        ({ cityId }) => cityId === summaryCity.id,
-      ) ?? null)
+      ({ cityId }) => cityId === summaryCity.id,
+    ) ?? null)
     : null;
   const currentCityDistance =
     summaryCityProgress?.distance ?? discoveryDistance;
@@ -1405,9 +1412,9 @@ export default function App() {
   const summaryCityPercentage = summaryCityProgress?.percentage ?? null;
   const discoveryLabel = accountUserId
     ? formatDiscoveryPercentage(
-        summaryCityPercentage,
-        viewCityLoading && !summaryCity,
-      )
+      summaryCityPercentage,
+      viewCityLoading && !summaryCity,
+    )
     : "—";
   const activeWalkDistance = routeDistanceKm(
     activeWalkRef.current?.points ?? [],
@@ -1428,6 +1435,8 @@ export default function App() {
   );
   const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
   const nativeApp = isNativeApp();
+  const appLanguage = currentLanguage();
+  const appLanguagePreference = languagePreference();
   const devToolsEnabled = DEV_TOOLS_ENABLED;
 
   const enqueueJourneyActivity = useCallback(
@@ -1445,9 +1454,9 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     enqueueJourneyActivity(() =>
-      JourneyActivity.setAppearance({ preference: appearancePreference, theme: appearanceTheme }),
+      JourneyActivity.setAppearance({ preference: appearancePreference, theme: appearanceTheme, language: appLanguagePreference }),
     );
-  }, [appearancePreference, appearanceTheme, enqueueJourneyActivity]);
+  }, [appearancePreference, appearanceTheme, appLanguage, appLanguagePreference, enqueueJourneyActivity]);
 
   useEffect(() => {
     if (!authReady || discoveryLoading) return;
@@ -1535,7 +1544,7 @@ export default function App() {
         setJourneyStopMessage(
           error instanceof Error
             ? error.message
-            : "Could not read the iOS journey control request.",
+            : t("Could not read the iOS journey control request."),
         );
       }
     };
@@ -1557,7 +1566,7 @@ export default function App() {
         setJourneyStopMessage(
           error instanceof Error
             ? error.message
-            : "Could not connect the iOS journey control.",
+            : t("Could not connect the iOS journey control."),
         );
       });
     return () => {
@@ -1701,9 +1710,9 @@ export default function App() {
               notifications: [
                 {
                   id: INACTIVITY_NOTIFICATION_ID,
-                  title: "Still recording your discovery?",
+                  title: t("Still recording your discovery?"),
                   isExactNotification: false,
-                  body: "If you have finished exploring near one spot, you can stop recording. Your recording will continue until you stop it.",
+                  body: t("If you have finished exploring near one spot, you can stop recording. Your recording will continue until you stop it."),
                   schedule: {
                     at: new Date(Math.max(dueAt, Date.now() + 1_000)),
                   },
@@ -1766,7 +1775,7 @@ export default function App() {
         );
         if (active)
           setJourneyStopMessage(
-            "Could not check whether Hecate is active. Reopen Hecate to start the journey Live Activity.",
+            t("Could not check whether Hecate is active. Reopen Hecate to start the journey Live Activity."),
           );
       });
     return () => {
@@ -1931,10 +1940,10 @@ export default function App() {
     () =>
       activeCity && activeCityProgress
         ? {
-            cityId: activeCity.id,
-            cityName: activeCity.name,
-            discoveredKm: activeCityProgress.distance,
-          }
+          cityId: activeCity.id,
+          cityName: activeCity.name,
+          discoveredKm: activeCityProgress.distance,
+        }
         : null,
     [activeCity, activeCityProgress],
   );
@@ -2069,7 +2078,13 @@ export default function App() {
       data: { subscription },
     } = client.auth.onAuthStateChange((event, session) => {
       if (!active) return;
-      if (event === "SIGNED_OUT") setAppearancePreference("system");
+      if (event === "SIGNED_OUT") {
+        setAppearancePreference("system");
+        void setLanguagePreference("system").catch((error: Error) => {
+          console.error("Could not reset language after sign-out", { error });
+          setJourneyStopMessage(t("Could not save your language. Check that device storage is available and try again."));
+        });
+      }
       const nextUserId = session?.user.id ?? null;
       if (nextUserId !== accountUserIdRef.current)
         setDiscoveryLoading(Boolean(nextUserId));
@@ -2136,7 +2151,7 @@ export default function App() {
     if (!pendingSpeedStopReport || !authReady) return;
     if (pendingSpeedStopReport.userId !== accountUserId) {
       setJourneyStopMessage(
-        "Sign in to the account associated with this journey to report the incorrect speed stop.",
+        t("Sign in to the account associated with this journey to report the incorrect speed stop."),
       );
       setSyncOpen(true);
       return;
@@ -2147,7 +2162,7 @@ export default function App() {
         console.error("Could not open journey speed-stop report", { walkId: pendingSpeedStopReport.walkId, error: errorDiagnostic(error) });
         if (accountUserIdRef.current === pendingSpeedStopReport.userId) {
           setJourneyStopMessage(
-            `Could not open your email app. Contact supporthecate@gmail.com and include journey ID ${pendingSpeedStopReport.walkId}.`,
+            t("Could not open your email app. Contact supporthecate@gmail.com and include journey ID {{value0}}.", { value0: pendingSpeedStopReport.walkId }),
           );
         }
       },
@@ -2243,7 +2258,7 @@ export default function App() {
         .map(Number);
       notifications.push({
         id: MORNING_INVITE_NOTIFICATION_ID,
-        title: "Heading out today?",
+        title: t("Heading out today?"),
         body: morningInviteMessage(
           citiesLoadedUserId === accountUserId &&
             discoveryHistoryReadyRef.current
@@ -2270,7 +2285,7 @@ export default function App() {
     ) {
       notifications.push({
         id: WEEKLY_RECAP_NOTIFICATION_ID,
-        title: "Your weekly walking summary",
+        title: t("Your weekly walking summary"),
         body: weeklyRecapFromPoints(points, now),
         schedule: {
           at: nextWeeklyRecapDate(now),
@@ -2294,7 +2309,7 @@ export default function App() {
     ) {
       notifications.push({
         id: STREAK_REMINDER_NOTIFICATION_ID,
-        title: "Your walking streak is at risk",
+        title: t("Your walking streak is at risk"),
         body: streakReminderMessage(stats.currentStreakDays),
         schedule: {
           at: streakDate,
@@ -2317,17 +2332,17 @@ export default function App() {
         accountChanged ||
         notificationPermissionReady === false
           ? [
-              REMINDER_NOTIFICATION_ID,
-              REMINDER_TEST_NOTIFICATION_ID,
-              JOURNEY_SPEED_STOP_NOTIFICATION_ID,
-              MORNING_INVITE_TEST_NOTIFICATION_ID,
-              WEEKLY_RECAP_TEST_NOTIFICATION_ID,
-              STREAK_REMINDER_TEST_NOTIFICATION_ID,
-              ...Array.from(
-                { length: PERSONAL_ACHIEVEMENTS.length + 1 },
-                (_, index) => ACHIEVEMENT_NOTIFICATION_ID_START + index,
-              ),
-            ]
+            REMINDER_NOTIFICATION_ID,
+            REMINDER_TEST_NOTIFICATION_ID,
+            JOURNEY_SPEED_STOP_NOTIFICATION_ID,
+            MORNING_INVITE_TEST_NOTIFICATION_ID,
+            WEEKLY_RECAP_TEST_NOTIFICATION_ID,
+            STREAK_REMINDER_TEST_NOTIFICATION_ID,
+            ...Array.from(
+              { length: PERSONAL_ACHIEVEMENTS.length + 1 },
+              (_, index) => ACHIEVEMENT_NOTIFICATION_ID_START + index,
+            ),
+          ]
           : []),
       ];
       await replaceNotificationSchedules(
@@ -2352,6 +2367,7 @@ export default function App() {
   }, [
     accountUserId,
     activityNotificationPreferences,
+    appLanguage,
     discoveryProgress,
     accountCityProgress,
     nativeApp,
@@ -2382,7 +2398,7 @@ export default function App() {
               !walkId.trim()
             ) {
               setJourneyStopMessage(
-                "This notification is missing its journey details. Contact supporthecate@gmail.com to report the incorrect speed stop.",
+                t("This notification is missing its journey details. Contact supporthecate@gmail.com to report the incorrect speed stop."),
               );
               return;
             }
@@ -2395,7 +2411,7 @@ export default function App() {
             trackingStateRef.current !== "tracking" &&
             trackingStateRef.current !== "requesting"
           ) {
-            setJourneyStopMessage(JOURNEY_SPEED_STOP_MESSAGE);
+            setJourneyStopMessage(t(JOURNEY_SPEED_STOP_MESSAGE));
           }
           return;
         }
@@ -2561,10 +2577,10 @@ export default function App() {
     const baselineCells = discoveryCellsFromPoints(baselinePoints);
     explorationStartRef.current = journal.active
       ? {
-          cells: new Set(baselineCells.map(discoveryCellKey)),
-          points: baselinePoints,
-          discoveryDistance: discoveredDistanceKm(baselinePoints),
-        }
+        cells: new Set(baselineCells.map(discoveryCellKey)),
+        points: baselinePoints,
+        discoveryDistance: discoveredDistanceKm(baselinePoints),
+      }
       : null;
     pointsRef.current = mergeRoutePoints(recoveredPoints);
     cellsRef.current = discoveryCellsFromPoints(recoveredPoints);
@@ -2590,13 +2606,13 @@ export default function App() {
               pendingWalksRef.current,
               activeWalkRef.current
                 ? {
-                    ...activeWalkRef.current,
-                    finishedAt: Math.max(
-                      activeWalkRef.current.startedAt,
-                      activeWalkRef.current.points.at(-1)?.recordedAt ??
+                  ...activeWalkRef.current,
+                  finishedAt: Math.max(
+                    activeWalkRef.current.startedAt,
+                    activeWalkRef.current.points.at(-1)?.recordedAt ??
                         activeWalkRef.current.startedAt,
-                    ),
-                  }
+                  ),
+                }
                 : null,
             );
           }
@@ -2675,13 +2691,13 @@ export default function App() {
           pendingWalksRef.current,
           activeWalkRef.current
             ? {
-                ...activeWalkRef.current,
-                finishedAt: Math.max(
-                  activeWalkRef.current.startedAt,
-                  activeWalkRef.current.points.at(-1)?.recordedAt ??
+              ...activeWalkRef.current,
+              finishedAt: Math.max(
+                activeWalkRef.current.startedAt,
+                activeWalkRef.current.points.at(-1)?.recordedAt ??
                     activeWalkRef.current.startedAt,
-                ),
-              }
+              ),
+            }
             : null,
         );
       }
@@ -2695,7 +2711,7 @@ export default function App() {
     }
   };
 
-  const refreshLiveLeaderboard = async (userId: string) => {
+  const publishCompletedJourneyLeaderboard = async (userId: string) => {
     if (!isAutomaticUpdatesEnabled()) {
       setAutomaticUpdatePending(userId, false);
       return true;
@@ -2705,9 +2721,9 @@ export default function App() {
       setAutomaticUpdatePending(userId, false);
       return true;
     } catch (error) {
-      // Discovery syncing is the source of truth. A later completed session or
-      // online retry can safely rebuild the public aggregate snapshot.
-      console.warn("Could not refresh live leaderboard data", errorDiagnostic(error));
+      // Keep publication tied to journey completion. A later completed journey
+      // can rebuild the public snapshot if this attempt fails.
+      console.warn("Could not publish completed journey leaderboard data", errorDiagnostic(error));
       return false;
     }
   };
@@ -2715,7 +2731,7 @@ export default function App() {
   useEffect(() => {
     if (!accountUserId) return;
     let retrying = false;
-    let attemptedInitialRefresh = false;
+    let attemptedInitialSync = false;
     let retryTimer: number | null = null;
     const scheduleRetry = () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
@@ -2734,9 +2750,9 @@ export default function App() {
         return;
       }
       const pending = isAutomaticUpdatePending(accountUserId);
-      if (!pending && attemptedInitialRefresh) return;
+      if (!pending && attemptedInitialSync) return;
       if (retrying) return;
-      attemptedInitialRefresh = true;
+      attemptedInitialSync = true;
       retrying = true;
       if (!pending) setAutomaticUpdatePending(accountUserId, true);
       void (async () => {
@@ -2745,7 +2761,8 @@ export default function App() {
         if (cellsRef.current.length) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
-        await refreshLiveLeaderboard(accountUserId);
+        // This retry only syncs private history; publishing happens when a journey ends.
+        setAutomaticUpdatePending(accountUserId, false);
       })()
         .catch(() => undefined)
         .finally(() => {
@@ -2783,16 +2800,16 @@ export default function App() {
               city.id,
               existing
                 ? {
-                    ...city,
-                    firstDiscoveredAt: Math.min(
-                      existing.firstDiscoveredAt ?? Infinity,
-                      city.firstDiscoveredAt ?? Infinity,
-                    ),
-                    lastDiscoveredAt: Math.max(
-                      existing.lastDiscoveredAt ?? 0,
-                      city.lastDiscoveredAt ?? 0,
-                    ),
-                  }
+                  ...city,
+                  firstDiscoveredAt: Math.min(
+                    existing.firstDiscoveredAt ?? Infinity,
+                    city.firstDiscoveredAt ?? Infinity,
+                  ),
+                  lastDiscoveredAt: Math.max(
+                    existing.lastDiscoveredAt ?? 0,
+                    city.lastDiscoveredAt ?? 0,
+                  ),
+                }
                 : city,
             );
             if (city.id !== oldCity.id) {
@@ -2940,12 +2957,12 @@ export default function App() {
         if (disposed) return;
         setReminderMotionAllowed(allowed);
         setReminderMotionError(allowed ? "" : status === "unavailable"
-          ? "Motion detection isn’t available on this device."
-          : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+          ? t("Motion detection isn’t available on this device.")
+          : t("Allow {{value0}} so Hecate can detect movement in the background and remind you to explore.", { value0: reminderMotionPermissionLabel() }));
       }).catch((cause) => {
         if (disposed) return;
         setReminderMotionAllowed(false);
-        const message = cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`;
+        const message = cause instanceof Error ? cause.message : t("Could not check {{value0}} permission.", { value0: reminderMotionPermissionLabel() });
         console.error("Could not enable motion-based discovery reminders", { cause: errorDiagnostic(cause) });
         setReminderMotionError(message);
       }).finally(() => { requesting = false; });
@@ -3353,8 +3370,8 @@ export default function App() {
         bearing: mapCameraBearing(mapOrientationRef.current, point, simulationRouteRef.current ? null : compassHeadingRef.current) ?? mapRef.current?.getBearing(),
         ...(route
           ? {
-              padding: { top: 0, bottom: 0, left: 0, right: 0 },
-            }
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+          }
           : {}),
         duration: 1400,
         essential: true,
@@ -3529,7 +3546,7 @@ export default function App() {
     rerouteControllerRef.current = controller;
     setNavigationRequestPending(true);
     nextRerouteAtRef.current = Date.now() + 30_000;
-    setNavigationMessage("Recalculating route…");
+    setNavigationMessage(t("Recalculating route…"));
     const destination = route.points[route.points.length - 1];
     void calculateNavigationRoute(point, destination, cellsRef.current, mode, controller.signal)
       .then((plan) => {
@@ -3549,13 +3566,13 @@ export default function App() {
       .catch((cause) => {
         if (controller.signal.aborted) return;
         console.error("Could not recalculate navigation route", { mode, cause: errorDiagnostic(cause) });
-        setNavigationMessage(cause instanceof Error ? cause.message : "Could not recalculate the route. Check your connection.");
+        setNavigationMessage(cause instanceof Error ? cause.message : t("Could not recalculate the route. Check your connection."));
       })
       .finally(() => {
         if (rerouteControllerRef.current === controller) {
-        rerouteControllerRef.current = null;
-        setNavigationRequestPending(false);
-      }
+          rerouteControllerRef.current = null;
+          setNavigationRequestPending(false);
+        }
       });
   }, [updateJourneyNavigation, updateNavigationCue]);
 
@@ -3648,7 +3665,7 @@ export default function App() {
         (walk) => walk.id === completed.id,
       );
       if (completedWalkSynced && discoverySynced) {
-        await refreshLiveLeaderboard(walkOwner);
+        await publishCompletedJourneyLeaderboard(walkOwner);
       }
       if (started) {
         const completedCells = cellsRef.current;
@@ -3697,10 +3714,10 @@ export default function App() {
               setExplorationSummary((current) =>
                 current?.walkId === active.id
                   ? {
-                      ...current,
-                      cityName: city.name,
-                      cityPercentageAdded: percentageAdded,
-                    }
+                    ...current,
+                    cityName: city.name,
+                    cityPercentageAdded: percentageAdded,
+                  }
                   : current,
               );
             })
@@ -3786,7 +3803,7 @@ export default function App() {
     const controller = new AbortController();
     rerouteControllerRef.current = controller;
     setNavigationRequestPending(true);
-    setNavigationTestMessage("Calculating sample route…");
+    setNavigationTestMessage(t("Calculating sample route…"));
     const origin = { lat: 41.3874, lng: 2.1686 };
     const destination = { lat: 41.4036, lng: 2.1744 };
     try {
@@ -3801,14 +3818,14 @@ export default function App() {
       setSimulationRoute(route);
       setSimulationPlayback(playback);
       setActiveNavigationRoute(route);
-      setRouteDestination({ ...destination, name: "Mock navigation destination" });
+      setRouteDestination({ ...destination, name: t("Mock navigation destination") });
       setNavigationTestMessage("");
       setDevToolsOpen(false);
       focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
     } catch (cause) {
       if (controller.signal.aborted) return;
       console.error("Could not prepare route recalculation preview", { cause: errorDiagnostic(cause) });
-      setNavigationTestMessage(cause instanceof Error ? cause.message : "Could not calculate the sample route.");
+      setNavigationTestMessage(cause instanceof Error ? cause.message : t("Could not calculate the sample route."));
     } finally {
       if (rerouteControllerRef.current === controller) {
         rerouteControllerRef.current = null;
@@ -3830,7 +3847,7 @@ export default function App() {
           setJourneySaveError(
             error instanceof Error
               ? error.message
-              : "Could not save this journey. Keep Hecate open and retry saving.",
+              : t("Could not save this journey. Keep Hecate open and retry saving."),
           );
         }
       })
@@ -3839,17 +3856,17 @@ export default function App() {
 
   const importGpxFile = async (file: File): Promise<GpxImportResult> => {
     const userId = accountUserIdRef.current;
-    if (!userId) throw new Error("Sign in before importing a GPX file.");
+    if (!userId) throw new Error(t("Sign in before importing a GPX file."));
     if (!discoveryHistoryReadyRef.current) {
-      throw new Error("Wait for your discovery history to finish loading.");
+      throw new Error(t("Wait for your discovery history to finish loading."));
     }
     if (trackingStateRef.current !== "idle" || activeWalkRef.current) {
       throw new Error(
-        "Stop and save the current discovery before importing a GPX file.",
+        t("Stop and save the current discovery before importing a GPX file."),
       );
     }
     if (file.size > 25 * 1024 * 1024) {
-      throw new Error("The GPX file is larger than the 25 MB import limit.");
+      throw new Error(t("The GPX file is larger than the 25 MB import limit."));
     }
 
     const xml = await file.text();
@@ -3862,7 +3879,7 @@ export default function App() {
     if (newWalks.length === 0) {
       return {
         tone: "info",
-        message: "This route was already imported.",
+        message: t("This route was already imported."),
       };
     }
     const compactWalks = newWalks.map((walk) => ({
@@ -3886,18 +3903,18 @@ export default function App() {
       (cellsToSync) =>
         retryGpxImportOperation(
           () => syncDiscoveryCells(cellsToSync, userId),
-          "Syncing imported discovery cells",
+          t("Syncing imported discovery cells"),
           file.name,
         ),
       (walkToSave) =>
         retryGpxImportOperation(
           () => saveCompletedWalk(walkToSave, userId),
-          "Saving imported route",
+          t("Saving imported route"),
           file.name,
         ),
     );
     if (accountUserIdRef.current !== userId) {
-      throw new Error("The signed-in account changed during the GPX import.");
+      throw new Error(t("The signed-in account changed during the GPX import."));
     }
 
     pointsRef.current = mergedPoints;
@@ -3906,25 +3923,24 @@ export default function App() {
     lastPointRef.current = mergedPoints.at(-1);
     setPoints(mergedPoints);
     setCells(mergedCells);
-    await refreshLiveLeaderboard(userId);
     const addedKm = Math.max(
       0,
       discoveredDistanceKm(mergedPoints) - previousDistance,
     );
     const importedAt = Date.now();
-    const baseTitle = file.name.replace(/\.gpx$/i, "").trim() || "GPX route";
+    const baseTitle = file.name.replace(/\.gpx$/i, "").trim() || t("GPX route");
     const importedRoutes = newWalks.map((walk, index) => ({
       id: walk.id,
       title:
         newWalks.length === 1
           ? baseTitle
-          : `${baseTitle} · Segment ${index + 1}`,
+          : t("{{value0}} · Segment {{value1}}", { value0: baseTitle, value1: index + 1 }),
       addedAt: importedAt,
       addedKm: routeDistanceKm(walk.points),
     }));
     return {
       tone: "success",
-      message: `${newWalks.length === 1 ? "Route" : `${newWalks.length} routes`} imported · ${formatDistance(addedKm)} added.`,
+      message: t("importedRoutes", { count: newWalks.length, distance: formatDistance(addedKm) }),
       points: importedPoints,
       importedRoutes,
     };
@@ -3933,35 +3949,35 @@ export default function App() {
   const updateReminderEnabled = async (
     enabled: boolean,
   ): Promise<string | null> => {
-    if (!accountUserId) return "Sign in before enabling discovery reminders.";
+    if (!accountUserId) return t("Sign in before enabling discovery reminders.");
     if (enabled && !discoveryLocationAllowed)
-      return "Allow background location for Hecate in device Settings to enable discovery reminders.";
+      return t("Allow background location for Hecate in device Settings to enable discovery reminders.");
     if (enabled && nativeApp) {
       try {
         const notificationAllowed = await ensureNotificationPermission();
         setNotificationPermissionReady(notificationAllowed);
         if (!notificationAllowed)
-          return "Allow notifications in your device settings to enable discovery reminders.";
+          return t("Allow notifications in your device settings to enable discovery reminders.");
       } catch {
-        return "Notifications are unavailable right now. Try again later.";
+        return t("Notifications are unavailable right now. Try again later.");
       }
     }
     if (enabled && nativeApp) {
       try {
         const allowed = await requestReminderMotionPermission();
         setReminderMotionAllowed(allowed);
-        const message = allowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`;
+        const message = allowed ? "" : t("Allow {{value0}} so Hecate can detect movement in the background and remind you to explore.", { value0: reminderMotionPermissionLabel() });
         setReminderMotionError(message);
         if (!allowed) return message;
       } catch (cause) {
         setReminderMotionAllowed(false);
-        const message = cause instanceof Error ? cause.message : "Could not enable motion-based discovery reminders.";
+        const message = cause instanceof Error ? cause.message : t("Could not enable motion-based discovery reminders.");
         setReminderMotionError(message);
         return message;
       }
     }
     if (accountUserIdRef.current !== accountUserId)
-      return "Your account changed. Reopen notification settings and try again.";
+      return t("Your account changed. Reopen notification settings and try again.");
     setReminderEnabled(enabled);
     reminderEnabledRef.current = enabled;
     reminderRef.current.reset();
@@ -3981,17 +3997,17 @@ export default function App() {
     enabled: boolean,
   ): Promise<string | null> => {
     if (!accountUserId)
-      return "Sign in before enabling activity notifications.";
+      return t("Sign in before enabling activity notifications.");
     const preferencesHaveBeenSaved =
       hasSavedActivityNotificationPreferences(accountUserId);
     if (enabled && nativeApp) {
       const notificationAllowed = await ensureNotificationPermission();
       setNotificationPermissionReady(notificationAllowed);
       if (!notificationAllowed)
-        return "Allow notifications in your device settings to enable this.";
+        return t("Allow notifications in your device settings to enable this.");
     }
     if (accountUserIdRef.current !== accountUserId)
-      return "Your account changed. Reopen notification settings and try again.";
+      return t("Your account changed. Reopen notification settings and try again.");
     if (enabled && !preferencesHaveBeenSaved) {
       const initialPreferences = enabledActivityNotificationPreferences();
       setActivityNotificationPreferences(initialPreferences);
@@ -4005,7 +4021,7 @@ export default function App() {
   };
 
   const updateDiscoveredAreaReminders = (enabled: boolean): string | null => {
-    if (!accountUserId) return "Sign in before changing journey reminders.";
+    if (!accountUserId) return t("Sign in before changing journey reminders.");
     const next = {
       ...activityNotificationPreferences,
       discoveredAreaReminders: enabled,
@@ -4014,7 +4030,7 @@ export default function App() {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
       console.error("Could not save discovered-area reminder preference", { accountUserId, enabled, error: errorDiagnostic(error) });
-      return "Could not save your reminder preference. Try again.";
+      return t("Could not save your reminder preference. Try again.");
     }
     setActivityNotificationPreferences(next);
     return null;
@@ -4024,14 +4040,14 @@ export default function App() {
     field: "streakReminderTime" | "dailyReminderTime",
     time: string,
   ): string | null => {
-    if (!accountUserId) return "Sign in before changing the reminder time.";
-    if (!isReminderTime(time)) return "Choose a valid reminder time.";
+    if (!accountUserId) return t("Sign in before changing the reminder time.");
+    if (!isReminderTime(time)) return t("Choose a valid reminder time.");
     const next = { ...activityNotificationPreferences, [field]: time };
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
       console.error("Could not save reminder time", { accountUserId, field, time, error: errorDiagnostic(error) });
-      return "Could not save your reminder time. Try again.";
+      return t("Could not save your reminder time. Try again.");
     }
     setActivityNotificationPreferences(next);
     return null;
@@ -4041,19 +4057,19 @@ export default function App() {
     field: "discoveryReminderMinutes" | "inactivityReminderMinutes",
     minutes: number,
   ): string | null => {
-    if (!accountUserId) return "Sign in before changing reminder durations.";
+    if (!accountUserId) return t("Sign in before changing reminder durations.");
     const options =
       field === "discoveryReminderMinutes"
         ? DISCOVERY_REMINDER_DURATIONS
         : INACTIVITY_REMINDER_DURATIONS;
     if (!options.includes(minutes))
-      return "Choose one of the available reminder durations.";
+      return t("Choose one of the available reminder durations.");
     const next = { ...activityNotificationPreferences, [field]: minutes };
     try {
       saveActivityNotificationPreferences(accountUserId, next);
     } catch (error) {
       console.error("Could not save reminder duration", { accountUserId, field, minutes, error: errorDiagnostic(error) });
-      return "Could not save your reminder duration. Try again.";
+      return t("Could not save your reminder duration. Try again.");
     }
     setActivityNotificationPreferences(next);
     return null;
@@ -4062,19 +4078,19 @@ export default function App() {
   const updateAllNotifications = async (
     enabled: boolean,
   ): Promise<string | null> => {
-    if (!accountUserId) return "Sign in before changing notifications.";
+    if (!accountUserId) return t("Sign in before changing notifications.");
     if (enabled && nativeApp) {
       try {
         const notificationAllowed = await ensureNotificationPermission();
         setNotificationPermissionReady(notificationAllowed);
         if (!notificationAllowed)
-          return "Allow notifications in your device settings to enable this.";
+          return t("Allow notifications in your device settings to enable this.");
       } catch {
-        return "Notifications are unavailable right now. Try again later.";
+        return t("Notifications are unavailable right now. Try again later.");
       }
     }
     if (accountUserIdRef.current !== accountUserId)
-      return "Your account changed. Reopen notification settings and try again.";
+      return t("Your account changed. Reopen notification settings and try again.");
     const nextActivityPreferences = {
       ...(enabled
         ? enabledActivityNotificationPreferences()
@@ -4093,15 +4109,15 @@ export default function App() {
       try {
         motionAllowed = await requestReminderMotionPermission();
         setReminderMotionAllowed(motionAllowed);
-        setReminderMotionError(motionAllowed ? "" : `Allow ${reminderMotionPermissionLabel()} so Hecate can detect movement in the background and remind you to explore.`);
+        setReminderMotionError(motionAllowed ? "" : t("Allow {{value0}} so Hecate can detect movement in the background and remind you to explore.", { value0: reminderMotionPermissionLabel() }));
       } catch (cause) {
         motionAllowed = false;
         setReminderMotionAllowed(false);
-        setReminderMotionError(cause instanceof Error ? cause.message : `Could not check ${reminderMotionPermissionLabel()} permission.`);
+        setReminderMotionError(cause instanceof Error ? cause.message : t("Could not check {{value0}} permission.", { value0: reminderMotionPermissionLabel() }));
       }
     }
     if (accountUserIdRef.current !== accountUserId)
-      return "Your account changed. Reopen notification settings and try again.";
+      return t("Your account changed. Reopen notification settings and try again.");
     const remindersActive = enabled && discoveryLocationAllowed && motionAllowed === true;
     setReminderEnabled(remindersActive);
     reminderEnabledRef.current = remindersActive;
@@ -4125,20 +4141,20 @@ export default function App() {
   ): Promise<void> => {
     if (!nativeApp) {
       setActivityNotificationTestMessage(
-        `${notificationName} is only available in the native app.`,
+        t("{{value0}} is only available in the native app.", { value0: notificationName }),
       );
       return;
     }
     if (!accountUserId) {
       setActivityNotificationTestMessage(
-        `Sign in before testing ${notificationName.toLowerCase()}.`,
+        t("Sign in before testing {{value0}}.", { value0: notificationName.toLowerCase() }),
       );
       return;
     }
     try {
       if (!(await ensureNotificationPermission())) {
         setActivityNotificationTestMessage(
-          "Allow notifications in your device settings, then try again.",
+          t("Allow notifications in your device settings, then try again."),
         );
         return;
       }
@@ -4153,12 +4169,12 @@ export default function App() {
         ],
       });
       setActivityNotificationTestMessage(
-        `${notificationName} will appear in 5 seconds.`,
+        t("{{value0}} will appear in 5 seconds.", { value0: notificationName }),
       );
     } catch (error) {
       console.warn("Could not schedule activity notification test", { notificationName, error: errorDiagnostic(error) });
       setActivityNotificationTestMessage(
-        `Could not schedule ${notificationName.toLowerCase()}.`,
+        t("Could not schedule {{value0}}.", { value0: notificationName.toLowerCase() }),
       );
     }
   };
@@ -4167,7 +4183,7 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: MORNING_INVITE_TEST_NOTIFICATION_ID,
-        title: "Heading out today?",
+        title: t("Heading out today?"),
         body: morningInviteMessage(
           citiesLoadedUserId === accountUserId &&
             discoveryHistoryReadyRef.current
@@ -4182,7 +4198,7 @@ export default function App() {
         actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
         extra: { kind: "morning-invite", userId: accountUserId },
       },
-      "Daily walking reminder",
+      t("Daily walking reminder"),
     );
   };
 
@@ -4190,14 +4206,14 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: REMINDER_TEST_NOTIFICATION_ID,
-        title: "Ready to record your journey?",
+        title: t("Ready to record your journey?"),
         body: reminderMessage(
           activityNotificationPreferences.discoveryReminderMinutes,
         ),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "test-unmapped", userId: accountUserId },
       },
-      "Unmapped area reminder",
+      t("Unmapped area reminder"),
     );
   };
 
@@ -4205,12 +4221,12 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: WEEKLY_RECAP_TEST_NOTIFICATION_ID,
-        title: "Your weekly walking summary",
+        title: t("Your weekly walking summary"),
         body: weeklyRecapFromPoints(points, Date.now()),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "weekly-recap-test", userId: accountUserId },
       },
-      "Weekly progress summary",
+      t("Weekly progress summary"),
     );
   };
 
@@ -4218,14 +4234,14 @@ export default function App() {
     await scheduleActivityNotificationTest(
       {
         id: STREAK_REMINDER_TEST_NOTIFICATION_ID,
-        title: "Your walking streak is at risk",
+        title: t("Your walking streak is at risk"),
         body: streakReminderMessage(
           Math.max(1, discoveryProgress.walkingStats.currentStreakDays),
         ),
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "streak-reminder-test", userId: accountUserId },
       },
-      "Streak reminder",
+      t("Streak reminder"),
     );
   };
 
@@ -4279,7 +4295,7 @@ export default function App() {
     setAchievementTestPreview(achievement.id);
     if (!nativeApp) {
       setAchievementTestMessage(
-        `Showing ${achievement.title}. Native notifications are only available in the iPhone app.`,
+        t("Showing {{value0}}. Native notifications are only available in the iPhone app.", { value0: achievement.title }),
       );
       return;
     }
@@ -4291,12 +4307,12 @@ export default function App() {
       );
       setAchievementTestMessage(
         scheduled
-          ? `${achievement.title} notification scheduled. The next test uses another badge.`
-          : "Celebration shown. Allow notifications in iPhone Settings to test the notification too.",
+          ? t("{{value0}} notification scheduled. The next test uses another badge.", { value0: achievement.title })
+          : t("Celebration shown. Allow notifications in iPhone Settings to test the notification too."),
       );
     } catch {
       setAchievementTestMessage(
-        "Celebration shown, but the test notification could not be scheduled.",
+        t("Celebration shown, but the test notification could not be scheduled."),
       );
     }
   };
@@ -4478,7 +4494,7 @@ export default function App() {
         assertFreshJourneyControlRequest(request, Date.now());
         if (trackingStateRef.current !== expectedTracking)
           throw new Error(
-            "Your journey changed while Hecate was opening. Tap the control again.",
+            t("Your journey changed while Hecate was opening. Tap the control again."),
           );
         setSyncOpen(false);
         await toggleTracking();
@@ -4488,7 +4504,7 @@ export default function App() {
           setJourneyStopMessage(
             error instanceof Error
               ? error.message
-              : "Could not start or stop the journey from the iOS control.",
+              : t("Could not start or stop the journey from the iOS control."),
           );
       } finally {
         if (controlMountedRef.current) {
@@ -4633,7 +4649,7 @@ export default function App() {
 
   const handleLocationControl = (): void => {
     const point = simulationPointRef.current ?? (locationIsCurrent ? currentPoint : null);
-    if (!point || !userCenteredRef.current) {
+    if (!point || (!followCameraEnabledRef.current && !userCenteredRef.current)) {
       if (simulationPointRef.current) focusOnUserPoint(simulationPointRef.current);
       else locate();
       return;
@@ -5075,9 +5091,9 @@ export default function App() {
   const locationStatusText =
     locationDisplayStatus === "denied"
       ? nativeApp
-        ? "Location access disabled · Open Settings"
-        : "Location access disabled · Check browser settings"
-      : "Location temporarily unavailable";
+        ? t("Location access disabled · Open Settings")
+        : t("Location access disabled · Check browser settings")
+      : t("Location temporarily unavailable");
   const accountDataLoading =
     !authReady || Boolean(accountUserId && discoveryLoading);
   const showFirstDiscoveryHint = Boolean(
@@ -5124,9 +5140,9 @@ export default function App() {
             return previous.updatedAt >= place.updatedAt
               ? places
               : [
-                  ...places.filter((candidate) => candidate.id !== place.id),
-                  place,
-                ];
+                ...places.filter((candidate) => candidate.id !== place.id),
+                place,
+              ];
           }, []);
           if (migrated.length) {
             await upsertFavoritePlacesInDatabase(
@@ -5256,12 +5272,12 @@ export default function App() {
     }
     try {
       const result = await ActionSheet.showActions({
-        title: "Get directions",
-        message: "Select a maps application",
+        title: t("Get directions"),
+        message: t("Select a maps application"),
         options: [
-          { title: "Apple Maps" },
-          { title: "Google Maps" },
-          { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
+          { title: t("Apple Maps") },
+          { title: t("Google Maps") },
+          { title: t("Cancel"), style: ActionSheetButtonStyle.Cancel },
         ],
       });
       if (result.index === 0) await openFavoriteDirections("apple", favorite);
@@ -5355,6 +5371,17 @@ export default function App() {
     [showRouteOnMap],
   );
 
+  const openKeepsake = (city: CityBoundary, discoveredKm: number, percentage: number): void => {
+    const map = mapRef.current;
+    if (!map) throw new Error("The map must be ready before creating a city keepsake.");
+    suspendFollowCamera();
+    map.stop();
+    setCitiesOpen(false);
+    setSyncOpen(false);
+    settleJourneySheet(false);
+    setKeepsake({ city, cells: [...cells], map, discoveredKm, percentage });
+  };
+
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
@@ -5380,20 +5407,21 @@ export default function App() {
     [],
   );
 
-  const locationControlLabel = userCentered
-    ? mapOrientation === "north-up" ? "Switch to heading-up" : "Switch to north-up"
-    : (simulationPoint || locationIsCurrent) ? "Center on my location" : "Find my location";
+  const locationControlCentered = Boolean(simulationPoint || locationIsCurrent) && (followingUser || userCentered);
+  const locationControlLabel = locationControlCentered
+    ? mapOrientation === "north-up" ? t("Switch to heading-up") : t("Switch to north-up")
+    : (simulationPoint || locationIsCurrent) ? t("Center on my location") : t("Find my location");
 
   return (
     <main
-      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}`}
+      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
       style={
         routePlannerOpen
           ? ({
-              "--route-panel-height": `${routePanelHeight}px`,
-              "--route-panel-bottom":
+            "--route-panel-height": `${routePanelHeight}px`,
+            "--route-panel-bottom":
                 keyboardInset > 0 ? `${keyboardInset + 12}px` : undefined,
-            } as React.CSSProperties)
+          } as React.CSSProperties)
           : undefined
       }
       aria-busy={accountDataLoading}
@@ -5425,9 +5453,9 @@ export default function App() {
         onDestinationSelect={
           routePlannerOpen
             ? (point) => {
-                setRouteDestination(point);
-                setSelectedFavoritePlaceId(null);
-              }
+              setRouteDestination(point);
+              setSelectedFavoritePlaceId(null);
+            }
             : undefined
         }
         favoritePlaces={favoritePlaces}
@@ -5437,13 +5465,13 @@ export default function App() {
         onFavoriteSelect={
           routePlannerOpen
             ? (favorite) => {
-                setRouteDestination({
-                  lng: favorite.lng,
-                  lat: favorite.lat,
-                  name: favorite.name,
-                });
-                setSelectedFavoritePlaceId(favorite.id);
-              }
+              setRouteDestination({
+                lng: favorite.lng,
+                lat: favorite.lat,
+                name: favorite.name,
+              });
+              setSelectedFavoritePlaceId(favorite.id);
+            }
             : openFavoritePlace
         }
         onZoomChange={onZoomChange}
@@ -5508,7 +5536,7 @@ export default function App() {
           onStart={(route, mode) => {
             const point = latestPassivePointRef.current ?? currentPoint;
             if (!point)
-              throw new Error("Find your current location before starting navigation.");
+              throw new Error(t("Find your current location before starting navigation."));
             mapOrientationRef.current = "heading-up";
             setMapOrientation("heading-up");
             void requestDeviceHeadingPermission();
@@ -5574,89 +5602,68 @@ export default function App() {
         !routePlannerOpen &&
         !citiesExpanded &&
         (simulationRoute || tracking === "tracking") && (
-          <NavigationTurn
-            cue={turnCue}
-            message={navigationMessage}
-            anchor={simulationRoute ? simulationPanelRef : journeyCardRef}
-          />
-        )}
+        <NavigationTurn
+          cue={turnCue}
+          message={navigationMessage}
+          anchor={simulationRoute ? simulationPanelRef : journeyCardRef}
+        />
+      )}
       {devToolsEnabled && devToolsVisible && (
-        <aside className="dev-tools" aria-label="Development test tools">
+        <aside className="dev-tools" aria-label={t("Development test tools")}>
           <div className="dev-tools__heading">
-            <strong>Dev tools</strong>
+            <strong>{t("Dev tools")}</strong>
             <button
               type="button"
               onClick={() => setDevToolsOpen(false)}
-              aria-label="Hide development test tools"
-              title="Hide development test tools"
+              aria-label={t("Hide development test tools")}
+              title={t("Hide development test tools")}
             >
               <XIcon size={14} />
             </button>
           </div>
-          <strong>Notifications</strong>
-          <small>
-            Schedules each notification in 5 seconds using your current
-            progress. These tests work even when the notification category is
-            switched off.
-          </small>
+          <strong>{t("Notifications")}</strong>
+          <small>{t("Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.")}</small>
           <button
             type="button"
             onClick={() => void testUnmappedAreaNotification()}
-          >
-            Test unmapped area reminder
-          </button>
+          >{t("Test unmapped area reminder")}</button>
           <button
             type="button"
             onClick={() => void testMorningInviteNotification()}
-          >
-            Test daily reminder
-          </button>
+          >{t("Test daily reminder")}</button>
           <button
             type="button"
             onClick={() => void testWeeklyRecapNotification()}
-          >
-            Test weekly summary
-          </button>
+          >{t("Test weekly summary")}</button>
           <button
             type="button"
             onClick={() => void testStreakReminderNotification()}
-          >
-            Test streak reminder
-          </button>
+          >{t("Test streak reminder")}</button>
           {activityNotificationTestMessage && (
             <small role="status">{activityNotificationTestMessage}</small>
           )}
-          <strong>Navigation</strong>
-          <small>Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.</small>
+          <strong>{t("Navigation")}</strong>
+          <small>{t("Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.")}</small>
           <button
             type="button"
             data-testid="preview-route-recalculation"
             disabled={tracking === "tracking" || tracking === "requesting" || navigationRequestPending}
             onClick={() => void previewRouteRecalculation()}
-          >
-            Test route recalculation
-          </button>
+          >{t("Test route recalculation")}</button>
           {navigationTestMessage && <small role="status">{navigationTestMessage}</small>}
-          <strong>Journey recap</strong>
-          <small>Previews a sample journey without saving progress.</small>
+          <strong>{t("Journey recap")}</strong>
+          <small>{t("Previews a sample journey without saving progress.")}</small>
           <button
             type="button"
             data-testid="preview-journey-recap"
             onClick={simulateJourneyRecap}
-          >
-            Show mock journey recap
-          </button>
-          <strong>Achievements</strong>
-          <small>
-            Opens the real celebration and, in the native app, schedules the
-            same local notification. Each press cycles to another badge.
-          </small>
+          >{t("Show mock journey recap")}</button>
+          <strong>{t("Achievements")}</strong>
+          <small>{t("Opens the real celebration and, in the native app, schedules the same local notification. Each press cycles to another badge.")}</small>
           <button
             type="button"
             onClick={() => void simulateAchievementUnlock()}
-          >
-            Test achievement unlock
-          </button>
+          >{t("Test achievement unlock")}</button>
           {achievementTestMessage && (
             <small role="status">{achievementTestMessage}</small>
           )}
@@ -5667,21 +5674,19 @@ export default function App() {
           className="dev-tools__restore"
           type="button"
           onClick={() => setDevToolsOpen(true)}
-        >
-          Dev tools
-        </button>
+        >{t("Dev tools")}</button>
       )}
 
       <header className="topbar" ref={topbarRef}>
         <button
           className="brand"
           onClick={showGlobe}
-          aria-label="View the globe"
+          aria-label={t("View the globe")}
         >
           <span className="brand__mark">
             <HecateMark />
           </span>
-          <span>Hecate</span>
+          <span>{t("Hecate")}</span>
         </button>
         <div className="topbar-account">
           {accountUserId && summaryCity && isCityScale && (
@@ -5691,13 +5696,13 @@ export default function App() {
               onClick={openJourneyAtCityMilestones}
               aria-label={
                 currentCityMilestone.next
-                  ? `${currentCityMilestoneLevel} of 3 city stars earned in ${summaryCity.name}. ${formatRemainingDistance(currentCityMilestoneRemaining)} until the next star. Open city progress.`
-                  : `All 3 city stars earned in ${summaryCity.name}. Open city progress.`
+                  ? t("{{value0}} of 3 city stars earned in {{value1}}. {{value2}} until the next star. Open city progress.", { value0: currentCityMilestoneLevel, value1: summaryCity.name, value2: formatRemainingDistance(currentCityMilestoneRemaining) })
+                  : t("All 3 city stars earned in {{value0}}. Open city progress.", { value0: summaryCity.name })
               }
               title={
                 currentCityMilestone.next
-                  ? `Next city star at ${formatDistance(currentCityMilestone.next.thresholdKm)}`
-                  : "All 3 city stars earned"
+                  ? t("Next city star at {{value0}}", { value0: formatDistance(currentCityMilestone.next.thresholdKm) })
+                  : t("All 3 city stars earned")
               }
             >
               <CityLevelStars level={currentCityMilestoneLevel} />
@@ -5708,8 +5713,8 @@ export default function App() {
               </span>
               <small>
                 {currentCityMilestone.next
-                  ? `${formatRemainingDistance(currentCityMilestoneRemaining)} left`
-                  : "Complete"}
+                  ? t("{{value0}} left", { value0: formatRemainingDistance(currentCityMilestoneRemaining) })
+                  : t("Complete")}
               </small>
             </button>
           )}
@@ -5721,7 +5726,8 @@ export default function App() {
               setSyncInitialIntent("signin");
               setSyncOpen(true);
             }}
-            aria-label="Account and sync"
+            aria-label={t("Account and sync")}
+            data-testid="account-open"
           >
             <UserIcon size={19} />
           </button>
@@ -5732,50 +5738,39 @@ export default function App() {
       !isCityScale &&
       !accountDataLoading &&
       !routePlannerOpen ? (
-        <section className="guest-intro" aria-labelledby="guest-intro-title">
-          <div className="eyebrow">Discover your world</div>
-          <h1 id="guest-intro-title">Turn every walk into your map.</h1>
-          <p>
-            Hecate reveals new ground as you explore. Your routes and exact
-            locations stay private.
-          </p>
-          <div className="guest-intro__actions">
-            <button
-              type="button"
-              onClick={() => {
-                setSyncInitialIntent("signup");
-                setSyncOpen(true);
-              }}
-            >
-              Create free account
-            </button>
-            <button
-              className="guest-intro__sign-in"
-              type="button"
-              onClick={() => {
-                setSyncInitialIntent("signin");
-                setSyncOpen(true);
-              }}
-            >
-              Sign in
-            </button>
-          </div>
-        </section>
-      ) : !isCityScale && !accountDataLoading ? (
-        <div className="zoom-hint">
-          <span /> Zoom closer to reveal discoveries
-        </div>
-      ) : null}
+          <section className="guest-intro" aria-labelledby="guest-intro-title">
+            <div className="eyebrow">{t("Discover your world")}</div>
+            <h1 id="guest-intro-title">{t("Turn every walk into your map.")}</h1>
+            <p>{t("Hecate reveals new ground as you explore. Your routes and exact locations stay private.")}</p>
+            <div className="guest-intro__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setSyncInitialIntent("signup");
+                  setSyncOpen(true);
+                }}
+              >{t("Create free account")}</button>
+              <button
+                className="guest-intro__sign-in"
+                type="button"
+                onClick={() => {
+                  setSyncInitialIntent("signin");
+                  setSyncOpen(true);
+                }}
+              >{t("Sign in")}</button>
+            </div>
+          </section>
+        ) : !isCityScale && !accountDataLoading ? (
+          <div className="zoom-hint">
+            <span />  {t("Zoom closer to reveal discoveries")} </div>
+        ) : null}
 
       {favoritePlacementActive && (
         <div className="favorite-placement-hint" role="status">
-          Tap the place you want to remember
-          <button
+          {t("Tap the place you want to remember")} <button
             type="button"
             onClick={() => setFavoritePlacementActive(false)}
-          >
-            Cancel
-          </button>
+          >{t("Cancel")}</button>
         </div>
       )}
 
@@ -5783,9 +5778,9 @@ export default function App() {
         <aside
           className="reminder-prompt"
           role="alert"
-          aria-label="Discovery reminder"
+          aria-label={t("Discovery reminder")}
         >
-          <strong>Start recording your journey?</strong>
+          <strong>{t("Start recording your journey?")}</strong>
           <p>
             {reminderMessage(
               activityNotificationPreferences.discoveryReminderMinutes,
@@ -5798,12 +5793,8 @@ export default function App() {
                 setReminderPrompt(null);
                 void toggleTracking();
               }}
-            >
-              Start recording
-            </button>
-            <button type="button" onClick={() => setReminderPrompt(null)}>
-              Not now
-            </button>
+            >{t("Start recording")}</button>
+            <button type="button" onClick={() => setReminderPrompt(null)}>{t("Not now")}</button>
           </div>
         </aside>
       )}
@@ -5812,20 +5803,13 @@ export default function App() {
         <aside
           className="reminder-prompt"
           role="alert"
-          aria-label="Stop recording reminder"
+          aria-label={t("Stop recording reminder")}
         >
-          <strong>Still recording?</strong>
-          <p>
-            If you're done exploring near this spot, you can stop recording.
-            Your recording will continue until you stop it.
-          </p>
+          <strong>{t("Still recording?")}</strong>
+          <p>{t("If you're done exploring near this spot, you can stop recording. Your recording will continue until you stop it.")}</p>
           <div>
-            <button type="button" onClick={() => void toggleTracking()}>
-              Stop recording
-            </button>
-            <button type="button" onClick={() => setInactivityPrompt(false)}>
-              Keep recording
-            </button>
+            <button type="button" onClick={() => void toggleTracking()}>{t("Stop recording")}</button>
+            <button type="button" onClick={() => setInactivityPrompt(false)}>{t("Keep recording")}</button>
           </div>
         </aside>
       )}
@@ -5837,7 +5821,7 @@ export default function App() {
           </span>
           <span className="account-toast__message">
             {locationSettingsError ||
-              "Allow location access in Settings to start your journey."}
+              t("Allow location access in Settings to start your journey.")}
           </span>
           <div className="location-permission-toast__actions">
             <button
@@ -5848,17 +5832,15 @@ export default function App() {
                   .catch((error: Error) => {
                     console.warn("Could not open location settings", { error: errorDiagnostic(error) });
                     setLocationSettingsError(
-                      "Could not open Settings. Enable location for Hecate in your device Settings.",
+                      t("Could not open Settings. Enable location for Hecate in your device Settings."),
                     );
                   });
               }}
-            >
-              Open device settings
-            </button>
+            >{t("Open device settings")}</button>
             <button
               type="button"
               className="location-permission-toast__dismiss"
-              aria-label="Dismiss location permission message"
+              aria-label={t("Dismiss location permission message")}
               onClick={() => setLocationPermissionToastVisible(false)}
             >
               <XIcon size={16} strokeWidth={2} />
@@ -5871,36 +5853,36 @@ export default function App() {
         tracking !== "requesting" &&
         (locationDisplayStatus === "denied" ||
           locationDisplayStatus === "unavailable") && (
-          <button
-            type="button"
-            className={`location-status location-status--${locationDisplayStatus}`}
-            disabled={locationDisplayStatus !== "denied"}
-            onClick={() => {
-              void openLocationSettings().catch((error: Error) => {
-                console.warn("Could not open location settings", { error: errorDiagnostic(error) });
-                setLocationSettingsError(
-                  "Could not open Settings. Enable location for Hecate in device Settings.",
-                );
-                setLocationPermissionToastVisible(true);
-              });
-            }}
-            aria-live="polite"
-            aria-label={locationStatusText}
-          >
-            <span />
-            {locationStatusText}
-          </button>
-        )}
+        <button
+          type="button"
+          className={`location-status location-status--${locationDisplayStatus}`}
+          disabled={locationDisplayStatus !== "denied"}
+          onClick={() => {
+            void openLocationSettings().catch((error: Error) => {
+              console.warn("Could not open location settings", { error: errorDiagnostic(error) });
+              setLocationSettingsError(
+                t("Could not open Settings. Enable location for Hecate in device Settings."),
+              );
+              setLocationPermissionToastVisible(true);
+            });
+          }}
+          aria-live="polite"
+          aria-label={locationStatusText}
+        >
+          <span />
+          {locationStatusText}
+        </button>
+      )}
 
       <nav
         ref={mapActionsRef}
         className={`map-actions${routePlannerOpen ? " map-actions--route-planner" : ""}${routePlannerOpen && compactMapActions ? " map-actions--compact" : ""}`}
-        aria-label="Map controls"
+        aria-label={t("Map controls")}
       >
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}
-          aria-label="Plan a discovery route"
+          aria-label={t("Plan a discovery route")}
           aria-pressed={routePlannerOpen}
           onClick={() => {
             if (simulationRouteRef.current) clearRouteDestination();
@@ -5929,17 +5911,17 @@ export default function App() {
             }}
             aria-label={
               favoritePlacementActive
-                ? "Cancel adding a saved place"
-                : "Save a place"
+                ? t("Cancel adding a saved place")
+                : t("Save a place")
             }
             aria-pressed={favoritePlacementActive}
-            title="Save a place"
+            title={t("Save a place")}
           >
             <SaveIcon size={21} />
           </button>
         )}
         <button
-          className={`location-control${userCentered && mapOrientation === "heading-up" ? " active" : ""}${
+          className={`location-control${locationControlCentered && mapOrientation === "heading-up" ? " active" : ""}${
             passiveLocationStatus === "requesting" && tracking !== "tracking"
               ? " location-control--requesting"
               : ""
@@ -5949,9 +5931,9 @@ export default function App() {
           title={locationControlLabel}
           data-testid="map-location-control"
           data-orientation={mapOrientation}
-          data-centered={userCentered}
+          data-centered={locationControlCentered}
         >
-          {userCentered ? <CompassIcon size={21} /> : <LocateIcon size={21} />}
+          {locationControlCentered ? <CompassIcon size={21} /> : <LocateIcon size={21} />}
         </button>
         <button
           onClick={() =>
@@ -5959,9 +5941,9 @@ export default function App() {
               currentMode === "discover" ? "map" : "discover",
             )
           }
-          aria-label={mode === "discover" ? "Turn fog off" : "Turn fog on"}
+          aria-label={mode === "discover" ? t("Turn fog off") : t("Turn fog on")}
           aria-pressed={mode === "discover"}
-          title={mode === "discover" ? "Turn fog off" : "Turn fog on"}
+          title={mode === "discover" ? t("Turn fog off") : t("Turn fog on")}
         >
           <FogIcon size={21} struck={mode === "discover"} />
         </button>
@@ -5969,10 +5951,10 @@ export default function App() {
           className={perspectiveView ? "active" : ""}
           onClick={toggleMapPerspective}
           aria-label={
-            perspectiveView ? "Switch to 2D view" : "Switch to 3D view"
+            perspectiveView ? t("Switch to 2D view") : t("Switch to 3D view")
           }
           aria-pressed={perspectiveView}
-          title={perspectiveView ? "Switch to 2D view" : "Switch to 3D view"}
+          title={perspectiveView ? t("Switch to 2D view") : t("Switch to 3D view")}
         >
           <ViewDimensionIcon
             size={21}
@@ -6042,23 +6024,23 @@ export default function App() {
               className={`journey-card__summary${showActiveJourneyMetrics ? " journey-card__summary--tracking" : ""}`}
             >
               <div className="eyebrow">
-                {showActiveJourneyMetrics ? "Exploring…" : "Your discovery"}
+                {showActiveJourneyMetrics ? t("Exploring…") : t("Your discovery")}
               </div>
               <div className="discovery-metrics">
                 {showActiveJourneyMetrics ? (
                   <div
                     className="active-journey-metrics"
-                    aria-label="Current walk progress"
+                    aria-label={t("Current walk progress")}
                   >
                     <div>
                       <JourneyCounterValue display={displayedDistanceCounter} />
-                      <span>this walk</span>
+                      <span>{t("this walk")}</span>
                     </div>
                     <div>
                       <JourneyCounterValue
                         display={displayedNewGroundCounter}
                       />
-                      <span>new area</span>
+                      <span>{t("new area")}</span>
                     </div>
                     <div>
                       <strong
@@ -6067,13 +6049,13 @@ export default function App() {
                       >
                         {displayedTimeCounter.text}
                       </strong>
-                      <span>time</span>
+                      <span>{t("time")}</span>
                     </div>
                   </div>
                 ) : showFirstDiscoveryHint ? (
                   <div className="first-discovery-hint" role="status">
-                    <strong>Ready to explore?</strong>
-                    <span>Tap play and start walking.</span>
+                    <strong>{t("Ready to explore?")}</strong>
+                    <span>{t("Tap play and start walking.")}</span>
                   </div>
                 ) : accountUserId ? (
                   <>
@@ -6084,10 +6066,10 @@ export default function App() {
                       <button
                         className="city-progress"
                         onClick={() => setCoverageInfoOpen(true)}
-                        aria-label={`Explain discovery percentage for ${summaryCity.name}`}
+                        aria-label={t("Explain discovery percentage for {{value0}}", { value0: summaryCity.name })}
                       >
                         <strong>{discoveryLabel}</strong>
-                        <span>of {summaryCity.name}</span>
+                        <span>{t("of {{value0}}", { value0: summaryCity.name })}</span>
                         <span className="city-progress__info">
                           <InfoIcon size={18} strokeWidth={1.7} />
                         </span>
@@ -6095,7 +6077,7 @@ export default function App() {
                     )}
                   </>
                 ) : (
-                  <p className="discovery-sign-in">Sign in to start tracking</p>
+                  <p className="discovery-sign-in">{t("Sign in to start tracking")}</p>
                 )}
               </div>
             </div>
@@ -6112,23 +6094,23 @@ export default function App() {
               }
               aria-label={
                 !accountUserId
-                  ? "Sign in to start discovering"
+                  ? t("Sign in to start discovering")
                   : tracking === "tracking"
-                    ? "Stop discovering"
+                    ? t("Stop discovering")
                     : walkFinalizing
-                      ? "Finishing your discovery"
+                      ? t("Finishing your discovery")
                       : tracking === "requesting"
-                        ? "Finding your location"
-                        : "Start discovering"
+                        ? t("Finding your location")
+                        : t("Start discovering")
               }
               title={
                 !accountUserId
-                  ? "Sign in to discover"
+                  ? t("Sign in to discover")
                   : tracking === "tracking"
-                    ? "Stop discovering"
+                    ? t("Stop discovering")
                     : walkFinalizing
-                      ? "Finishing your discovery"
-                      : "Start discovering"
+                      ? t("Finishing your discovery")
+                      : t("Start discovering")
               }
             >
               {tracking === "tracking" ? (
@@ -6144,15 +6126,12 @@ export default function App() {
             <div className="tracking-notice">
               <span />
               {nativeApp
-                ? "Discovering in background"
-                : "Keep this page open and your screen on"}
+                ? t("Discovering in background")
+                : t("Keep this page open and your screen on")}
             </div>
           )}
           {tracking === "unavailable" && (
-            <p className="location-error">
-              Location is temporarily unavailable. Try again, or preview the
-              sample discovery.
-            </p>
+            <p className="location-error">{t("Location is temporarily unavailable. Try again, or preview the sample discovery.")}</p>
           )}
           {journeyStopMessage && (
             <p className="location-error" role="status">
@@ -6167,9 +6146,7 @@ export default function App() {
                 data-testid="retry-journey-save"
                 disabled={walkFinalizing}
                 onClick={finalizeRecordedWalk}
-              >
-                Retry saving journey
-              </button>
+              >{t("Retry saving journey")}</button>
             </div>
           )}
           <JourneyDetails
@@ -6206,22 +6183,15 @@ export default function App() {
             <button
               className="coverage-sheet__close"
               onClick={() => setCoverageInfoOpen(false)}
-              aria-label="Close explanation"
+              aria-label={t("Close explanation")}
             >
               <XIcon size={19} />
             </button>
-            <div className="eyebrow">City discovery</div>
-            <h2 id="coverage-title">
-              {discoveryLabel} of {summaryCity.name}
-            </h2>
-            <p>
-              Based on the map focus and your current location, Hecate detected{" "}
-              {summaryCity.name} as the city region for this view. This
-              percentage shows how much of that region you’ve uncovered.
-            </p>
+            <div className="eyebrow">{t("City discovery")}</div>
+            <h2 id="coverage-title">{t("{{value0}} of {{value1}}", { value0: discoveryLabel, value1: summaryCity.name })}</h2>
+            <p>{t("app.cityDiscoveryExplanation", { city: summaryCity.name })}</p>
             <div className="coverage-sheet__source">
-              <span /> Municipal boundary from OpenStreetMap
-            </div>
+              <span />  {t("Municipal boundary from OpenStreetMap")} </div>
           </section>
         </div>
       )}
@@ -6296,7 +6266,7 @@ export default function App() {
         travelledKm={discoveryProgress.travelledDistance}
         walkingStats={discoveryProgress.walkingStats}
         discoveredCityCount={cityProgresses.length}
-        backLabel={syncOpen ? "Back to profile" : "Back to journey"}
+        backLabel={syncOpen ? t("Back to profile") : t("Back to journey")}
         onBack={() => {
           setGlobalMilestonesOpen(false);
         }}
@@ -6322,9 +6292,12 @@ export default function App() {
           setSyncOpen(false);
           focusDiscoveredCity(city);
         }}
+        onKeepsake={openKeepsake}
         onBack={() => setCitiesOpen(false)}
         onClose={closeProfileDialog}
       />
+      {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm} percentage={keepsake.percentage}
+        onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
         open={Boolean(accountUserId && achievementsOpen)}
         achievementEvaluations={achievementEvaluations}
@@ -6339,8 +6312,8 @@ export default function App() {
             aria-modal="true"
             aria-labelledby="exploration-recap-title"
           >
-            <div className="eyebrow">Exploration complete</div>
-            <h2 id="exploration-recap-title">You made new ground yours.</h2>
+            <div className="eyebrow">{t("Exploration complete")}</div>
+            <h2 id="exploration-recap-title">{t("You made new ground yours.")}</h2>
             <div className="exploration-recap__map">
               <DiscoveryMap
                 navigationFollowing={false}
@@ -6359,46 +6332,31 @@ export default function App() {
               />
             </div>
             <div className="exploration-recap__headline">
-              <strong>{formatDistance(explorationSummary.newGroundKm)}</strong>
-              <span>of new ground uncovered</span>
+              <Trans i18nKey="app.newGroundRecap" values={{ distance: formatDistance(explorationSummary.newGroundKm) }}
+                components={{ distance: <strong />, caption: <span /> }} />
             </div>
             <div className="exploration-recap__insights">
               {explorationSummary.travelledKm > 0 && (
-                <span>
-                  {Math.round(
-                    (explorationSummary.newGroundKm /
+                <span>{t("{{value0}} % of this walk was new ground", { value0: Math.round(
+                  (explorationSummary.newGroundKm /
                       explorationSummary.travelledKm) *
                       100,
-                  )}
-                  % of this walk was new ground
-                </span>
+                ) })}</span>
               )}
               {explorationSummary.cityName &&
                 explorationSummary.cityPercentageAdded !== undefined && (
-                  <span>
-                    +
-                    {formatRecapPercentage(
-                      explorationSummary.cityPercentageAdded,
-                    )}{" "}
-                    of {explorationSummary.cityName}
-                  </span>
-                )}
-              <span>
-                {explorationSummary.cells.length} new discovery{" "}
-                {explorationSummary.cells.length === 1 ? "area" : "areas"}
-              </span>
-              <span>
-                {formatDuration(
-                  explorationSummary.startedAt,
-                  explorationSummary.finishedAt,
-                )}{" "}
-                · {formatDistance(explorationSummary.travelledKm)} travelled
-              </span>
+                <span>{t("+ {{value0}}{{value1}} of {{value2}}", { value0: formatRecapPercentage(
+                  explorationSummary.cityPercentageAdded,
+                ), value1: " ", value2: explorationSummary.cityName })}</span>
+              )}
+              <span>{t("recapNewAreas", { count: explorationSummary.cells.length })}</span>
+              <span>{t("{{value0}}{{value1}} · {{value2}} travelled", { value0: formatDuration(
+                explorationSummary.startedAt,
+                explorationSummary.finishedAt,
+              ), value1: " ", value2: formatDistance(explorationSummary.travelledKm) })}</span>
             </div>
             <div className="exploration-recap__actions">
-              <button type="button" onClick={() => setExplorationSummary(null)}>
-                Done
-              </button>
+              <button type="button" onClick={() => setExplorationSummary(null)}>{t("Done")}</button>
               <button
                 className="exploration-recap__view"
                 type="button"
@@ -6408,9 +6366,7 @@ export default function App() {
                   showNewDiscoveriesOnMap(explorationSummary.cells);
                   setExplorationSummary(null);
                 }}
-              >
-                View on map
-              </button>
+              >{t("View on map")}</button>
             </div>
           </section>
         </div>

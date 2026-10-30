@@ -9,6 +9,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     let jsName = "JourneyActivity"
     private var appearance: JourneyAppearance = .system
     private var colorTheme: JourneyColorTheme = .light
+    private var language: String? = nil
     @MainActor private var activityQueue: Task<Void, Never>?
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "setAppearance", returnType: CAPPluginReturnPromise),
@@ -27,6 +28,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         if #available(iOS 16.2, *), let state = Activity<JourneyActivityAttributes>.activities.first?.content.state {
             appearance = state.appearance ?? .system
             colorTheme = state.colorTheme ?? .light
+            language = state.language
         }
         NotificationCenter.default.addObserver(self, selector: #selector(journeyStopped(_:)),
                                                name: JourneyStopStore.notification, object: nil)
@@ -50,19 +52,22 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func setAppearance(_ call: CAPPluginCall) {
         guard let value = call.getString("preference"), let preference = JourneyAppearance(rawValue: value),
-              let themeValue = call.getString("theme"), let theme = JourneyColorTheme(rawValue: themeValue) else {
-            call.reject("Journey appearance requires system, light, or dark and a resolved light or dark theme.")
+              let themeValue = call.getString("theme"), let theme = JourneyColorTheme(rawValue: themeValue),
+              let language = call.getString("language"), (language == "system" || JourneyLocalization.languages.contains(language)) else {
+            call.reject("Journey appearance requires system, light, or dark and a resolved light or dark theme, and a supported language.")
             return
         }
         enqueueActivityOperation {
             self.appearance = preference
             self.colorTheme = theme
+            self.language = language == "system" ? nil : language
             if #available(iOS 16.2, *) {
                 for activity in Activity<JourneyActivityAttributes>.activities
                     where activity.activityState == .active || activity.activityState == .stale {
                     var state = activity.content.state
                     state.appearance = preference
                     state.colorTheme = theme
+                    state.language = self.language
                     await activity.update(ActivityContent(state: state, staleDate: activity.content.staleDate))
                 }
             }
@@ -302,7 +307,8 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             finishedAt: finishedAt,
             navigation: finishedAt == nil ? navigation : nil,
             appearance: appearance,
-            colorTheme: colorTheme
+            colorTheme: colorTheme,
+            language: language
         )
     }
 }

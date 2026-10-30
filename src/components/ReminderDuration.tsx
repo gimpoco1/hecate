@@ -1,3 +1,4 @@
+import { t, useAppTranslation } from "../i18n";
 import { useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -10,6 +11,7 @@ type Props = {
 };
 
 export function ReminderDuration({ title, value, options, disabled, onChange }: Props) {
+  useAppTranslation();
   const id = useId();
   const picker = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -19,14 +21,12 @@ export function ReminderDuration({ title, value, options, disabled, onChange }: 
       <button
         type="button"
         className="streak-reminder-time"
-        aria-label={`Change ${title.toLowerCase()}, ${value} minutes`}
+        aria-label={t("Change {{value0}}, {{value1}} minutes", { value0: title.toLowerCase(), value1: value })}
         aria-haspopup="dialog"
         popoverTarget={id}
         disabled={disabled}
         onClick={() => setError("")}
-      >
-        {value} minutes
-      </button>
+      >{t("{{value0}} minutes", { value0: value })}</button>
       {createPortal(
         <div
           ref={picker}
@@ -37,8 +37,8 @@ export function ReminderDuration({ title, value, options, disabled, onChange }: 
           className="streak-time-picker"
         >
           <h3 id={`${id}-title`}>{title}</h3>
-          <p>Choose how long Hecate waits before reminding you.</p>
-          <div className="reminder-duration-options" role="group" aria-label="Duration">
+          <p>{t("Choose how long Hecate waits before reminding you.")}</p>
+          <div className="reminder-duration-options" role="group" aria-label={t("Duration")}>
             {options.map((minutes) => (
               <button
                 key={minutes}
@@ -49,14 +49,12 @@ export function ReminderDuration({ title, value, options, disabled, onChange }: 
                   setError(message ?? "");
                   if (!message) picker.current?.hidePopover();
                 }}
-              >
-                {minutes} minutes
-              </button>
+              >{t("{{value0}} minutes", { value0: minutes })}</button>
             ))}
           </div>
           {error && <p role="alert">{error}</p>}
           <div className="streak-time-picker__actions">
-            <button type="button" popoverTarget={id} popoverTargetAction="hide">Cancel</button>
+            <button type="button" popoverTarget={id} popoverTargetAction="hide">{t("Cancel")}</button>
           </div>
         </div>,
         document.body,

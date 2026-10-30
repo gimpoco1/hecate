@@ -1,27 +1,27 @@
-import type { Coordinate, DiscoveryCell } from './types.ts'
+import type { Coordinate, DiscoveryCell } from "./types.ts";
 
-const EARTH_RADIUS_KM = 6371
-const WEB_MERCATOR_CIRCUMFERENCE_M = 2 * Math.PI * 6378137
-const MAP_TILE_SIZE = 512
-const MAX_GPS_ACCURACY_M = 35
-export const DISCOVERY_CELL_ZOOM = 20
-export const DISCOVERY_RADIUS_M = 35
-const DISCOVERY_DISTANCE_SAMPLE_M = DISCOVERY_RADIUS_M
+const EARTH_RADIUS_KM = 6371;
+const WEB_MERCATOR_CIRCUMFERENCE_M = 2 * Math.PI * 6378137;
+const MAP_TILE_SIZE = 512;
+const MAX_GPS_ACCURACY_M = 35;
+export const DISCOVERY_CELL_ZOOM = 20;
+export const DISCOVERY_RADIUS_M = 35;
+const DISCOVERY_DISTANCE_SAMPLE_M = DISCOVERY_RADIUS_M;
 
 export function distanceKm(a: Coordinate, b: Coordinate) {
-  const toRadians = (value: number) => (value * Math.PI) / 180
-  const dLat = toRadians(b.lat - a.lat)
-  const dLng = toRadians(b.lng - a.lng)
-  const lat1 = toRadians(a.lat)
-  const lat2 = toRadians(b.lat)
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
-  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h))
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
 }
 
 export function routeDistanceKm(points: Coordinate[]) {
   return splitRoute(points).reduce((total, segment) => (
     total + segment.slice(1).reduce((subtotal, point, index) => subtotal + distanceKm(segment[index], point), 0)
-  ), 0)
+  ), 0);
 }
 
 /**
@@ -30,7 +30,7 @@ export function routeDistanceKm(points: Coordinate[]) {
  * this metric.
  */
 export function discoveredDistanceKm(points: Coordinate[]) {
-  return discoveredDistanceForFootprints(points, point => discoveryFootprintCells(pointToDiscoveryCell(point)))
+  return discoveredDistanceForFootprints(points, point => discoveryFootprintCells(pointToDiscoveryCell(point)));
 }
 
 /**
@@ -44,7 +44,7 @@ export function discoveredDistanceForFootprints(
   footprintForPoint: (point: Coordinate) => DiscoveryCell[],
 ) {
   return discoveryJourneyMetricsForFootprints(points, footprintForPoint)
-    .reduce((total, journey) => total + journey.newGroundKm, 0)
+    .reduce((total, journey) => total + journey.newGroundKm, 0);
 }
 
 export type DiscoveryJourneyMetric = {
@@ -55,61 +55,61 @@ export type DiscoveryJourneyMetric = {
   travelledKm: number
   newGroundKm: number
   newGroundKmByRegion?: Record<string, number>
-}
+};
 
 function discoveryJourneyMetricsForFootprints(
   points: Coordinate[],
   footprintForPoint: (point: Coordinate) => DiscoveryCell[],
   regionForPoint?: (point: Coordinate) => string | null,
 ) {
-  const revealed = new Set<string>()
-  const metrics = new Map<string, DiscoveryJourneyMetric>()
+  const revealed = new Set<string>();
+  const metrics = new Map<string, DiscoveryJourneyMetric>();
 
   for (const [segmentIndex, segment] of splitRoute(points).entries()) {
-    const firstPoint = segment[0]
-    if (!firstPoint) continue
-    const journeyId = firstPoint.walkId ?? `journey-${segmentIndex}`
-    let newGroundKm = 0
-    const newGroundKmByRegion: Record<string, number> = {}
-    let travelledKm = 0
-    footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)))
-    let distanceSinceLastUnlockKm = 0
+    const firstPoint = segment[0];
+    if (!firstPoint) continue;
+    const journeyId = firstPoint.walkId ?? `journey-${segmentIndex}`;
+    let newGroundKm = 0;
+    const newGroundKmByRegion: Record<string, number> = {};
+    let travelledKm = 0;
+    footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)));
+    let distanceSinceLastUnlockKm = 0;
 
     for (let index = 1; index < segment.length; index += 1) {
-      const previous = segment[index - 1]
-      const point = segment[index]
-      const segmentDistance = distanceKm(previous, point)
-      travelledKm += segmentDistance
-      const steps = Math.max(1, Math.ceil(segmentDistance * 1_000 / DISCOVERY_DISTANCE_SAMPLE_M))
-      const stepDistance = segmentDistance / steps
+      const previous = segment[index - 1];
+      const point = segment[index];
+      const segmentDistance = distanceKm(previous, point);
+      travelledKm += segmentDistance;
+      const steps = Math.max(1, Math.ceil(segmentDistance * 1_000 / DISCOVERY_DISTANCE_SAMPLE_M));
+      const stepDistance = segmentDistance / steps;
 
       for (let step = 1; step <= steps; step += 1) {
-        const progress = step / steps
+        const progress = step / steps;
         const sample: Coordinate = {
           lng: previous.lng + (point.lng - previous.lng) * progress,
           lat: previous.lat + (point.lat - previous.lat) * progress,
           recordedAt: previous.recordedAt + (point.recordedAt - previous.recordedAt) * progress,
-        }
-        const footprint = footprintForPoint(sample)
-        const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)))
-        distanceSinceLastUnlockKm += stepDistance
+        };
+        const footprint = footprintForPoint(sample);
+        const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)));
+        distanceSinceLastUnlockKm += stepDistance;
         if (unlocksNewGround) {
           // A cell unlock represents the last small stretch of newly revealed
           // ground. Cap the credit at the reveal radius so a sparse GPS jump
           // cannot claim a long, already-known street before its endpoint.
-          const creditedKm = Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000)
-          newGroundKm += creditedKm
-          const regionId = regionForPoint?.(sample)
+          const creditedKm = Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000);
+          newGroundKm += creditedKm;
+          const regionId = regionForPoint?.(sample);
           if (regionId) {
-            newGroundKmByRegion[regionId] = (newGroundKmByRegion[regionId] ?? 0) + creditedKm
+            newGroundKmByRegion[regionId] = (newGroundKmByRegion[regionId] ?? 0) + creditedKm;
           }
-          distanceSinceLastUnlockKm = 0
+          distanceSinceLastUnlockKm = 0;
         }
-        footprint.forEach(cell => revealed.add(discoveryCellKey(cell)))
+        footprint.forEach(cell => revealed.add(discoveryCellKey(cell)));
       }
     }
 
-    const existing = metrics.get(journeyId)
+    const existing = metrics.get(journeyId);
     metrics.set(journeyId, existing ? {
       ...existing,
       points: [...existing.points, ...segment],
@@ -132,9 +132,9 @@ function discoveryJourneyMetricsForFootprints(
       travelledKm,
       newGroundKm,
       newGroundKmByRegion,
-    })
+    });
   }
-  return [...metrics.values()]
+  return [...metrics.values()];
 }
 
 /** Per-recording totals using the same new-ground algorithm as the main map. */
@@ -142,7 +142,7 @@ export function discoveryJourneyMetrics(points: Coordinate[]) {
   return discoveryJourneyMetricsForFootprints(
     points,
     point => discoveryFootprintCells(pointToDiscoveryCell(point)),
-  )
+  );
 }
 
 /** Per-recording discovery totals attributed to the region containing each unlock. */
@@ -154,7 +154,7 @@ export function discoveryJourneyMetricsByRegion(
     points,
     point => discoveryFootprintCells(pointToDiscoveryCell(point)),
     regionForPoint,
-  )
+  );
 }
 
 /**
@@ -166,9 +166,9 @@ export function discoveryPointsFromCells(cells: DiscoveryCell[]): Coordinate[] {
   return [...cells]
     .sort((a, b) => a.discoveredAt - b.discoveredAt)
     .map(cell => {
-      const [lng, lat] = discoveryCellCenter(cell)
-      return { lng, lat, recordedAt: cell.discoveredAt }
-    })
+      const [lng, lat] = discoveryCellCenter(cell);
+      return { lng, lat, recordedAt: cell.discoveredAt };
+    });
 }
 
 /**
@@ -180,13 +180,13 @@ export function discoveredCellDistanceKm(cells: DiscoveryCell[]) {
   return discoveredDistanceForFootprints(
     discoveryPointsFromCells(cells),
     point => discoveryFootprintCells(pointToDiscoveryCell(point)),
-  )
+  );
 }
 
 export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = []) {
   const remoteWalkIds = new Set(
     remote.flatMap(point => point.walkId ? [point.walkId] : []),
-  )
+  );
   const combined = [
     // Once a completed walk exists on the server, use that complete persisted
     // route as the source of truth. A local journal copy can survive an upload
@@ -196,153 +196,153 @@ export function mergeRoutePoints(local: Coordinate[], remote: Coordinate[] = [])
     // available locally, so pending and active recording recovery still works.
     ...local.filter(point => !point.walkId || !remoteWalkIds.has(point.walkId)),
     ...remote,
-  ]
-  const unique = new Map<string, Coordinate>()
+  ];
+  const unique = new Map<string, Coordinate>();
 
   combined.forEach(point => {
-    const key = `${point.walkId ?? ''}:${point.recordedAt}:${point.lat.toFixed(6)}:${point.lng.toFixed(6)}`
-    unique.set(key, point)
-  })
+    const key = `${point.walkId ?? ""}:${point.recordedAt}:${point.lat.toFixed(6)}:${point.lng.toFixed(6)}`;
+    unique.set(key, point);
+  });
 
-  return [...unique.values()].sort((a, b) => a.recordedAt - b.recordedAt)
+  return [...unique.values()].sort((a, b) => a.recordedAt - b.recordedAt);
 }
 
 export function splitRoute(points: Coordinate[]) {
-  const explicitWalks = new Map<string, Coordinate[]>()
-  const legacyRuns: Coordinate[][] = []
-  let legacyRun: Coordinate[] | null = null
+  const explicitWalks = new Map<string, Coordinate[]>();
+  const legacyRuns: Coordinate[][] = [];
+  let legacyRun: Coordinate[] | null = null;
 
   for (const point of points) {
     if (!point.walkId) {
       if (!legacyRun) {
-        legacyRun = []
-        legacyRuns.push(legacyRun)
+        legacyRun = [];
+        legacyRuns.push(legacyRun);
       }
-      legacyRun.push(point)
-      continue
+      legacyRun.push(point);
+      continue;
     }
-    legacyRun = null
-    const walk = explicitWalks.get(point.walkId) ?? []
-    walk.push(point)
-    explicitWalks.set(point.walkId, walk)
+    legacyRun = null;
+    const walk = explicitWalks.get(point.walkId) ?? [];
+    walk.push(point);
+    explicitWalks.set(point.walkId, walk);
   }
 
   const splitDiscontinuities = (route: Coordinate[]) => (
     [...route]
       .sort((a, b) => a.recordedAt - b.recordedAt)
       .reduce<Coordinate[][]>((segments, point) => {
-        const segment = segments.at(-1)
-        const previous = segment?.at(-1)
+        const segment = segments.at(-1);
+        const previous = segment?.at(-1);
         const isNewSegment = previous && (
           point.recordedAt - previous.recordedAt > 2 * 60 * 60 * 1000 ||
           distanceKm(previous, point) > 5
-        )
-        if (!segment || isNewSegment) segments.push([point])
-        else segment.push(point)
-        return segments
+        );
+        if (!segment || isNewSegment) segments.push([point]);
+        else segment.push(point);
+        return segments;
       }, [])
-  )
+  );
 
   return [
     ...[...explicitWalks.values()].flatMap(splitDiscontinuities),
     ...legacyRuns.flatMap(splitDiscontinuities),
-  ].sort((a, b) => a[0].recordedAt - b[0].recordedAt)
+  ].sort((a, b) => a[0].recordedAt - b[0].recordedAt);
 }
 
 export function pointToDiscoveryCell(point: Coordinate, z = DISCOVERY_CELL_ZOOM): DiscoveryCell {
-  const scale = 2 ** z
-  const latitude = Math.max(-85.05112878, Math.min(85.05112878, point.lat))
-  const latitudeRadians = latitude * Math.PI / 180
+  const scale = 2 ** z;
+  const latitude = Math.max(-85.05112878, Math.min(85.05112878, point.lat));
+  const latitudeRadians = latitude * Math.PI / 180;
   return {
     z,
     x: Math.floor(((point.lng + 180) / 360) * scale),
     y: Math.floor((1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * scale),
     discoveredAt: point.recordedAt,
-  }
+  };
 }
 
-export function discoveryCellCenter(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>): [number, number] {
-  const scale = 2 ** cell.z
-  const lng = (cell.x + 0.5) / scale * 360 - 180
-  const mercatorY = Math.PI * (1 - 2 * (cell.y + 0.5) / scale)
-  const lat = Math.atan(Math.sinh(mercatorY)) * 180 / Math.PI
-  return [lng, lat]
+export function discoveryCellCenter(cell: Pick<DiscoveryCell, "z" | "x" | "y">): [number, number] {
+  const scale = 2 ** cell.z;
+  const lng = (cell.x + 0.5) / scale * 360 - 180;
+  const mercatorY = Math.PI * (1 - 2 * (cell.y + 0.5) / scale);
+  const lat = Math.atan(Math.sinh(mercatorY)) * 180 / Math.PI;
+  return [lng, lat];
 }
 
-export function discoveryCellKey(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>) {
-  return `${cell.z}/${cell.x}/${cell.y}`
+export function discoveryCellKey(cell: Pick<DiscoveryCell, "z" | "x" | "y">) {
+  return `${cell.z}/${cell.x}/${cell.y}`;
 }
 
 /** The zoom-20 cells covered by a point's fixed 35 m reveal radius. */
 export function discoveryFootprintCells(cell: DiscoveryCell) {
-  const [, latitude] = discoveryCellCenter(cell)
-  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
-  const range = Math.ceil(DISCOVERY_RADIUS_M / cellSizeM)
-  const footprint: DiscoveryCell[] = []
+  const [, latitude] = discoveryCellCenter(cell);
+  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z;
+  const range = Math.ceil(DISCOVERY_RADIUS_M / cellSizeM);
+  const footprint: DiscoveryCell[] = [];
 
   for (let offsetX = -range; offsetX <= range; offsetX += 1) {
     for (let offsetY = -range; offsetY <= range; offsetY += 1) {
-      if (Math.hypot(offsetX, offsetY) * cellSizeM > DISCOVERY_RADIUS_M + cellSizeM * .72) continue
-      footprint.push({ ...cell, x: cell.x + offsetX, y: cell.y + offsetY })
+      if (Math.hypot(offsetX, offsetY) * cellSizeM > DISCOVERY_RADIUS_M + cellSizeM * .72) continue;
+      footprint.push({ ...cell, x: cell.x + offsetX, y: cell.y + offsetY });
     }
   }
-  return footprint
+  return footprint;
 }
 
-export function discoveryCellAreaKm2(cell: Pick<DiscoveryCell, 'z' | 'x' | 'y'>) {
-  const [, latitude] = discoveryCellCenter(cell)
-  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z
-  return cellSizeM * cellSizeM / 1_000_000
+export function discoveryCellAreaKm2(cell: Pick<DiscoveryCell, "z" | "x" | "y">) {
+  const [, latitude] = discoveryCellCenter(cell);
+  const cellSizeM = WEB_MERCATOR_CIRCUMFERENCE_M * Math.cos(latitude * Math.PI / 180) / 2 ** cell.z;
+  return cellSizeM * cellSizeM / 1_000_000;
 }
 
 /** The de-duplicated physical area revealed by all discovery footprints. */
 export function discoveredAreaKm2(cells: DiscoveryCell[]) {
-  const revealed = new Map<string, DiscoveryCell>()
+  const revealed = new Map<string, DiscoveryCell>();
   for (const cell of cells) {
     for (const candidate of discoveryFootprintCells(cell)) {
-      revealed.set(discoveryCellKey(candidate), candidate)
+      revealed.set(discoveryCellKey(candidate), candidate);
     }
   }
-  return [...revealed.values()].reduce((total, cell) => total + discoveryCellAreaKm2(cell), 0)
+  return [...revealed.values()].reduce((total, cell) => total + discoveryCellAreaKm2(cell), 0);
 }
 
 export function mergeDiscoveryCells(...collections: DiscoveryCell[][]) {
-  const unique = new Map<string, DiscoveryCell>()
+  const unique = new Map<string, DiscoveryCell>();
   collections.flat().forEach(cell => {
-    const key = `${cell.z}/${cell.x}/${cell.y}`
-    const existing = unique.get(key)
-    if (!existing || cell.discoveredAt < existing.discoveredAt) unique.set(key, cell)
-  })
-  return [...unique.values()]
+    const key = `${cell.z}/${cell.x}/${cell.y}`;
+    const existing = unique.get(key);
+    if (!existing || cell.discoveredAt < existing.discoveredAt) unique.set(key, cell);
+  });
+  return [...unique.values()];
 }
 
 export function discoveryCellsFromPoints(points: Coordinate[]) {
-  return mergeDiscoveryCells(points.map(point => pointToDiscoveryCell(point)))
+  return mergeDiscoveryCells(points.map(point => pointToDiscoveryCell(point)));
 }
 
 export function isUsableGpsPoint(next: Coordinate) {
-  if (!Number.isFinite(next.lng) || !Number.isFinite(next.lat) || !Number.isFinite(next.recordedAt)) return false
-  if ((next.accuracy ?? 0) > MAX_GPS_ACCURACY_M) return false
-  return true
+  if (!Number.isFinite(next.lng) || !Number.isFinite(next.lat) || !Number.isFinite(next.recordedAt)) return false;
+  if ((next.accuracy ?? 0) > MAX_GPS_ACCURACY_M) return false;
+  return true;
 }
 
 export function shouldRecordPoint(previous: Coordinate | undefined, next: Coordinate) {
-  if (!isUsableGpsPoint(next)) return false
-  if (!previous) return true
+  if (!isUsableGpsPoint(next)) return false;
+  if (!previous) return true;
 
-  const elapsedSeconds = (next.recordedAt - previous.recordedAt) / 1000
-  if (elapsedSeconds <= 0) return false
-  const distanceM = distanceKm(previous, next) * 1000
+  const elapsedSeconds = (next.recordedAt - previous.recordedAt) / 1000;
+  if (elapsedSeconds <= 0) return false;
+  const distanceM = distanceKm(previous, next) * 1000;
 
   // Movement smaller than the GPS uncertainty is usually stationary drift.
-  const uncertaintyM = Math.max(previous.accuracy ?? 0, next.accuracy ?? 0)
-  const minimumMovementM = Math.max(8, Math.min(20, uncertaintyM * 0.5))
-  return distanceM >= minimumMovementM
+  const uncertaintyM = Math.max(previous.accuracy ?? 0, next.accuracy ?? 0);
+  const minimumMovementM = Math.max(8, Math.min(20, uncertaintyM * 0.5));
+  return distanceM >= minimumMovementM;
 }
 
 export function metersToPixels(meters: number, latitude: number, zoom: number) {
-  const clampedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude))
+  const clampedLatitude = Math.max(-85.05112878, Math.min(85.05112878, latitude));
   const metersPerPixel = Math.cos(clampedLatitude * Math.PI / 180)
-    * WEB_MERCATOR_CIRCUMFERENCE_M / (MAP_TILE_SIZE * 2 ** zoom)
-  return meters / metersPerPixel
+    * WEB_MERCATOR_CIRCUMFERENCE_M / (MAP_TILE_SIZE * 2 ** zoom);
+  return meters / metersPerPixel;
 }

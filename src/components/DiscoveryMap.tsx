@@ -1,4 +1,5 @@
-import { errorDiagnostic } from '../diagnostics'
+import { t, useAppTranslation } from "../i18n";
+import { errorDiagnostic } from "../diagnostics";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import * as maplibregl from "maplibre-gl";
@@ -183,6 +184,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   initialCenter = [7, 24],
   initialZoom = 1.35,
 }: Props) {
+  useAppTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onUserMarkerChangeRef = useRef(onUserMarkerChange);
@@ -304,11 +306,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       );
       if (heading === undefined) return;
       pendingHeading = heading;
+      compassHeadingRef.current = heading;
+      onHeadingChangeRef.current?.(heading);
       if (headingFrame !== null) return;
       headingFrame = requestAnimationFrame(() => {
         headingFrame = null;
-        compassHeadingRef.current = pendingHeading;
-        if (pendingHeading !== undefined) onHeadingChangeRef.current?.(pendingHeading);
         const element = markerRef.current?.getElement();
         const map = mapRef.current;
         if (element && map)
@@ -551,7 +553,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       <div
         ref={containerRef}
         className="map"
-        aria-label="Interactive discovery map"
+        aria-label={t("Interactive discovery map")}
       />
     </div>
   );

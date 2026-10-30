@@ -1,4 +1,6 @@
+import { t, useAppTranslation } from "../i18n";
 export function AccountLoadingScreen({ visible }: { visible: boolean }) {
+  useAppTranslation();
   return (
     <div
       className={`account-loading-screen${visible ? " account-loading-screen--visible" : ""}`}
@@ -10,7 +12,7 @@ export function AccountLoadingScreen({ visible }: { visible: boolean }) {
         <img src="/icon.svg" alt="" />
       </div>
       <div className="account-loading-screen__copy">
-        <strong>Loading your map…</strong>
+        <strong>{t("Loading your map…")}</strong>
         <i aria-hidden="true" />
       </div>
     </div>

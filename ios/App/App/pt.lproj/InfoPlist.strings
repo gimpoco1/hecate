@@ -1,0 +1,3 @@
+"NSMotionUsageDescription" = "O Hecate usa os dados de movimento para gerir as verificações de GPS dos lembretes de exploração. Estes dados não são guardados nem sincronizados.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "O Hecate usa a localização em segundo plano num percurso que inicias, ou com lembretes ativos, para sugerir gravar percursos por áreas novas. As localizações dos lembretes não são guardadas no mapa nem na conta.";
+"NSLocationWhenInUseUsageDescription" = "O Hecate usa a tua localização para mostrar a tua posição, adicionar ao mapa os lugares que exploras num percurso e sugerir a gravação se ativares os lembretes.";

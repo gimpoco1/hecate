@@ -1,4 +1,5 @@
-import { errorDiagnostic } from './diagnostics'
+import { t } from "./i18n";
+import { errorDiagnostic } from "./diagnostics";
 import { CityNotFoundError, fetchCityBoundary, isPointInCity, type CityBoundary } from "./city";
 import { distanceKm, isUsableGpsPoint } from "./geo";
 import type { LocationTracker, LocationTrackerError } from "./location";
@@ -61,7 +62,7 @@ export function createJourneyRecordingTracker(tracker: LocationTracker, cities: 
           // Ignore duplicate/out-of-order fixes instead of comparing them with a newer position.
           if (previous && point.recordedAt <= previous.recordedAt) return;
           if (isJourneyTooFast(previous, point)) {
-            fail({ code: "speed-exceeded", message: JOURNEY_SPEED_STOP_MESSAGE });
+            fail({ code: "speed-exceeded", message: t(JOURNEY_SPEED_STOP_MESSAGE) });
             return;
           }
           previous = point;
@@ -77,8 +78,8 @@ export function createJourneyRecordingTracker(tracker: LocationTracker, cities: 
           fail({
             code: "journey-stopped",
             message: error instanceof CityNotFoundError
-              ? "Journey stopped because you are outside a recognized city. Your recorded walking progress has been saved."
-              : "Journey stopped because the city boundary could not be verified. Check your connection and start again. Your recorded walking progress has been saved.",
+              ? t("Journey stopped because you are outside a recognized city. Your recorded walking progress has been saved.")
+              : t("Journey stopped because the city boundary could not be verified. Check your connection and start again. Your recorded walking progress has been saved."),
           });
         });
       }, fail);

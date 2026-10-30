@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Coordinate, DiscoveryCell, PendingWalk } from "./types";
 import { distanceKm } from "./geo";
 
@@ -66,10 +67,10 @@ function parseCoordinate(point: Element, recordedAt: number): Coordinate {
   const lat = Number(point.getAttribute("lat"));
   const lng = Number(point.getAttribute("lon"));
   if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-    throw new RangeError("The GPX file contains an invalid latitude.");
+    throw new RangeError(t("The GPX file contains an invalid latitude."));
   }
   if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-    throw new RangeError("The GPX file contains an invalid longitude.");
+    throw new RangeError(t("The GPX file contains an invalid longitude."));
   }
   const timeText = point.querySelector("time")?.textContent?.trim();
   const parsedTime = timeText ? Date.parse(timeText) : Number.NaN;
@@ -86,11 +87,11 @@ function parseSegment(
   fallbackRecordedAt: number,
 ): Coordinate[] {
   if (points.length < 2) {
-    throw new Error("Each GPX track segment must contain at least two points.");
+    throw new Error(t("Each GPX track segment must contain at least two points."));
   }
   if (points.length > MAX_GPX_POINTS_PER_SEGMENT) {
     throw new Error(
-      `A GPX track segment cannot contain more than ${MAX_GPX_POINTS_PER_SEGMENT.toLocaleString()} points.`,
+      t("A GPX track segment cannot contain more than {{value0}} points.", { value0: MAX_GPX_POINTS_PER_SEGMENT.toLocaleString() }),
     );
   }
   return points.map((point, index) =>
@@ -105,7 +106,7 @@ export function parseGpx(
 ): PendingWalk[] {
   const document = new DOMParser().parseFromString(xml, "application/xml");
   if (document.getElementsByTagName("parsererror").length > 0) {
-    throw new Error("The selected file is not valid GPX XML.");
+    throw new Error(t("The selected file is not valid GPX XML."));
   }
 
   const trackSegments = [
@@ -120,7 +121,7 @@ export function parseGpx(
   );
   const segments = trackSegments.length > 0 ? trackSegments : routeSegments;
   if (segments.length === 0) {
-    throw new Error("The GPX file does not contain a track or route.");
+    throw new Error(t("The GPX file does not contain a track or route."));
   }
 
   let fallbackOffset = 0;
@@ -133,7 +134,7 @@ export function parseGpx(
           index > 0 && point.recordedAt < points[index - 1].recordedAt,
       )
     ) {
-      throw new Error("The GPX track points are not in chronological order.");
+      throw new Error(t("The GPX track points are not in chronological order."));
     }
     return {
       id: createWalkId(segmentIndex),

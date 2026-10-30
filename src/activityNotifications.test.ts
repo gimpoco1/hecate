@@ -16,12 +16,12 @@ afterEach(() => {
 });
 
 describe("activity notifications", () => {
-  it("mentions world milestones only within a short walk and near completion", () => {
+  it("mentions world milestones only within a short distance and near completion", () => {
     expect(morningInviteMessage(4.5, null)).toBe(
-      "Just 500 m to your Wayfinder milestone. Head out for a walk today!",
+      "Just 500 m to your Wayfinder milestone. Head out and explore today!",
     );
     expect(morningInviteMessage(99, null)).toBe(
-      "Just 1 km to your Edge of Space milestone. Head out for a walk today!",
+      "Just 1 km to your Edge of Space milestone. Head out and explore today!",
     );
     const ordinary = "A new day, a new path. Where will you discover today?";
     expect(morningInviteMessage(4, null)).toBe(ordinary);
@@ -35,7 +35,7 @@ describe("activity notifications", () => {
   it("uses new ground for nearby city milestones and chooses the closest qualifying milestone", () => {
     const city = { cityName: "Barcelona", discoveredKm: 4.5 };
     expect(morningInviteMessage(50, city)).toBe(
-      "Just 500 m of new ground to your First Footprint milestone in Barcelona. Head out for a walk today!",
+      "Just 500 m of new ground to your First Footprint milestone in Barcelona. Head out and explore today!",
     );
     expect(morningInviteMessage(99, city)).toContain("First Footprint milestone in Barcelona");
     expect(morningInviteMessage(4.75, city)).toContain("250 m to your Wayfinder milestone");

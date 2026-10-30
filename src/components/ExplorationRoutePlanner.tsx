@@ -1,4 +1,6 @@
-import { errorDiagnostic } from '../diagnostics'
+import { Trans } from "react-i18next";
+import { formatNumber, t, useAppTranslation } from "../i18n";
+import { errorDiagnostic } from "../diagnostics";
 import { clearRecentDestinations, loadRecentDestinations, recentDestinationFromSelection, saveRecentDestinations, withRecentDestination } from "../recentDestinations";
 import { RouteNotice } from "./RouteNotice";
 import { advanceRouteProgress, type RouteProgress } from "../routeProgress";
@@ -98,6 +100,7 @@ export function ExplorationRoutePlanner({
   onLocate,
   onStart,
 }: Props) {
+  useAppTranslation();
   const infoId = useId();
   const [infoOpen, setInfoOpen] = useState(false);
   const [searchRevision, setSearchRevision] = useState(0);
@@ -108,7 +111,7 @@ export function ExplorationRoutePlanner({
     try { setRecent(loadRecentDestinations(userId)); setHistoryError(""); }
     catch (cause) {
       console.error("Could not load recent destinations", { cause: errorDiagnostic(cause) });
-      setRecent(null); setHistoryError(cause instanceof Error ? cause.message : "Could not load recent destinations.");
+      setRecent(null); setHistoryError(cause instanceof Error ? cause.message : t("Could not load recent destinations."));
     }
   }, [userId]);
   const rememberDestination = useCallback((result: DestinationResult): void => {
@@ -118,14 +121,14 @@ export function ExplorationRoutePlanner({
       setRecent(updated); setHistoryError("");
     } catch (cause) {
       console.error("Could not save recent destination", { cause: errorDiagnostic(cause) });
-      setHistoryError(cause instanceof Error ? cause.message : "Could not save recent destination.");
+      setHistoryError(cause instanceof Error ? cause.message : t("Could not save recent destination."));
     }
   }, [userId]);
   const clearHistory = (): void => {
     try { clearRecentDestinations(userId); setRecent([]); setHistoryError(""); }
     catch (cause) {
       console.error("Could not clear recent destinations", { cause: errorDiagnostic(cause) });
-      setHistoryError(cause instanceof Error ? cause.message : "Could not clear recent destinations.");
+      setHistoryError(cause instanceof Error ? cause.message : t("Could not clear recent destinations."));
     }
   };
   const removeRecentDestination = (result: DestinationResult): void => {
@@ -135,7 +138,7 @@ export function ExplorationRoutePlanner({
       setRecent(updated); setHistoryError("");
     } catch (cause) {
       console.error("Could not remove recent destination", { cause: errorDiagnostic(cause) });
-      setHistoryError(cause instanceof Error ? cause.message : "Could not remove recent destination.");
+      setHistoryError(cause instanceof Error ? cause.message : t("Could not remove recent destination."));
     }
   };
   const [step, setStep] = useState<"destination" | "options">("destination");
@@ -204,8 +207,8 @@ export function ExplorationRoutePlanner({
     namedDestination.point.lat === destination.lat
       ? namedDestination.name
       : namePending
-        ? "Finding place name…"
-        : "Selected point");
+        ? t("Finding place name…")
+        : t("Selected point"));
 
   const recentSelection = useMemo(() => {
     if (!destination || (namePending && !destination.name)) return null;
@@ -292,7 +295,7 @@ export function ExplorationRoutePlanner({
         if (controller.signal.aborted) return;
         if (cause instanceof DestinationTooCloseError) {
           setDestinationError({
-            title: "This destination is too close",
+            title: t("This destination is too close"),
             message: cause.message,
           });
           return;
@@ -300,7 +303,7 @@ export function ExplorationRoutePlanner({
         if (cause instanceof RouteDistanceExceededError) {
           console.warn("Destination exceeds routing service distance limit", { start, profile, cause: errorDiagnostic(cause) });
           setDestinationError({
-            title: "Exploring? Yes. That far? Maybe not.",
+            title: t("Exploring? Yes. That far? Maybe not."),
             message: cause.message,
           });
           return;
@@ -311,7 +314,7 @@ export function ExplorationRoutePlanner({
           [profile]:
             cause instanceof Error
               ? cause.message
-              : "Could not calculate this direct route.",
+              : t("Could not calculate this direct route."),
         }));
       }
     };
@@ -492,7 +495,7 @@ export function ExplorationRoutePlanner({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The routing service returned an unexpected error. Try again.",
+          : t("The routing service returned an unexpected error. Try again."),
       );
     } finally {
       if (!controller.signal.aborted) setPending(false);
@@ -530,11 +533,11 @@ export function ExplorationRoutePlanner({
     failureMessages.length === 1
       ? failureMessages[0]
       : failedProfiles
-          .map(
-            (profile) =>
-              `${profile === "pedestrian" ? "Walking" : "Cycling"}: ${directErrors[profile]}`,
-          )
-          .join("\n\n");
+        .map(
+          (profile) =>
+            `${profile === "pedestrian" ? t("Walking") : t("Cycling")}: ${directErrors[profile]}`,
+        )
+        .join("\n\n");
   const allDirectRoutesFailed =
     !directPending &&
     failedProfiles.length === 2 &&
@@ -553,7 +556,7 @@ export function ExplorationRoutePlanner({
         bottom: `${keyboardInset + 12}px`,
         maxHeight: `calc(100dvh - ${keyboardInset + 176}px - env(safe-area-inset-top))`,
       } : undefined}
-      aria-label="Route suggestions"
+      aria-label={t("Route suggestions")}
       aria-busy={pending || directPending}
     >
       <div className="exploration-route-panel__heading">
@@ -562,7 +565,7 @@ export function ExplorationRoutePlanner({
             <button
               className="exploration-route-back"
               type="button"
-              aria-label="Back to destination"
+              aria-label={t("Back to destination")}
               onClick={() => setStep("destination")}
             >
               <ArrowLeftIcon size={18} />
@@ -570,15 +573,15 @@ export function ExplorationRoutePlanner({
           )}
           <strong>
             {step === "destination"
-              ? "Choose a destination"
-              : "Choose your route"}
+              ? t("Choose a destination")
+              : t("Choose your route")}
           </strong>
         </div>
         <div className="exploration-route-heading-actions">
           <button
             className="exploration-route-close exploration-route-info-toggle"
             type="button"
-            aria-label="About these routes"
+            aria-label={t("About these routes")}
             aria-expanded={infoOpen}
             aria-controls={infoId}
             onClick={() => setInfoOpen((current) => !current)}
@@ -589,38 +592,30 @@ export function ExplorationRoutePlanner({
             className="exploration-route-close"
             type="button"
             onClick={onClose}
-            aria-label="Close route planner"
+            aria-label={t("Close route planner")}
           >
             <XIcon size={18} />
           </button>
         </div>
       </div>
       <div id={infoId} className="exploration-route-info" hidden={!infoOpen}>
-        <p className="exploration-route-footnote">
-          Travel times and new ground are estimates. Turn guidance follows your selected route; routes automatically recalculate if you leave them, until you reach your destination.
-        </p>
+        <p className="exploration-route-footnote">{t("Travel times and new ground are estimates. Turn guidance follows your selected route; routes automatically recalculate if you leave them, until you reach your destination.")}</p>
         <a
           className="exploration-route-attribution"
           href="https://valhalla.openstreetmap.de/"
           target="_blank"
           rel="noreferrer"
-        >
-          Routes: Valhalla · © OpenStreetMap contributors
-        </a>
+        >{t("Routes: Valhalla · © OpenStreetMap contributors")}</a>
         <a
           className="exploration-route-attribution"
           href="https://www.openstreetmap.org/copyright"
           target="_blank"
           rel="noreferrer"
-        >
-          Search: Photon · © OpenStreetMap contributors
-        </a>
+        >{t("Search: Photon · © OpenStreetMap contributors")}</a>
       </div>
       {step === "destination" ? (
         <>
-          <p className="exploration-route-help">
-            Search, tap the map, or choose a saved place.
-          </p>
+          <p className="exploration-route-help">{t("Search, tap the map, or choose a saved place.")}</p>
           <DestinationSearch
             key={searchRevision}
             recent={recent}
@@ -648,15 +643,13 @@ export function ExplorationRoutePlanner({
                 <button
                   className="exploration-route-clear"
                   type="button"
-                  aria-label="Clear route"
+                  aria-label={t("Clear route")}
                   onClick={() => {
                     setNamedDestination(null);
                     setSearchRevision((revision) => revision + 1);
                     onClear();
                   }}
-                >
-                  Clear
-                </button>
+                >{t("Clear")}</button>
               </div>
               {destinationError ? (
                 <RouteNotice
@@ -675,24 +668,17 @@ export function ExplorationRoutePlanner({
                       )}
                       <div className="exploration-direct-estimate-copy">
                         <span>
-                          {profile === "pedestrian" ? "Walking" : "Cycling"}
+                          {profile === "pedestrian" ? t("Walking") : t("Cycling")}
                         </span>
                         <strong>
                           {directPlans[profile]
-                            ? `${Math.ceil(directPlans[profile].routes[0].durationSeconds / 60)} min`
+                            ? t("{{value0}} min", { value0: Math.ceil(directPlans[profile].routes[0].durationSeconds / 60) })
                             : directErrors[profile]
-                              ? "Unavailable"
-                              : "Calculating…"}
+                              ? t("Unavailable")
+                              : t("Calculating…")}
                         </strong>
                         {directPlans[profile] && (
-                          <small>
-                            {" "}
-                            ·{" "}
-                            {directPlans[profile].routes[0].distanceKm.toFixed(
-                              1,
-                            )}{" "}
-                            km
-                          </small>
+                          <small>{t("{{value0}} ·{{value1}} {{value2}}{{value3}} km", { value0: " ", value1: " ", value2: formatNumber(directPlans[profile].routes[0].distanceKm, 1), value3: " " })}</small>
                         )}
                       </div>
                     </div>
@@ -703,34 +689,30 @@ export function ExplorationRoutePlanner({
                 <RouteNotice
                   title={
                     failedProfiles.length === 2
-                      ? "Routes unavailable"
-                      : `${failedProfiles[0] === "pedestrian" ? "Walking" : "Cycling"} route unavailable`
+                      ? t("Routes unavailable")
+                      : t("{{value0}} route unavailable", { value0: failedProfiles[0] === "pedestrian" ? t("Walking") : t("Cycling") })
                   }
                   message={directFailureMessage}
                   action={
                     <button
                       className="route-notice-action"
                       type="button"
-                      aria-label="Retry direct routes"
+                      aria-label={t("Retry direct routes")}
                       onClick={() =>
                         setDirectRevision((revision) => revision + 1)
                       }
-                    >
-                      Retry
-                    </button>
+                    >{t("Retry")}</button>
                   }
                 />
               )}
               {!directPending &&
                 (directPlans.pedestrian || directPlans.bicycle) && (
-                  <button
-                    className="exploration-route-primary"
-                    type="button"
-                    onClick={() => setStep("options")}
-                  >
-                    Next: choose your route
-                  </button>
-                )}
+                <button
+                  className="exploration-route-primary"
+                  type="button"
+                  onClick={() => setStep("options")}
+                >{t("Next: choose your route")}</button>
+              )}
             </div>
           )}
         </>
@@ -739,20 +721,16 @@ export function ExplorationRoutePlanner({
           <div className="exploration-route-destination">
             <RouteIcon size={20} />
             <div>
-              <small>Destination</small>
+              <small>{t("Destination")}</small>
               <strong>{destinationLabel}</strong>
             </div>
             <button
               type="button"
               onClick={() => setStep("destination")}
-              aria-label="Change destination"
-            >
-              Change
-            </button>
+              aria-label={t("Change destination")}
+            >{t("Change")}</button>
           </div>
-          <p className="exploration-route-budget-label" id="route-mode-label">
-            Travel by
-          </p>
+          <p className="exploration-route-budget-label" id="route-mode-label">{t("Travel by")}</p>
           <div
             className="exploration-route-budgets"
             role="group"
@@ -762,19 +740,16 @@ export function ExplorationRoutePlanner({
               <button
                 key={profile}
                 type="button"
-                aria-label={profile === "pedestrian" ? "Walking" : "Cycling"}
+                aria-label={profile === "pedestrian" ? t("Walking") : t("Cycling")}
                 aria-pressed={mode === profile}
                 disabled={!directPlans[profile]}
                 onClick={() => changeMode(profile)}
               >
-                {profile === "pedestrian" ? "Walking" : "Cycling"}
+                {profile === "pedestrian" ? t("Walking") : t("Cycling")}
                 {directPlans[profile] && (
-                  <small>
-                    {Math.ceil(
-                      directPlans[profile].routes[0].durationSeconds / 60,
-                    )}{" "}
-                    min direct
-                  </small>
+                  <small>{t("{{value0}}{{value1}} min direct", { value0: Math.ceil(
+                    directPlans[profile].routes[0].durationSeconds / 60,
+                  ), value1: " " })}</small>
                 )}
               </button>
             ))}
@@ -782,9 +757,7 @@ export function ExplorationRoutePlanner({
           <p
             className="exploration-route-budget-label"
             id="exploration-budget-label"
-          >
-            Have extra time? Go further, discover more.{" "}
-          </p>
+          >{t("Have extra time? Go further, discover more.{{value0}}", { value0: " " })}</p>
           <div
             className="exploration-route-budgets exploration-route-budgets--time"
             role="group"
@@ -795,40 +768,34 @@ export function ExplorationRoutePlanner({
                 key={minutes}
                 type="button"
                 aria-pressed={budget === minutes}
-                aria-label={minutes === 0 ? "No extra time" : `+${minutes} min`}
+                aria-label={minutes === 0 ? t("No extra time") : t("+{{value0}} min", { value0: minutes })}
                 onClick={() => changeBudget(minutes)}
               >
-                {minutes === 0 ? "No extra" : `+${minutes} min`}
+                {minutes === 0 ? t("No extra") : t("+{{value0}} min", { value0: minutes })}
               </button>
             ))}
           </div>
           {budget === 0 && directRoute && (
             <p className="exploration-route-caption">
-              <strong>
-                {Math.ceil(directRoute.durationSeconds / 60)} min total
-              </strong>{" "}
-              · {directRoute.distanceKm.toFixed(1)} km direct route · +
-              {directRoute.newGroundKm < 1
-                ? `${Math.round(directRoute.newGroundKm * 1_000)} m`
-                : `${directRoute.newGroundKm.toFixed(1)} km`}{" "}
-              new ground
+              <Trans i18nKey="route.directCaption" values={{
+                distance: formatNumber(directRoute.distanceKm, 1),
+                newDistance: directRoute.newGroundKm < 1
+                  ? `${Math.round(directRoute.newGroundKm * 1_000)} m`
+                  : `${formatNumber(directRoute.newGroundKm, 1)} km`,
+              }} components={{ duration: <strong>{t("{{value0}} min", { value0: Math.ceil(directRoute.durationSeconds / 60) })}</strong> }} />
             </p>
           )}
           {budget > 0 && !hasExploration && directPlans[mode] && (
             <p className="exploration-route-caption">
-              About{" "}
-              <strong>
-                {Math.ceil(directPlans[mode].routes[0].durationSeconds / 60) +
-                  budget}{" "}
-                min total
-              </strong>
-              , with more undiscovered ground along the way.
+              <Trans i18nKey="route.extraTimeCaption" components={{ duration: <strong>{t("{{value0}} min", {
+                value0: Math.ceil(directPlans[mode].routes[0].durationSeconds / 60) + budget,
+              })}</strong> }} />
             </p>
           )}
           {pending && (
             <p className="exploration-route-progress" role="status">
               <span />
-              {hasExploration ? "Checking more options…" : "Comparing paths through undiscovered areas…"}
+              {hasExploration ? t("Checking more options…") : t("Comparing paths through undiscovered areas…")}
             </p>
           )}
           {budget > 0 && !hasExploration && (
@@ -844,7 +811,7 @@ export function ExplorationRoutePlanner({
               }
               onClick={() => void calculate(budget)}
             >
-              {pending ? "Finding routes…" : "Find routes"}
+              {pending ? t("Finding routes…") : t("Find routes")}
             </button>
           )}
           {budget > 0 && hasExploration && selected && (
@@ -852,7 +819,7 @@ export function ExplorationRoutePlanner({
               <div
                 className="exploration-route-options"
                 role="group"
-                aria-label="Choose a route"
+                aria-label={t("Choose a route")}
               >
                 {routes.map((route, index) => (
                   <button
@@ -861,8 +828,8 @@ export function ExplorationRoutePlanner({
                     aria-pressed={route.id === selected.id}
                     aria-label={
                       index === 0
-                        ? "Select direct route"
-                        : `Select discovery route ${index}`
+                        ? t("Select direct route")
+                        : t("Select discovery route {{value0}}", { value0: index })
                     }
                     onClick={() => {
                       controllerRef.current?.abort();
@@ -873,22 +840,17 @@ export function ExplorationRoutePlanner({
                     <span>
                       <strong>
                         {index === 0
-                          ? "Direct"
-                          : `Discover${routes.length > 2 ? ` ${index}` : ""}`}
+                          ? t("Direct")
+                          : t("Discover{{value0}}", { value0: routes.length > 2 ? ` ${index}` : "" })}
                       </strong>
-                      <small>
-                        {route.distanceKm.toFixed(1)} km · about{" "}
-                        {route.newGroundKm.toFixed(1)} km new ground
-                      </small>
+                      <small>{t("route.cardDistance", { distance: formatNumber(route.distanceKm, 1), newDistance: formatNumber(route.newGroundKm, 1) })}</small>
                     </span>
                     <span>
-                      <strong>
-                        {Math.ceil(route.durationSeconds / 60)} min
-                      </strong>
+                      <strong>{t("{{value0}} min", { value0: Math.ceil(route.durationSeconds / 60) })}</strong>
                       <small>
                         {index === 0
-                          ? "Baseline"
-                          : `+${Math.max(0, Math.ceil(route.durationSeconds / 60) - Math.ceil(explorationPlan.routes[0].durationSeconds / 60))} min`}
+                          ? t("Baseline")
+                          : t("+{{value0}} min", { value0: Math.max(0, Math.ceil(route.durationSeconds / 60) - Math.ceil(explorationPlan.routes[0].durationSeconds / 60)) })}
                       </small>
                     </span>
                   </button>
@@ -896,8 +858,8 @@ export function ExplorationRoutePlanner({
               </div>
               {routes.length === 1 && (
                 <RouteNotice
-                  title="No discovery route found"
-                  message={`We couldn’t find a suitable route with ${budget} extra minutes. Try a different time or destination.`}
+                  title={t("No discovery route found")}
+                  message={t("We couldn’t find a suitable route with {{value0}} extra minutes. Try a different time or destination.", { value0: budget })}
                   action={null}
                 />
               )}
@@ -910,28 +872,24 @@ export function ExplorationRoutePlanner({
               disabled={!directPlans[mode] || startingJourney}
               onClick={() => onStart(selected, mode)}
             >
-              {tracking ? "Start navigation" : "Start journey"}
+              {tracking ? t("Start navigation") : t("Start journey")}
             </button>
           )}
           {previewEnabled && selected && (budget === 0 || hasExploration) && (
-            <button className="exploration-route-preview" type="button" aria-label="Preview selected navigation route" onClick={() => onPreview(selected)}>
-              Preview navigation
-            </button>
+            <button className="exploration-route-preview" type="button" aria-label={t("Preview selected navigation route")} onClick={() => onPreview(selected)}>{t("Preview navigation")}</button>
           )}
         </>
       )}
       {!origin && (
         <div className="exploration-route-notice">
-          <p>Find your current location to plan a route.</p>
-          <button type="button" onClick={onLocate}>
-            Find my location
-          </button>
+          <p>{t("Find your current location to plan a route.")}</p>
+          <button type="button" onClick={onLocate}>{t("Find my location")}</button>
         </div>
       )}
-      {!ready && <p role="status">Loading your discovery map…</p>}
+      {!ready && <p role="status">{t("Loading your discovery map…")}</p>}
       {error && (
         <RouteNotice
-          title="Couldn’t find exploration routes"
+          title={t("Couldn’t find exploration routes")}
           message={error}
           action={null}
         />

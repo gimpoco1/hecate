@@ -7,6 +7,9 @@ class JourneyBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(journeyActivity)
         bridge?.registerPluginInstance(AppIconPlugin())
+        bridge?.registerPluginInstance(NavigationScreenPlugin())
+        bridge?.registerPluginInstance(AppleSignInPlugin())
+        bridge?.registerPluginInstance(GoogleSignInPlugin())
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

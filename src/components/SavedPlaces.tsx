@@ -1,4 +1,5 @@
-import { errorDiagnostic } from '../diagnostics'
+import { t, useAppTranslation, currentLanguage } from "../i18n";
+import { errorDiagnostic } from "../diagnostics";
 import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { Map as MapLibreMap } from "maplibre-gl";
@@ -39,6 +40,7 @@ function favoriteGroupsForPlaces(favoritePlaces: FavoritePlace[]): FavoriteGroup
 }
 
 function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
+  useAppTranslation();
   const vector = favoritePlaceIconVector(icon);
   return (
     <svg
@@ -53,12 +55,12 @@ function FavoriteGlyph({ icon }: { icon: FavoritePlaceIcon }) {
 
 function mapPreviewErrorMessage(error: unknown): string {
   return error instanceof Error
-    ? `Map preview unavailable: ${error.message}`
-    : "Map preview unavailable because the map style could not be loaded.";
+    ? t("Map preview unavailable: {{value0}}", { value0: error.message })
+    : t("Map preview unavailable because the map style could not be loaded.");
 }
 
 function formatSavedAt(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(currentLanguage(), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(timestamp);
@@ -71,6 +73,7 @@ function collapseMapAttribution(container: HTMLDivElement): void {
 }
 
 function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
+  useAppTranslation();
   const { theme } = useAppearance();
   const themeRef = useRef(theme);
   themeRef.current = theme;
@@ -138,7 +141,7 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
   }
 
   return (
-    <div className="saved-place-map-preview" aria-label={`Map preview of ${place.name}`}>
+    <div className="saved-place-map-preview" aria-label={t("Map preview of {{value0}}", { value0: place.name })}>
       <div ref={containerRef} className="saved-place-map-preview__map" />
       <span className="saved-place-map-preview__marker" aria-hidden="true">
         <FavoriteGlyph icon={place.icon} />
@@ -155,6 +158,7 @@ export function SavedPlacesSheet({
   onBack,
   onClose,
 }: SavedPlacesSheetProps) {
+  useAppTranslation();
   const [selectedCategoryId, setSelectedCategoryId] =
     useState<FavoritePlaceIcon | null>(null);
   const [expandedPlaceId, setExpandedPlaceId] = useState<string | null>(null);
@@ -184,7 +188,7 @@ export function SavedPlacesSheet({
           className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
-          aria-label="Back to profile"
+          aria-label={t("Back to profile")}
         >
           <ArrowLeftIcon />
         </button>
@@ -192,22 +196,22 @@ export function SavedPlacesSheet({
           className="icon-button sheet__close"
           type="button"
           onClick={onClose}
-          aria-label="Close saved places"
+          aria-label={t("Close saved places")}
         >
           <XIcon />
         </button>
-        <div className="eyebrow">Your collection</div>
-        <h2 id="saved-places-title">Saved places</h2>
-        <p>Keep your favourite places organised and return to them on the map.</p>
+        <div className="eyebrow">{t("Your collection")}</div>
+        <h2 id="saved-places-title">{t("Saved places")}</h2>
+        <p>{t("Keep your favourite places organised and return to them on the map.")}</p>
 
-        <section className="saved-places-overview" aria-label="Saved places summary">
+        <section className="saved-places-overview" aria-label={t("Saved places summary")}>
           <span>
             <strong>{favoritePlaces.length}</strong>
-            <small>{favoritePlaces.length === 1 ? "Saved place" : "Saved places"}</small>
+            <small>{favoritePlaces.length === 1 ? t("Saved place") : t("Saved places")}</small>
           </span>
           <span>
             <strong>{groups.length}</strong>
-            <small>{groups.length === 1 ? "Collection" : "Collections"}</small>
+            <small>{t("collectionLabel", { count: groups.length })}</small>
           </span>
         </section>
 
@@ -216,11 +220,11 @@ export function SavedPlacesSheet({
             <span aria-hidden="true">
               <SaveIcon size={22} strokeWidth={2} />
             </span>
-            <strong>No saved places yet</strong>
-            <p>Save a place from the map and it will appear here.</p>
+            <strong>{t("No saved places yet")}</strong>
+            <p>{t("Save a place from the map and it will appear here.")}</p>
           </div>
         ) : (
-          <section className="saved-places-collection" aria-label="Saved place collections">
+          <section className="saved-places-collection" aria-label={t("Saved place collections")}>
             <div className="account-favorites__categories">
               {groups.map((group) => (
                 <button
@@ -271,7 +275,7 @@ export function SavedPlacesSheet({
                       >
                         <SavedPlaceMapPreview place={place} />
                         <p className="saved-place-row__saved-at">
-                          Saved{" "}
+                          {t("Saved")}{" "}
                           <time dateTime={new Date(place.createdAt).toISOString()}>
                             {formatSavedAt(place.createdAt)}
                           </time>
@@ -286,29 +290,21 @@ export function SavedPlacesSheet({
                             <span>
                               <strong
                                 id={`saved-place-removal-title-${place.id}`}
-                              >
-                                Remove this place?
-                              </strong>
+                              >{t("Remove this place?")}</strong>
                               <small
                                 id={`saved-place-removal-description-${place.id}`}
-                              >
-                                This cannot be undone.
-                              </small>
+                              >{t("This cannot be undone.")}</small>
                             </span>
                             <span>
                               <button
                                 type="button"
                                 onClick={() => setConfirmingRemovalId(null)}
-                              >
-                                Cancel
-                              </button>
+                              >{t("Cancel")}</button>
                               <button
                                 type="button"
                                 className="saved-place-removal-confirmation__confirm"
                                 onClick={() => onFavoriteDelete(place)}
-                              >
-                                Remove
-                              </button>
+                              >{t("Remove")}</button>
                             </span>
                           </div>
                         ) : (
@@ -317,15 +313,11 @@ export function SavedPlacesSheet({
                               type="button"
                               className="saved-place-row__remove"
                               onClick={() => setConfirmingRemovalId(place.id)}
-                            >
-                              Remove
-                            </button>
+                            >{t("Remove")}</button>
                             <button
                               type="button"
                               onClick={() => onFavoriteSelect(place)}
-                            >
-                              Show on map
-                            </button>
+                            >{t("Show on map")}</button>
                           </div>
                         )}
                       </div>

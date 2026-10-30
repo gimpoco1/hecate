@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
 import { cityBounds, cityPointPredicate, type CityBoundary } from "./city";
 import type { RoutePoint } from "./explorationRouting";
@@ -10,15 +11,15 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseDestinations(value: unknown): DestinationResult[] {
-  if (!record(value) || !Array.isArray(value.features)) throw new TypeError("Destination search returned an invalid feature collection.");
+  if (!record(value) || !Array.isArray(value.features)) throw new TypeError(t("Destination search returned an invalid feature collection."));
   return value.features.map((feature: unknown, index: number): DestinationResult => {
     if (!record(feature) || !record(feature.geometry) || feature.geometry.type !== "Point" ||
       !Array.isArray(feature.geometry.coordinates) || !record(feature.properties)) {
-      throw new TypeError(`Destination search returned invalid result ${index}.`);
+      throw new TypeError(t("Destination search returned invalid result {{value0}}.", { value0: index }));
     }
     const [lng, lat] = feature.geometry.coordinates;
     if (typeof lng !== "number" || typeof lat !== "number" || !Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 85) {
-      throw new TypeError(`Destination search returned invalid coordinates for result ${index}.`);
+      throw new TypeError(t("Destination search returned invalid coordinates for result {{value0}}.", { value0: index }));
     }
     const properties = feature.properties;
     const streetAddress = typeof properties.street === "string" && properties.street.trim()
@@ -26,7 +27,7 @@ export function parseDestinations(value: unknown): DestinationResult[] {
       : undefined;
     const placeName = properties.name === properties.street ? streetAddress : properties.name;
     const name = [placeName, streetAddress, properties.city].find((text) => typeof text === "string" && text.trim());
-    if (typeof name !== "string") throw new TypeError(`Destination search result ${index} has no usable name.`);
+    if (typeof name !== "string") throw new TypeError(t("Destination search result {{value0}} has no usable name.", { value0: index }));
     const detail = [...new Set([streetAddress, properties.city, properties.state, properties.country]
       .filter((text): text is string => typeof text === "string" && text.length > 0 && text !== name))].join(", ");
     return { id: `${lng}:${lat}:${index}`, name, detail, point: { lng, lat } };
@@ -35,7 +36,7 @@ export function parseDestinations(value: unknown): DestinationResult[] {
 
 /** Restricts suggestions to the current city polygon, including holes and disconnected boundaries. */
 export async function searchDestinations(query: string, near: RoutePoint | null, city: CityBoundary, signal: AbortSignal): Promise<DestinationResult[]> {
-  if (query.trim().length < 3) throw new RangeError("Enter at least three characters to search for a destination.");
+  if (query.trim().length < 3) throw new RangeError(t("Enter at least three characters to search for a destination."));
   const url = new URL(SEARCH_URL);
   url.searchParams.set("q", query.trim());
   url.searchParams.set("limit", "10");
@@ -63,12 +64,12 @@ async function requestDestinations(url: URL, signal: AbortSignal): Promise<Desti
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const response = await fetch(url, { signal });
-      if (!response.ok) throw new Error(`Destination lookup failed (HTTP ${response.status}). Endpoint: ${url.origin}`);
+      if (!response.ok) throw new Error(t("Destination lookup failed (HTTP {{value0}}). Endpoint: {{value1}}", { value0: response.status, value1: url.origin }));
       return parseDestinations(await response.json());
     } catch (error) {
       if (signal.aborted || attempt === 2) throw error;
       console.warn("Destination lookup failed; retrying", { endpoint: url.origin, attempt, error: errorDiagnostic(error) });
     }
   }
-  throw new Error(`Destination lookup exhausted attempts. Endpoint: ${url.origin}`);
+  throw new Error(t("Destination lookup exhausted attempts. Endpoint: {{value0}}", { value0: url.origin }));
 }

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { RouteManeuver } from "./navigationGuidance";
 
 export type JunctionManeuver = { maneuver: RouteManeuver; type: string; bearingBefore: number | null; bearingAfter: number | null };
@@ -38,7 +39,7 @@ export function combineCrossingManeuvers(steps: readonly JunctionManeuver[], dis
         const symbol = straight ? "straight" : turn < 0 ? "left" : "right";
         combined = { ...first, bearingAfter: outgoing, maneuver: {
           ...first.maneuver, symbol, roadName: last.maneuver.roadName,
-          instruction: straight ? `Stay on ${last.maneuver.roadName}.` : `Turn ${symbol} onto ${last.maneuver.roadName}.`, endFraction: last.maneuver.fraction,
+          instruction: straight ? t("Stay on {{value0}}.", { value0: last.maneuver.roadName }) : t(symbol === "left" ? "Turn left onto {{road}}." : "Turn right onto {{road}}.", { road: last.maneuver.roadName }), endFraction: last.maneuver.fraction,
         } };
         lastIndex = end;
         break;

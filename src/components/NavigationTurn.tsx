@@ -1,8 +1,10 @@
+import { formatNumber, t, useAppTranslation } from "../i18n";
 import { useLayoutEffect, useState, type RefObject } from "react";
 import type { NavigationCue, TurnSymbol } from "../navigationGuidance";
 import { mdiFlagCheckered } from "@mdi/js";
 
 function TurnArrow({ symbol }: { symbol: TurnSymbol }) {
+  useAppTranslation();
   if (symbol === "arrive") return <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiFlagCheckered} /></svg>;
   const paths: Record<Exclude<TurnSymbol, "arrive">, string> = {
     straight: "M12 21V3m-6 6 6-6 6 6", left: "M17 21V12H4m6-6-6 6 6 6", right: "M7 21V12h13m-6-6 6 6-6 6",
@@ -15,6 +17,7 @@ function TurnArrow({ symbol }: { symbol: TurnSymbol }) {
 }
 
 export function NavigationTurn({ cue, message, anchor }: { cue: NavigationCue | null; message: string; anchor: RefObject<HTMLElement | null> }) {
+  useAppTranslation();
   const [bottom, setBottom] = useState(120);
   useLayoutEffect(() => {
     const panel = anchor.current;
@@ -28,10 +31,10 @@ export function NavigationTurn({ cue, message, anchor }: { cue: NavigationCue | 
     window.addEventListener("resize", measure);
     return () => { resize.disconnect(); mutation.disconnect(); window.removeEventListener("resize", measure); };
   }, [anchor]);
-  if (message) return <aside className="navigation-turn" style={{ bottom }} role="status"><div><strong>Navigation</strong><span>{message}</span></div></aside>;
+  if (message) return <aside className="navigation-turn" style={{ bottom }} role="status"><div><strong>{t("Navigation")}</strong><span>{message}</span></div></aside>;
   if (!cue) return null;
-  const distance = cue.distanceMeters <= 10 ? (cue.symbol === "arrive" ? "Arrived" : "Now") : cue.distanceMeters < 1000 ? `${cue.distanceMeters} m` : `${(cue.distanceMeters / 1000).toFixed(1)} km`;
-  return <aside className="navigation-turn" style={{ bottom }} aria-label="Next navigation turn">
-    <TurnArrow symbol={cue.symbol} /><div><strong>{cue.distanceMeters > 10 ? `In ${distance}` : distance}</strong><span>{cue.instruction}</span></div>
+  const distance = cue.distanceMeters <= 10 ? (cue.symbol === "arrive" ? t("Arrived") : t("Now")) : cue.distanceMeters < 1000 ? `${cue.distanceMeters} m` : `${formatNumber((cue.distanceMeters / 1000), 1)} km`;
+  return <aside className="navigation-turn" style={{ bottom }} aria-label={t("Next navigation turn")}>
+    <TurnArrow symbol={cue.symbol} /><div><strong>{cue.distanceMeters > 10 ? t("In {{value0}}", { value0: distance }) : distance}</strong><span>{cue.instruction}</span></div>
   </aside>;
 }

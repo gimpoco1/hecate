@@ -23,6 +23,7 @@ import com.getcapacitor.JSObject;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.function.Consumer;
+import java.util.Locale;
 
 final class JourneyNotifications {
     static final String STOP = "com.gimpoco.hecate.STOP_JOURNEY";
@@ -39,9 +40,13 @@ final class JourneyNotifications {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences("hecate.journeys", Context.MODE_PRIVATE);
         manager = this.context.getSystemService(NotificationManager.class);
+        refreshChannel();
+    }
+
+    private void refreshChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL, "Walking journeys", NotificationManager.IMPORTANCE_LOW);
-            channel.setDescription("Live walking distance, new area, elapsed time, and journey controls");
+            NotificationChannel channel = new NotificationChannel(CHANNEL, text(R.string.journey_channel), NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription(text(R.string.journey_channel_description));
             channel.setSound(null, null);
             channel.enableVibration(false);
             manager.createNotificationChannel(channel);
@@ -55,6 +60,33 @@ final class JourneyNotifications {
         if (!"system".equals(preference) && !"light".equals(preference) && !"dark".equals(preference))
             throw new IllegalArgumentException("Journey appearance must be system, light, or dark.");
         commit(preferences.edit().putString("appearance", preference));
+    }
+
+    void setLanguage(String language) {
+        if (!java.util.List.of("system", "en", "es", "it", "hr", "pt").contains(language))
+            throw new IllegalArgumentException("Unsupported journey language: " + language);
+        commit(preferences.edit().putString("language", language));
+        refreshChannel();
+    }
+
+    String languagePreference() { return preferences.getString("language", "system"); }
+
+    private String text(int resource) {
+        String language = languagePreference();
+        if ("system".equals(language)) return context.getString(resource);
+        Configuration config = new Configuration(context.getResources().getConfiguration());
+        config.setLocale(Locale.forLanguageTag(language));
+        return context.createConfigurationContext(config).getString(resource);
+    }
+
+    private Locale locale() {
+        String language = languagePreference();
+        return "system".equals(language) ? Locale.getDefault() : Locale.forLanguageTag(language);
+    }
+
+    private String metricsLabel(JourneyState state) {
+        return state.distanceLabel(locale()) + " " + text(state.finishedAt() == null ? R.string.journey_walk : R.string.journey_walked) +
+            (state.newGroundMeters() == null ? "" : String.format(locale(), " · +%.0f m ", state.newGroundMeters()) + text(R.string.journey_new_area));
     }
 
     String appearance() { return preferences.getString("appearance", "system"); }
@@ -117,12 +149,12 @@ final class JourneyNotifications {
             new Intent(context, JourneyActionReceiver.class).setAction(DEMOTE)
                 .setData(android.net.Uri.parse("hecate://journey/demote/" + state.walkId())).putExtra("walkId", state.walkId()),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return builder().setContentTitle("Exploring…")
-            .setContentText(state.metricsLabel()).setStyle(new NotificationCompat.BigTextStyle().bigText(state.metricsLabel()))
+        return builder().setContentTitle(text(R.string.journey_exploring))
+            .setContentText(metricsLabel(state)).setStyle(new NotificationCompat.BigTextStyle().bigText(metricsLabel(state)))
             .setWhen(state.startedAt()).setShowWhen(true).setUsesChronometer(true)
             .setOngoing(true).setRequestPromotedOngoing(!state.walkId().equals(preferences.getString("demoted", null)))
-            .setShortCriticalText(state.distanceLabel()).setDeleteIntent(demote)
-            .addAction(new NotificationCompat.Action(0, "Stop journey", stop)).build();
+            .setShortCriticalText(state.distanceLabel(locale())).setDeleteIntent(demote)
+            .addAction(new NotificationCompat.Action(0, text(R.string.journey_stop), stop)).build();
     }
 
     void showRecap(JourneyState state) {
@@ -132,9 +164,9 @@ final class JourneyNotifications {
         String previous = preferences.getString("recap", null);
         if (previous != null && !previous.equals(state.walkId())) manager.cancel(previous, RECAP_ID);
         commit(preferences.edit().putString("recap", state.walkId()));
-        Notification notification = builder().setContentTitle("Journey complete")
-            .setContentText(state.metricsLabel() + " · " + state.elapsedLabel())
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(state.metricsLabel() + " · " + state.elapsedLabel()))
+        Notification notification = builder().setContentTitle(text(R.string.journey_complete))
+            .setContentText(metricsLabel(state) + " · " + state.elapsedLabel(locale()))
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(metricsLabel(state) + " · " + state.elapsedLabel(locale())))
             .setShowWhen(false).setAutoCancel(true).setTimeoutAfter(remaining).build();
         manager.notify(state.walkId(), RECAP_ID, notification);
         if (Build.VERSION.SDK_INT < 26) {
