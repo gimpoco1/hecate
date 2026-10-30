@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleLocalizations</key>
+	<array><string>en</string><string>es</string><string>it</string><string>hr</string><string>pt</string></array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
@@ -38,13 +40,13 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMotionUsageDescription</key>
-	<string>Hecate uses motion activity to pause discovery reminder GPS while you are stationary and resume it while you walk. Motion activity is not saved or synced.</string>
+	<string>Hecate uses motion activity to manage GPS checks for discovery reminders. Motion activity is not saved or synced.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Hecate uses background location during a walk you start, or when you enable discovery reminders, to suggest recording a journey through new areas. Reminder locations are not saved to your map or account.</string>
+	<string>Hecate uses background location during a journey you start, or when you enable discovery reminders, to suggest recording a journey through new areas. Reminder locations are not saved to your map or account.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Hecate uses your location to show your position, reveal a walk you start, and detect walks when reminders are enabled.</string>
+	<string>Hecate uses your location to show your position, map the places you explore during a journey, and suggest recording when discovery reminders are enabled.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Hecate uses your device orientation to show which direction you are facing on the map.</string>
+	<string>Hecate uses motion activity to manage GPS checks for discovery reminders. Motion activity is not saved or synced.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

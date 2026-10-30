@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journey_channel">Journeys</string>
+    <string name="journey_channel_description">Live distance travelled, new area, elapsed time, and journey controls</string>
+    <string name="journey_exploring">Exploring…</string>
+    <string name="journey_complete">Journey complete</string>
+    <string name="journey_stop">Stop journey</string>
+    <string name="journey_walk">this journey</string>
+    <string name="journey_walked">travelled</string>
+    <string name="journey_new_area">new area</string>
+</resources>

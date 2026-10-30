@@ -1,3 +1,4 @@
+import { t, useAppTranslation } from "../i18n";
 import { StarIcon } from "./Icons";
 
 export function CityLevelStars({
@@ -7,6 +8,7 @@ export function CityLevelStars({
   level: number;
   decorative?: boolean;
 }) {
+  useAppTranslation();
   return (
     <span
       className="city-level-stars"
@@ -14,8 +16,8 @@ export function CityLevelStars({
       aria-label={decorative
         ? undefined
         : level > 0
-          ? `${level} of 3 city stars earned`
-          : "No city stars earned yet"}
+          ? t("{{value0}} of 3 city stars earned", { value0: level })
+          : t("No city stars earned yet")}
     >
       {[1, 2, 3].map((star) => (
         <span

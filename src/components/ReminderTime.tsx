@@ -1,3 +1,4 @@
+import { t, useAppTranslation, currentLanguage } from "../i18n";
 import { createPortal } from "react-dom";
 import { useId, useRef, useState } from "react";
 
@@ -9,12 +10,13 @@ type Props = {
 };
 
 export function   ReminderTime({ value, title, disabled, onChange }: Props) {
+  useAppTranslation();
   const id = useId();
   const picker = useRef<HTMLDivElement>(null);
   const [hour, setHour] = useState(value.slice(0, 2));
   const [minute, setMinute] = useState(value.slice(3, 5));
   const [error, setError] = useState("");
-  const formatted = new Intl.DateTimeFormat(undefined, {
+  const formatted = new Intl.DateTimeFormat(currentLanguage(), {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(`2000-01-01T${value}:00`));
@@ -24,7 +26,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
       <button
         type="button"
         className="streak-reminder-time"
-        aria-label={`Change ${title.toLowerCase()}, ${formatted}`}
+        aria-label={t("Change {{value0}}, {{value1}}", { value0: title.toLowerCase(), value1: formatted })}
         aria-haspopup="dialog"
         popoverTarget={id}
         disabled={disabled}
@@ -49,7 +51,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
             'button[aria-pressed="true"]',
           )) {
             const list = selected.parentElement;
-            if (!list) throw new Error("Reminder time option is missing its scroll list.");
+            if (!list) throw new Error(t("Reminder time option is missing its scroll list."));
             list.scrollTop += selected.getBoundingClientRect().top -
               list.getBoundingClientRect().top -
               (list.clientHeight - selected.offsetHeight) / 2;
@@ -57,11 +59,11 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
         }}
       >
         <h3 id={`${id}-title`}>{title}</h3>
-        <p>Choose a time in your device’s local time.</p>
+        <p>{t("Choose a time in your device’s local time.")}</p>
         <div className="streak-time-picker__columns">
           {[
-            { label: "Hour", count: 24, selected: hour, select: setHour },
-            { label: "Minute", count: 60, selected: minute, select: setMinute },
+            { label: t("Hour"), count: 24, selected: hour, select: setHour },
+            { label: t("Minute"), count: 60, selected: minute, select: setMinute },
           ].map(({ label, count, selected, select }) => (
             <div key={label}>
               <strong>{label}</strong>
@@ -72,7 +74,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
                     <button
                       key={option}
                       type="button"
-                      aria-label={`${label} ${option}`}
+                      aria-label={t("{{value0}} {{value1}}", { value0: label, value1: option })}
                       aria-pressed={selected === option}
                       onClick={() => select(option)}
                     >
@@ -86,7 +88,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
         </div>
         {error && <p role="alert">{error}</p>}
         <div className="streak-time-picker__actions">
-          <button type="button" popoverTarget={id} popoverTargetAction="hide">Cancel</button>
+          <button type="button" popoverTarget={id} popoverTargetAction="hide">{t("Cancel")}</button>
           <button
             type="button"
             onClick={() => {
@@ -94,9 +96,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
               setError(message ?? "");
               if (!message) picker.current?.hidePopover();
             }}
-          >
-            Save time
-          </button>
+          >{t("Save time")}</button>
         </div>
       </div>, document.body)}
     </>

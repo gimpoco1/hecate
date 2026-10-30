@@ -1,3 +1,4 @@
+import { t, currentLanguage } from "./i18n";
 import {
   discoveredDistanceForFootprints,
   discoveryCellAreaKm2,
@@ -227,10 +228,10 @@ export async function canonicalCityForStoredBoundary(
   const region = await metropolitanCityForPoint(center);
   return region
     ? {
-        ...region,
-        firstDiscoveredAt: city.firstDiscoveredAt,
-        lastDiscoveredAt: city.lastDiscoveredAt,
-      }
+      ...region,
+      firstDiscoveredAt: city.firstDiscoveredAt,
+      lastDiscoveredAt: city.lastDiscoveredAt,
+    }
     : city;
 }
 
@@ -348,7 +349,7 @@ export async function fetchCityBoundary(
 ) {
   const metropolitan = await metropolitanCityForPoint(point);
   if (signal?.aborted)
-    throw new DOMException("City boundary lookup was cancelled", "AbortError");
+    throw new DOMException(t("City boundary lookup was cancelled"), "AbortError");
   if (metropolitan) return metropolitan;
   const query = new URLSearchParams({
     format: "geojson",
@@ -363,11 +364,11 @@ export async function fetchCityBoundary(
     `https://nominatim.openstreetmap.org/reverse?${query}`,
     {
       signal,
-      headers: { "Accept-Language": navigator.language || "en" },
+      headers: { "Accept-Language": currentLanguage() },
     },
   );
   if (!response.ok)
-    throw new Error(`City boundary lookup failed (${response.status})`);
+    throw new Error(t("City boundary lookup failed ({{value0}})", { value0: response.status }));
 
   const collection = (await response.json()) as GeoJSON.FeatureCollection<
     CityGeometry,
@@ -386,7 +387,7 @@ export async function fetchCityBoundary(
       feature.geometry.type !== "MultiPolygon")
   ) {
     throw new CityNotFoundError(
-      "OpenStreetMap did not return a municipal boundary for this location",
+      t("OpenStreetMap did not return a municipal boundary for this location"),
     );
   }
 
@@ -400,13 +401,13 @@ export async function fetchCityBoundary(
       address.municipality ||
       address.village ||
       feature.properties?.display_name?.split(",")[0] ||
-      "Current city",
+      t("Current city"),
     geometry: feature.geometry,
     fetchedAt: Date.now(),
   };
   if (!isPointInCity(point, city))
     throw new CityNotFoundError(
-      "The returned city boundary does not contain this location",
+      t("The returned city boundary does not contain this location"),
     );
   return city;
 }

@@ -17,19 +17,14 @@ record JourneyState(String walkId, String ownerId, long startedAt, double distan
         return new JourneyState(walkId, ownerId, startedAt, distanceKm, newGroundMeters, timestamp);
     }
 
-    String distanceLabel() {
-        return distanceKm < 1 ? Math.round(distanceKm * 1000) + " m" : String.format(Locale.getDefault(), "%.2f km", distanceKm);
+    String distanceLabel(Locale locale) {
+        return distanceKm < 1 ? Math.round(distanceKm * 1000) + " m" : String.format(locale, "%.2f km", distanceKm);
     }
 
-    String metricsLabel() {
-        return distanceLabel() + (finishedAt == null ? " this walk" : " walked") +
-            (newGroundMeters == null ? "" : String.format(Locale.getDefault(), " · +%.0f m new area", newGroundMeters));
-    }
-
-    String elapsedLabel() {
+    String elapsedLabel(Locale locale) {
         if (finishedAt == null) throw new IllegalStateException("An active journey uses the system chronometer.");
         long seconds = (finishedAt - startedAt) / 1000;
-        return seconds >= 3600 ? String.format(Locale.getDefault(), "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) :
-            String.format(Locale.getDefault(), "%d:%02d", seconds / 60, seconds % 60);
+        return seconds >= 3600 ? String.format(locale, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60) :
+            String.format(locale, "%d:%02d", seconds / 60, seconds % 60);
     }
 }

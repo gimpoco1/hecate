@@ -1,7 +1,8 @@
+import { formatNumber, t, useAppTranslation, setLanguagePreference } from "../i18n";
+import { LeaderboardLanguageButton, LanguageSettings } from "./LanguageSettings";
 import { AuthEntry } from "./AuthEntry";
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -51,27 +52,28 @@ const APP_STORE_BADGE_URL =
 
 function formatDistance(value: number) {
   if (value < 1) return `${Math.round(value * 1_000)} m`;
-  return `${value.toFixed(value >= 10 ? 1 : 2)} km`;
+  return `${formatNumber(value, value >= 10 ? 1 : 2)} km`;
 }
 
 function formatPercentage(value: number) {
   if (value > 0 && value < 0.1) return "<0.1%";
-  if (value < 10) return `${value.toFixed(1)}%`;
+  if (value < 10) return `${formatNumber(value, 1)}%`;
   return `${Math.round(value)}%`;
 }
 
 function relativeUpdate(value: string) {
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
   const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return "Just updated";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("Just updated");
+  if (minutes < 60) return t("{{value0}}m ago", { value0: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t("{{value0}}h ago", { value0: hours });
   const days = Math.floor(hours / 24);
-  return days === 1 ? "Yesterday" : `${days}d ago`;
+  return days === 1 ? "Yesterday" : t("{{value0}}d ago", { value0: days });
 }
 
 function ExplorerAvatar({ name, rank }: { name: string; rank?: number }) {
+  useAppTranslation();
   return (
     <span
       className={`leaderboard-avatar leaderboard-avatar--${rank ?? "row"}`}
@@ -89,6 +91,7 @@ function ExplorerProfilePanel({
   entry: LeaderboardEntry | null;
   onClose: () => void;
 }) {
+  useAppTranslation();
   if (!entry) return null;
   const cityMilestones = entry.cities.flatMap((city) =>
     earnedCityMilestones(city.cityId, city.cityName, city.discoveredKm),
@@ -111,29 +114,29 @@ function ExplorerProfilePanel({
           className="leaderboard-panel__close"
           type="button"
           onClick={onClose}
-          aria-label="Close explorer profile"
+          aria-label={t("Close explorer profile")}
         >
           <XIcon />
         </button>
         <div className="explorer-profile__identity">
           <ExplorerAvatar name={entry.displayName} />
           <div>
-            <div className="eyebrow">Explorer passport</div>
+            <div className="eyebrow">{t("Explorer passport")}</div>
             <h2 id="explorer-profile-title">{entry.displayName}</h2>
           </div>
         </div>
         <div className="explorer-profile__summary">
           <span>
             <strong>{formatDistance(entry.totalDiscoveredKm)}</strong>
-            <small>shared ground</small>
+            <small>{t("shared ground")}</small>
           </span>
           <span>
             <strong>{entry.cities.length}</strong>
-            <small>shared cities</small>
+            <small>{t("shared cities")}</small>
           </span>
           <span>
             <strong>{personalAchievements.length}</strong>
-            <small>achievements earned</small>
+            <small>{t("achievements earned")}</small>
           </span>
         </div>
         {personalAchievements.length > 0 && (
@@ -142,8 +145,8 @@ function ExplorerProfilePanel({
             aria-labelledby="achievements-title"
           >
             <div>
-              <div className="eyebrow">Earned achievements</div>
-              <h3 id="achievements-title">Stories from the map.</h3>
+              <div className="eyebrow">{t("Earned achievements")}</div>
+              <h3 id="achievements-title">{t("Stories from the map.")}</h3>
             </div>
             <ul>
               {personalAchievements.map((achievement) => (
@@ -156,8 +159,8 @@ function ExplorerProfilePanel({
         )}
         <section className="explorer-passport" aria-labelledby="passport-title">
           <div>
-            <div className="eyebrow">City stars</div>
-            <h3 id="passport-title">Places made personal.</h3>
+            <div className="eyebrow">{t("City stars")}</div>
+            <h3 id="passport-title">{t("Places made personal.")}</h3>
           </div>
           {cityMilestones.length ? (
             <ul>
@@ -176,24 +179,17 @@ function ExplorerProfilePanel({
                   <span>
                     <strong>{milestone.title}</strong>
                     <small>{milestone.cityName}</small>
-                    <small className="passport-badge__meaning">
-                      {milestone.thresholdKm} km of new ground
-                    </small>
+                    <small className="passport-badge__meaning">{t("{{value0}} km of new ground", { value0: milestone.thresholdKm })}</small>
                   </span>
                   <CityLevelStars level={milestone.level} />
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="explorer-passport__empty">
-              The first star unlocks after 5 km of new ground in a shared city.
-            </div>
+            <div className="explorer-passport__empty">{t("The first star unlocks after 5 km of new ground in a shared city.")}</div>
           )}
         </section>
-        <p className="explorer-profile__privacy">
-          Earned achievements and the city totals this explorer chose to share
-          are shown. Routes and locations remain private.
-        </p>
+        <p className="explorer-profile__privacy">{t("Earned achievements and the city totals this explorer chose to share are shown. Routes and locations remain private.")}</p>
       </aside>
     </div>
   );
@@ -224,6 +220,7 @@ function LeaderboardAccountPanel({
   onPublished,
   onPublishSuccess,
 }: AccountPanelProps) {
+  useAppTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -275,7 +272,7 @@ function LeaderboardAccountPanel({
           if (!isCurrentRequest()) return;
           setError(true);
           setMessage(
-            "Your private discovery data could not be loaded. Try again in a moment.",
+            t("Your private discovery data could not be loaded. Try again in a moment."),
           );
         })
         .finally(() => {
@@ -321,7 +318,7 @@ function LeaderboardAccountPanel({
   const sendLink = async () => {
     if (!supabase || !email.trim()) {
       setError(true);
-      setMessage("Enter your email address first.");
+      setMessage(t("Enter your email address first."));
       return;
     }
     setPending(true);
@@ -334,7 +331,7 @@ function LeaderboardAccountPanel({
     });
     setError(Boolean(linkError));
     setMessage(
-      linkError?.message ?? "Check your inbox for your Hecate sign-in link.",
+      linkError?.message ?? t("Check your inbox for your Hecate sign-in link."),
     );
     setPending(false);
   };
@@ -342,12 +339,12 @@ function LeaderboardAccountPanel({
   const publish = async () => {
     if (!user || displayName.trim().length < 2) {
       setError(true);
-      setMessage("Choose a public name with at least 2 characters.");
+      setMessage(t("Choose a public name with at least 2 characters."));
       return;
     }
     if (!selectedCityIds.length) {
       setError(true);
-      setMessage("Choose at least one city to share.");
+      setMessage(t("Choose at least one city to share."));
       return;
     }
     setPending(true);
@@ -361,7 +358,7 @@ function LeaderboardAccountPanel({
         selectedCityIds.includes(city.cityId),
       );
       if (!selectedCities.length) {
-        throw new Error("Choose at least one city to share.");
+        throw new Error(t("Choose at least one city to share."));
       }
       await publishLeaderboardSnapshot(displayName, {
         ...leaderboardSnapshotForCities(currentSnapshot, selectedCityIds),
@@ -373,8 +370,8 @@ function LeaderboardAccountPanel({
       setError(false);
       onPublishSuccess(
         entryId
-          ? "Your public ranking is up to date."
-          : "You are now on the leaderboard.",
+          ? t("Your public ranking is up to date.")
+          : t("You are now on the leaderboard."),
       );
     } catch (caught) {
       const detail =
@@ -384,12 +381,12 @@ function LeaderboardAccountPanel({
       setError(true);
       setMessage(
         detail.includes("already taken")
-          ? "That public name is already taken. Choose another one."
+          ? t("That public name is already taken. Choose another one.")
           : detail.includes("only be changed once")
-            ? "Your public name has already been changed once and is now locked."
-            : detail === "Choose at least one city to share."
+            ? t("Your public name has already been changed once and is now locked.")
+            : detail === t("Choose at least one city to share.")
               ? detail
-              : "Your ranking could not be published. Try again in a moment.",
+              : t("Your ranking could not be published. Try again in a moment."),
       );
     } finally {
       setPending(false);
@@ -405,11 +402,11 @@ function LeaderboardAccountPanel({
       await onPublished();
       setError(false);
       setMessage(
-        "Your public snapshot has been removed. Your private discoveries are unchanged.",
+        t("Your public snapshot has been removed. Your private discoveries are unchanged."),
       );
     } catch {
       setError(true);
-      setMessage("Unable to remove your public snapshot right now.");
+      setMessage(t("Unable to remove your public snapshot right now."));
     } finally {
       setUnpublishing(false);
       setPending(false);
@@ -429,26 +426,21 @@ function LeaderboardAccountPanel({
           className="leaderboard-panel__close"
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label={t("Close")}
         >
           <XIcon />
         </button>
-        <div className="eyebrow">Your public snapshot</div>
-        <h2 id="leaderboard-panel-title">Choose what you share.</h2>
-        <p>
-          Hecate only publishes totals for the cities you select below. Your
-          routes, locations, and discovery map always stay private.
-        </p>
+        <div className="eyebrow">{t("Your public snapshot")}</div>
+        <h2 id="leaderboard-panel-title">{t("Choose what you share.")}</h2>
+        <p>{t("Hecate only publishes totals for the cities you select below. Your routes, locations, and discovery map always stay private.")}</p>
         {!isSyncConfigured ? (
-          <div className="leaderboard-message leaderboard-message--error">
-            Account sync is not configured for this build.
-          </div>
+          <div className="leaderboard-message leaderboard-message--error">{t("Account sync is not configured for this build.")}</div>
         ) : !user ? (
           <div className="auth-panel">
             <AuthEntry disabled={pending} onPendingChange={setPending}>
               <form className="leaderboard-signin" onSubmit={signIn}>
                 <fieldset className="auth-form-fields" disabled={pending}>
-                  <label htmlFor="leaderboard-email">Email</label>
+                  <label htmlFor="leaderboard-email">{t("Email")}</label>
                   <input
                     id="leaderboard-email"
                     type="email"
@@ -456,9 +448,9 @@ function LeaderboardAccountPanel({
                     onChange={(event) => setEmail(event.target.value)}
                     autoComplete="email"
                     required
-                    placeholder="you@example.com"
+                    placeholder={t("you@example.com")}
                   />
-                  <label htmlFor="leaderboard-password">Password</label>
+                  <label htmlFor="leaderboard-password">{t("Password")}</label>
                   <input
                     id="leaderboard-password"
                     type="password"
@@ -466,23 +458,21 @@ function LeaderboardAccountPanel({
                     onChange={(event) => setPassword(event.target.value)}
                     autoComplete="current-password"
                     required
-                    placeholder="Your password"
+                    placeholder={t("Your password")}
                   />
                   <button
                     className="leaderboard-primary-button"
                     type="submit"
                     disabled={pending}
                   >
-                    {pending ? "Signing in…" : "Sign in"}
+                    {pending ? t("Signing in…") : t("Sign in")}
                   </button>
                   <button
                     className="leaderboard-link-button"
                     type="button"
                     onClick={() => void sendLink()}
                     disabled={pending}
-                  >
-                    Email me a sign-in link
-                  </button>
+                  >{t("Email me a sign-in link")}</button>
                 </fieldset>
               </form>
             </AuthEntry>
@@ -490,18 +480,17 @@ function LeaderboardAccountPanel({
         ) : (
           <>
             <div className="leaderboard-account-line">
-              <ExplorerAvatar name={displayName || user.email || "Explorer"} />
+              <ExplorerAvatar name={displayName || user.email || t("Explorer")} />
               <span>
                 <strong>{user.email}</strong>
-                <small>Private Hecate account</small>
+                <small>{t("Private Hecate account")}</small>
               </span>
             </div>
             <label
               className="leaderboard-name-field"
               htmlFor="leaderboard-name"
             >
-              Public name
-              <input
+              {t("Public name")} <input
                 id="leaderboard-name"
                 value={displayName}
                 onChange={(event) => {
@@ -514,18 +503,18 @@ function LeaderboardAccountPanel({
               />
               <small className="leaderboard-name-help">
                 {!profileLoaded
-                  ? "Loading your public profile…"
+                  ? t("Loading your public profile…")
                   : displayNameChanges >= 1
-                    ? "Your public name is locked. Contact support to request a change."
+                    ? t("Your public name is locked. Contact support to request a change.")
                     : publishedDisplayName
-                      ? "You can change your public name one more time."
-                      : "Choose carefully. You can change this name once later."}
+                      ? t("You can change your public name one more time.")
+                      : t("Choose carefully. You can change this name once later.")}
               </small>
             </label>
             <fieldset className="leaderboard-city-sharing">
-              <legend>Cities to share</legend>
+              <legend>{t("Cities to share")}</legend>
               <div className="leaderboard-city-sharing__actions">
-                <span>Only checked cities appear publicly.</span>
+                <span>{t("Only checked cities appear publicly.")}</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -538,9 +527,7 @@ function LeaderboardAccountPanel({
                         .map((city) => city.cityId) ?? [],
                     );
                   }}
-                >
-                  Select all
-                </button>
+                >{t("Select all")}</button>
               </div>
               <div className="leaderboard-city-sharing__list">
                 {snapshot?.cities
@@ -563,8 +550,8 @@ function LeaderboardAccountPanel({
                               event.target.checked
                                 ? [...current, city.cityId]
                                 : current.filter(
-                                    (cityId) => cityId !== city.cityId,
-                                  ),
+                                  (cityId) => cityId !== city.cityId,
+                                ),
                             );
                           }}
                         />
@@ -586,7 +573,7 @@ function LeaderboardAccountPanel({
                           <span>{city.cityName}</span>
                           <small>
                             {latestMilestone?.title ??
-                              "First Footprint at 5 km"}
+                              t("First Footprint at 5 km")}
                           </small>
                         </span>
                         <strong>{formatDistance(city.discoveredKm)}</strong>
@@ -600,10 +587,8 @@ function LeaderboardAccountPanel({
               aria-labelledby="public-achievements-title"
             >
               <div>
-                <strong id="public-achievements-title">
-                  Public achievements
-                </strong>
-                <span>All earned achievements appear automatically.</span>
+                <strong id="public-achievements-title">{t("Public achievements")}</strong>
+                <span>{t("All earned achievements appear automatically.")}</span>
               </div>
               {snapshot?.achievements.length ? (
                 <ul>
@@ -623,42 +608,42 @@ function LeaderboardAccountPanel({
                   })}
                 </ul>
               ) : (
-                <p>Your first earned achievement will appear here.</p>
+                <p>{t("Your first earned achievement will appear here.")}</p>
               )}
             </section>
             <div className="leaderboard-preview" aria-busy={loadingSnapshot}>
               <div>
-                <small>Shared ground</small>
+                <small>{t("Shared ground")}</small>
                 <strong>
                   {loadingSnapshot
                     ? "—"
                     : formatDistance(
-                        snapshot?.cities
-                          .filter((city) =>
-                            selectedCityIds.includes(city.cityId),
-                          )
-                          .reduce(
-                            (total, city) => total + city.discoveredKm,
-                            0,
-                          ) ?? 0,
-                      )}
+                      snapshot?.cities
+                        .filter((city) =>
+                          selectedCityIds.includes(city.cityId),
+                        )
+                        .reduce(
+                          (total, city) => total + city.discoveredKm,
+                          0,
+                        ) ?? 0,
+                    )}
                 </strong>
               </div>
               <div>
-                <small>Cities</small>
+                <small>{t("Cities")}</small>
                 <strong>
                   {loadingSnapshot ? "—" : selectedCityIds.length}
                 </strong>
               </div>
               <div>
-                <small>Achievements</small>
-                <strong>{snapshot?.achievements.length ?? 0} earned</strong>
+                <small>{t("Achievements")}</small>
+                <strong>{t("{{value0}} earned", { value0: snapshot?.achievements.length ?? 0 })}</strong>
               </div>
             </div>
             <div className="leaderboard-settings-row">
               <div>
-                <small>Live data</small>
-                <strong>Automatic data updates</strong>
+                <small>{t("Live data")}</small>
+                <strong>{t("Automatic data updates")}</strong>
               </div>
               <button
                 type="button"
@@ -671,7 +656,7 @@ function LeaderboardAccountPanel({
                   setAutomaticUpdatesEnabled(next);
                 }}
               >
-                {autoUpdatesEnabled ? "On" : "Off"}
+                {autoUpdatesEnabled ? t("On") : t("Off")}
               </button>
             </div>
             <div className="leaderboard-publishing-actions">
@@ -684,10 +669,10 @@ function LeaderboardAccountPanel({
                 }
               >
                 {pending && !unpublishing
-                  ? "Updating…"
+                  ? t("Updating…")
                   : entryId
-                    ? "Update my ranking"
-                    : "Publish my ranking"}
+                    ? t("Update my ranking")
+                    : t("Publish my ranking")}
               </button>
               {entryId && (
                 <button
@@ -697,8 +682,8 @@ function LeaderboardAccountPanel({
                   disabled={pending}
                 >
                   {unpublishing
-                    ? "Stopping sharing…"
-                    : "Stop sharing my ranking"}
+                    ? t("Stopping sharing…")
+                    : t("Stop sharing my ranking")}
                 </button>
               )}
             </div>
@@ -708,9 +693,7 @@ function LeaderboardAccountPanel({
                 type="button"
                 onClick={() => void supabase?.auth.signOut()}
                 disabled={pending}
-              >
-                Sign out
-              </button>
+              >{t("Sign out")}</button>
             </div>
           </>
         )}
@@ -728,10 +711,12 @@ function LeaderboardAccountPanel({
 }
 
 export function WebLeaderboard() {
+  useAppTranslation();
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const [cityGroups, setCityGroups] = useState<LeaderboardCitySummary[]>([]);
   const [linkedCity, setLinkedCity] = useState<LeaderboardCitySummary | null>(null);
   const [hasMoreCities, setHasMoreCities] = useState(false);
-  const [cityExplorers, setCityExplorers] = useState<LeaderboardCitySummary['explorers']>([]);
+  const [cityExplorers, setCityExplorers] = useState<LeaderboardCitySummary["explorers"]>([]);
   const [myEntry, setMyEntry] = useState<LeaderboardEntry | null>(null);
   const [focusedEntry, setFocusedEntry] = useState<LeaderboardEntry | null>(null);
   const [pagePending, setPagePending] = useState(false);
@@ -795,7 +780,7 @@ export function WebLeaderboard() {
       setHasMoreCities(pages.length === cityPageCount.current * 50);
       setLoadError("");
     } catch {
-      setLoadError("The live leaderboard is temporarily unavailable.");
+      setLoadError(t("The live leaderboard is temporarily unavailable."));
     } finally {
       refreshPending.current = false;
       setLoading(false);
@@ -891,7 +876,13 @@ export function WebLeaderboard() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
-      if (event === "SIGNED_OUT") setAppearancePreference("system");
+      if (event === "SIGNED_OUT") {
+        setAppearancePreference("system");
+        void setLanguagePreference("system").catch((error: Error) => {
+          console.error("Could not reset language after sign-out", { error });
+          setLoadError(t("Could not save your language. Check that device storage is available and try again."));
+        });
+      }
       setUser(session?.user ?? null);
     });
     return () => {
@@ -942,7 +933,7 @@ export function WebLeaderboard() {
     if (!focusedCitySlug || cityGroups.some(group => leaderboardCitySlug(group.cityName) === focusedCitySlug)) return;
     let active = true;
     void loadLeaderboardCities(0, focusedCitySlug).then(groups => { if (active) setLinkedCity(groups[0] ?? null); })
-      .catch(() => { if (active) setLoadError("This city could not be loaded. Try again."); });
+      .catch(() => { if (active) setLoadError(t("This city could not be loaded. Try again.")); });
     return () => { active = false; };
   }, [focusedCitySlug, cityGroups]);
   useEffect(() => {
@@ -958,7 +949,7 @@ export function WebLeaderboard() {
     if (!focusedEntryId) return;
     let active = true;
     void loadLeaderboardEntry(focusedEntryId).then(entry => { if (active) setFocusedEntry(entry); })
-      .catch(() => { if (active) setLoadError("This explorer’s profile could not be loaded. Try again."); });
+      .catch(() => { if (active) setLoadError(t("This explorer’s profile could not be loaded. Try again.")); });
     return () => { active = false; };
   }, [focusedEntryId]);
 
@@ -967,7 +958,7 @@ export function WebLeaderboard() {
     if (!focusedCity) return;
     let active = true;
     void loadCityExplorers(focusedCity, 0).then(explorers => { if (active) setCityExplorers(explorers); })
-      .catch(() => { if (active) setLoadError("This city’s ranking could not be loaded. Try again."); });
+      .catch(() => { if (active) setLoadError(t("This city’s ranking could not be loaded. Try again.")); });
     return () => { active = false; };
   }, [focusedCity]);
 
@@ -978,7 +969,7 @@ export function WebLeaderboard() {
       cityPageCount.current += 1;
       setCityGroups(current => [...current, ...page]);
       setHasMoreCities(page.length === 50);
-    } catch { setLoadError("More cities could not be loaded. Try again."); }
+    } catch { setLoadError(t("More cities could not be loaded. Try again.")); }
     finally { setPagePending(false); }
   };
 
@@ -988,7 +979,7 @@ export function WebLeaderboard() {
     try {
       const page = await loadCityExplorers(focusedCity, cityExplorers.length);
       setCityExplorers(current => [...current, ...page]);
-    } catch { setLoadError("More explorers could not be loaded. Try again."); }
+    } catch { setLoadError(t("More explorers could not be loaded. Try again.")); }
     finally { setPagePending(false); }
   };
 
@@ -1011,49 +1002,42 @@ export function WebLeaderboard() {
         <a
           className="leaderboard-brand"
           href="/"
-          aria-label="Hecate leaderboard home"
+          aria-label={t("Hecate leaderboard home")}
         >
           <span>
             <HecateMark size={26} />
           </span>
-          Hecate
-        </a>
-        <nav aria-label="Leaderboard navigation">
-          <span>Leaderboard</span>
-          <button type="button" data-testid="leaderboard-account-open" onClick={() => setPanelOpen(true)}>
+          {t("Hecate")} </a>
+        {languageSheetOpen && <LanguageSettings onBack={() => setLanguageSheetOpen(false)} onClose={() => setLanguageSheetOpen(false)} />}
+        <nav aria-label={t("Leaderboard navigation")}>
+          <LeaderboardLanguageButton onClick={() => setLanguageSheetOpen(true)} />
+          <span>{t("Leaderboard")}</span>
+          <button type="button" className="leaderboard-account-button" data-testid="leaderboard-account-open" onClick={() => setPanelOpen(true)}>
             <UserIcon size={17} />
-            {myEntryId ? "My ranking" : "Join the board"}
+            {myEntryId ? t("My ranking") : t("Join the board")}
           </button>
         </nav>
       </header>
 
       <section className="leaderboard-hero">
         <div className="leaderboard-live">
-          <span /> Live leaderboard
-        </div>
-        <h1>
-          How much of the world
-          <br />
-          have you made yours?
-        </h1>
-        <p>
-          Every walk reveals a little more. See who has uncovered the most new
-          ground and how your favorite cities compare.
-        </p>
+          <span />  {t("Live leaderboard")} </div>
+        <h1>{t("leaderboard.heroQuestion")}</h1>
+        <p>{t("Every walk reveals a little more. See who has uncovered the most new ground and how your favorite cities compare.")}</p>
         <div
           className="leaderboard-app-actions"
-          aria-label="Get or open Hecate"
+          aria-label={t("Get or open Hecate")}
         >
           <a
             className="leaderboard-app-store-badge"
             href={APP_STORE_URL}
             target="_blank"
             rel="noreferrer"
-            aria-label="Download Hecate on the App Store"
+            aria-label={t("Download Hecate on the App Store")}
           >
             <img
               src={APP_STORE_BADGE_URL}
-              alt="Download on the App Store"
+              alt={t("Download on the App Store")}
               width="133"
               height="44"
             />
@@ -1061,14 +1045,14 @@ export function WebLeaderboard() {
           <a
             className="leaderboard-open-app-badge"
             href={APP_DEEP_LINK}
-            aria-label="Open Hecate app"
+            aria-label={t("Open Hecate app")}
           >
             <span aria-hidden="true">
               <HecateMark size={22} />
             </span>
             <span>
-              <small>OPEN IN</small>
-              <strong>Hecate</strong>
+              <small>{t("OPEN IN")}</small>
+              <strong>{t("Hecate")}</strong>
             </span>
           </a>
         </div>
@@ -1083,27 +1067,22 @@ export function WebLeaderboard() {
           {focusedCity || showingMoreCities ? (
             <div className="city-detail-heading">
               <button type="button" onClick={() => navigateToCity(null)}>
-                <ChevronIcon size={17} /> All cities
-              </button>
-              <div className="eyebrow">City leaderboard</div>
+                <ChevronIcon size={17} />  {t("All cities")} </button>
+              <div className="eyebrow">{t("City leaderboard")}</div>
               <h2 id="ranking-title">
-                {focusedCity ? focusedCity.cityName : "More cities"}
+                {focusedCity ? focusedCity.cityName : t("More cities")}
               </h2>
             </div>
           ) : (
             <div>
-              <div className="eyebrow">City leaderboards</div>
-              <h2 id="ranking-title">Discovery, place by place.</h2>
+              <div className="eyebrow">{t("City leaderboards")}</div>
+              <h2 id="ranking-title">{t("Discovery, place by place.")}</h2>
             </div>
           )}
           {focusedCity ? (
             <div className="city-detail-total">
               <strong>{formatDistance(focusedCity.totalDiscoveredKm)}</strong>
-              <span>
-                {focusedCity.explorerCount}{" "}
-                {focusedCity.explorerCount === 1 ? "explorer" : "explorers"}{" "}
-                · discovered together
-              </span>
+              <span>{t("explorersTogether", { count: focusedCity.explorerCount })}</span>
             </div>
           ) : (
             <p></p>
@@ -1116,9 +1095,7 @@ export function WebLeaderboard() {
             role="alert"
           >
             {loadError}
-            <button type="button" onClick={() => void refresh()}>
-              Try again
-            </button>
+            <button type="button" onClick={() => void refresh()}>{t("Try again")}</button>
           </div>
         )}
         {!loadError && loading && (
@@ -1131,19 +1108,14 @@ export function WebLeaderboard() {
         {!loadError && !loading && !cityGroups.length && (
           <div className="leaderboard-empty">
             <HecateMark size={38} />
-            <h3>The first place is waiting.</h3>
-            <p>
-              Publish a discovery snapshot to add the first city. Nothing is
-              shared until you choose to.
-            </p>
-            <button type="button" onClick={() => setPanelOpen(true)}>
-              Join the leaderboard
-            </button>
+            <h3>{t("The first place is waiting.")}</h3>
+            <p>{t("Publish a discovery snapshot to add the first city. Nothing is shared until you choose to.")}</p>
+            <button type="button" onClick={() => setPanelOpen(true)}>{t("Join the leaderboard")}</button>
           </div>
         )}
 
         {!focusedCity && !showingMoreCities && cityGroups.length > 0 && (
-          <div className="city-treemap" aria-label="City rankings">
+          <div className="city-treemap" aria-label={t("City rankings")}>
             {cityGroups.slice(0, 9).map((group, index) => {
               const size = Math.sqrt(
                 group.totalDiscoveredKm / cityGroups[0].totalDiscoveredKm,
@@ -1175,7 +1147,7 @@ export function WebLeaderboard() {
                     className="city-treemap__open-card"
                     data-testid={`leaderboard-city-${group.cityId}`}
                     type="button"
-                    aria-label={`View the ${group.cityName} ranking`}
+                    aria-label={t("View the {{value0}} ranking", { value0: group.cityName })}
                     onClick={() => navigateToCity(group.cityName)}
                   />
                   <span className="city-treemap__top">
@@ -1184,7 +1156,7 @@ export function WebLeaderboard() {
                     </span>
                     {myCity && (
                       <span className="city-treemap__personal">
-                        {myRank >= 0 ? `Your rank #${myRank + 1}` : "Your city"}
+                        {myRank >= 0 ? t("Your rank #{{value0}}", { value0: myRank + 1 }) : t("Your city")}
                       </span>
                     )}
                   </span>
@@ -1195,13 +1167,13 @@ export function WebLeaderboard() {
                       </span>
                       <span className="city-treemap__distance">
                         {formatDistance(group.totalDiscoveredKm)}
-                        <small>total</small>
+                        <small>{t("total")}</small>
                       </span>
                     </span>
                   </span>
                   <ol
                     className="city-treemap__leaders"
-                    aria-label={`Top explorers in ${group.cityName}`}
+                    aria-label={t("Top explorers in {{value0}}", { value0: group.cityName })}
                   >
                     {group.explorers
                       .slice(0, visibleExplorerCount)
@@ -1211,7 +1183,7 @@ export function WebLeaderboard() {
                             className="city-treemap__leader-button"
                             type="button"
                             onClick={() => setFocusedEntryId(entry.entryId)}
-                            aria-label={`View ${entry.displayName}'s explorer passport`}
+                            aria-label={t("View {{value0}}'s explorer passport", { value0: entry.displayName })}
                           >
                             <span className="city-treemap__leader-rank">
                               {explorerIndex + 1}
@@ -1235,7 +1207,7 @@ export function WebLeaderboard() {
                       ))}
                   </ol>
                   <span className="city-treemap__action" aria-hidden="true">
-                    View city ranking <ChevronIcon size={14} />
+                    {t("View city ranking")} <ChevronIcon size={14} />
                   </span>
                 </article>
               );
@@ -1256,9 +1228,9 @@ export function WebLeaderboard() {
                     className="city-treemap__more"
                     onClick={() => setShowingMoreCities(true)}
                   >
-                    <strong>More cities</strong>
+                    <strong>{t("More cities")}</strong>
                     <span>
-                      {remainingCities.length}{hasMoreCities ? "+" : ""} more <ChevronIcon size={16} />
+                      {remainingCities.length}{hasMoreCities ? "+" : ""}  {t("more")} <ChevronIcon size={16} />
                     </span>
                   </button>
                 </div>
@@ -1273,7 +1245,7 @@ export function WebLeaderboard() {
           <ol
             className="city-directory"
             start={10}
-            aria-label="More city rankings"
+            aria-label={t("More city rankings")}
           >
             {remainingCities.map((group, index) => (
               <li key={group.cityId}>
@@ -1282,7 +1254,7 @@ export function WebLeaderboard() {
                   <strong>{group.cityName}</strong>
                   <span>
                     {formatDistance(group.totalDiscoveredKm)}{" "}
-                    <small>total</small>
+                    <small>{t("total")}</small>
                   </span>
                   <ChevronIcon size={16} />
                 </a>
@@ -1292,14 +1264,14 @@ export function WebLeaderboard() {
         )}
 
         {showingMoreCities && hasMoreCities && (
-          <button type="button" data-testid="leaderboard-more-cities" disabled={pagePending} onClick={() => void moreCities()}>Load more cities</button>
+          <button type="button" data-testid="leaderboard-more-cities" disabled={pagePending} onClick={() => void moreCities()}>{t("Load more cities")}</button>
         )}
 
         {focusedCity && (
           <ol
             className="city-detail-list"
             data-testid="leaderboard-city-explorers"
-            aria-label={`Top explorers in ${focusedCity.cityName}`}
+            aria-label={t("Top explorers in {{value0}}", { value0: focusedCity.cityName })}
           >
             {cityExplorers.map(({ entry, city }, index) => (
               <li
@@ -1312,7 +1284,7 @@ export function WebLeaderboard() {
                   type="button"
                   data-testid={`leaderboard-explorer-${entry.entryId}`}
                   onClick={() => setFocusedEntryId(entry.entryId)}
-                  aria-label={`View ${entry.displayName}'s explorer passport`}
+                  aria-label={t("View {{value0}}'s explorer passport", { value0: entry.displayName })}
                 >
                   <span className="city-detail-list__rank">{index + 1}</span>
                   <ExplorerAvatar name={entry.displayName} />
@@ -1322,10 +1294,7 @@ export function WebLeaderboard() {
                   </span>
                   <span className="city-detail-list__metric">
                     <strong>{formatDistance(city.discoveredKm)}</strong>
-                    <small>
-                      {formatPercentage(city.discoveredPercentage)} of{" "}
-                      {focusedCity.cityName}
-                    </small>
+                    <small>{t("{{value0}} of{{value1}} {{value2}}", { value0: formatPercentage(city.discoveredPercentage), value1: " ", value2: focusedCity.cityName })}</small>
                   </span>
                 </button>
               </li>
@@ -1333,30 +1302,26 @@ export function WebLeaderboard() {
           </ol>
         )}
         {focusedCity && cityExplorers.length > 0 && cityExplorers.length < focusedCity.explorerCount && (
-          <button type="button" data-testid="leaderboard-more-explorers" disabled={pagePending} onClick={() => void moreExplorers()}>Load more explorers</button>
+          <button type="button" data-testid="leaderboard-more-explorers" disabled={pagePending} onClick={() => void moreExplorers()}>{t("Load more explorers")}</button>
         )}
       </section>
 
       <section className="leaderboard-privacy">
         <span className="leaderboard-privacy__icon">✓</span>
         <div>
-          <strong>Private until you say otherwise.</strong>
-          <p>
-            Your position and paths never appear here. The board shows only the
-            public name and totals you choose to publish, and you can remove
-            them at any time.
-          </p>
+          <strong>{t("Private until you say otherwise.")}</strong>
+          <p>{t("Your position and paths never appear here. The board shows only the public name and totals you choose to publish, and you can remove them at any time.")}</p>
         </div>
         <button type="button" onClick={() => setPanelOpen(true)}>
-          Manage my snapshot <ChevronIcon size={17} />
+          {t("Manage my snapshot")} <ChevronIcon size={17} />
         </button>
       </section>
 
       <footer className="leaderboard-footer">
-        <span>Hecate · Discover your world</span>
+        <span>{t("Hecate · Discover your world")}</span>
         <nav>
-          <a href="/privacy-policy.html">Privacy</a>
-          <a href="/support.html">Support</a>
+          <a href="/privacy-policy.html">{t("Privacy")}</a>
+          <a href="/support.html">{t("Support")}</a>
         </nav>
       </footer>
       <LeaderboardAccountPanel

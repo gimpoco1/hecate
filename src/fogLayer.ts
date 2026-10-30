@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type {
   CustomLayerInterface,
   CustomLayerProjectionData,
@@ -216,13 +217,13 @@ function compileShader(
   label: string,
 ): WebGLShader {
   const shader = gl.createShader(type);
-  if (!shader) throw new Error(`Could not create the ${label} shader.`);
+  if (!shader) throw new Error(t("Could not create the {{value0}} shader.", { value0: label }));
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
-  const log = gl.getShaderInfoLog(shader) ?? "No compiler log was returned.";
+  const log = gl.getShaderInfoLog(shader) ?? t("No compiler log was returned.");
   gl.deleteShader(shader);
-  throw new Error(`Could not compile the ${label} shader: ${log}`);
+  throw new Error(t("Could not compile the {{value0}} shader: {{value1}}", { value0: label, value1: log }));
 }
 
 function linkProgram(
@@ -235,19 +236,19 @@ function linkProgram(
     gl,
     gl.VERTEX_SHADER,
     vertexSource,
-    `${label} vertex`,
+    t("{{value0}} vertex", { value0: label }),
   );
   const fragmentShader = compileShader(
     gl,
     gl.FRAGMENT_SHADER,
     fragmentSource,
-    `${label} fragment`,
+    t("{{value0}} fragment", { value0: label }),
   );
   const program = gl.createProgram();
   if (!program) {
     gl.deleteShader(vertexShader);
     gl.deleteShader(fragmentShader);
-    throw new Error(`Could not create the ${label} WebGL program.`);
+    throw new Error(t("Could not create the {{value0}} WebGL program.", { value0: label }));
   }
   gl.attachShader(program, vertexShader);
   gl.attachShader(program, fragmentShader);
@@ -255,9 +256,9 @@ function linkProgram(
   gl.deleteShader(vertexShader);
   gl.deleteShader(fragmentShader);
   if (gl.getProgramParameter(program, gl.LINK_STATUS)) return program;
-  const log = gl.getProgramInfoLog(program) ?? "No linker log was returned.";
+  const log = gl.getProgramInfoLog(program) ?? t("No linker log was returned.");
   gl.deleteProgram(program);
-  throw new Error(`Could not link the ${label} WebGL program: ${log}`);
+  throw new Error(t("Could not link the {{value0}} WebGL program: {{value1}}", { value0: label, value1: log }));
 }
 
 function applyProjectionUniforms(
@@ -543,7 +544,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
       !this.maskTexture ||
       !this.maskFramebuffer
     ) {
-      throw new Error("Could not allocate WebGL resources for the discovery fog.");
+      throw new Error(t("Could not allocate WebGL resources for the discovery fog."));
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
     gl.bufferData(
@@ -577,7 +578,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     if (fogOpacity <= 0) return;
     this.resizeMask(gl);
     if (!this.maskFramebuffer || !this.cornerBuffer || !this.centerBuffer)
-      throw new Error("Discovery fog mask resources are unavailable.");
+      throw new Error(t("Discovery fog mask resources are unavailable."));
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.maskFramebuffer);
     gl.viewport(0, 0, this.maskWidth, this.maskHeight);
     gl.disable(gl.DEPTH_TEST);
@@ -645,7 +646,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
       return;
     }
     if (!this.compositeProgram || !this.maskTexture || !this.cornerBuffer)
-      throw new Error("Discovery fog composite resources are unavailable.");
+      throw new Error(t("Discovery fog composite resources are unavailable."));
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.CULL_FACE);
@@ -799,7 +800,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     const height = gl.drawingBufferHeight;
     if (width === this.maskWidth && height === this.maskHeight) return;
     if (!this.maskTexture || !this.maskFramebuffer)
-      throw new Error("Discovery fog framebuffer resources are unavailable.");
+      throw new Error(t("Discovery fog framebuffer resources are unavailable."));
     this.maskWidth = width;
     this.maskHeight = height;
     gl.bindTexture(gl.TEXTURE_2D, this.maskTexture);
@@ -825,7 +826,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     if (status !== gl.FRAMEBUFFER_COMPLETE) {
       throw new Error(
-        `Discovery fog framebuffer is incomplete (status ${status}).`,
+        t("Discovery fog framebuffer is incomplete (status {{value0}}).", { value0: status }),
       );
     }
   }

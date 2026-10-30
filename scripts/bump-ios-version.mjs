@@ -1,11 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises';
-const projectFile = new URL('../ios/App/App.xcodeproj/project.pbxproj', import.meta.url);
+import { readFile, writeFile } from "node:fs/promises";
+const projectFile = new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url);
 
 const requestedVersion = process.argv[2];
 
 function fail(message) {
   console.error(`Error: ${message}`);
-  console.error('Usage: npm run ios:version -- <patch|minor|major|x.y.z>');
+  console.error("Usage: npm run ios:version -- <patch|minor|major|x.y.z>");
   process.exit(1);
 }
 
@@ -18,9 +18,9 @@ function parseVersion(version) {
 function nextVersion(current, requested) {
   const [major, minor, patch] = parseVersion(current);
 
-  if (requested === 'major') return `${major + 1}.0.0`;
-  if (requested === 'minor') return `${major}.${minor + 1}.0`;
-  if (requested === 'patch') return `${major}.${minor}.${patch + 1}`;
+  if (requested === "major") return `${major + 1}.0.0`;
+  if (requested === "minor") return `${major}.${minor + 1}.0`;
+  if (requested === "patch") return `${major}.${minor}.${patch + 1}`;
 
   const target = parseVersion(requested);
   const currentParts = [major, minor, patch];
@@ -33,15 +33,15 @@ function nextVersion(current, requested) {
   fail(`"${requested}" is already the current iOS version.`);
 }
 
-if (!requestedVersion) fail('A version increment is required.');
+if (!requestedVersion) fail("A version increment is required.");
 
-const project = await readFile(projectFile, 'utf8');
+const project = await readFile(projectFile, "utf8");
 const versions = [...project.matchAll(/MARKETING_VERSION = ([^;]+);/g)].map(
   ([, version]) => version,
 );
 
-if (versions.length === 0) fail('MARKETING_VERSION was not found in the Xcode project.');
-if (new Set(versions).size !== 1) fail('Debug and Release MARKETING_VERSION values do not match.');
+if (versions.length === 0) fail("MARKETING_VERSION was not found in the Xcode project.");
+if (new Set(versions).size !== 1) fail("Debug and Release MARKETING_VERSION values do not match.");
 
 const currentVersion = versions[0];
 const version = nextVersion(currentVersion, requestedVersion);

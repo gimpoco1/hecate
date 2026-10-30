@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { StyleSpecification } from "maplibre-gl";
 
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
@@ -38,7 +39,7 @@ export function patchMapStyle(style: StyleSpecification): StyleSpecification {
 export async function loadMapStyle(signal?: AbortSignal) {
   const response = await fetch(MAP_STYLE_URL, { signal });
   if (!response.ok) {
-    throw new Error(`Map style request failed with ${response.status}`);
+    throw new Error(t("Map style request failed with {{value0}}", { value0: response.status }));
   }
   return patchMapStyle(await response.json() as StyleSpecification);
 }

@@ -1,3 +1,4 @@
+import { formatNumber, t } from "./i18n";
 import { cityMilestoneProgress, nextWorldMilestone, worldMilestoneProgress } from "./badges";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "./reminderDurations";
 
@@ -84,13 +85,13 @@ export function loadActivityNotificationPreferences(
     const stored: unknown = JSON.parse(localStorage.getItem(storageKey(userId)) ?? "null");
     return isActivityNotificationPreferences(stored)
       ? {
-          ...stored,
-          streakReminderTime: stored.streakReminderTime ?? "18:00",
-          dailyReminderTime: stored.dailyReminderTime ?? "10:00",
-          discoveryReminderMinutes: stored.discoveryReminderMinutes ?? 5,
-          inactivityReminderMinutes: stored.inactivityReminderMinutes ?? 15,
-          discoveredAreaReminders: stored.discoveredAreaReminders ?? false,
-        }
+        ...stored,
+        streakReminderTime: stored.streakReminderTime ?? "18:00",
+        dailyReminderTime: stored.dailyReminderTime ?? "10:00",
+        discoveryReminderMinutes: stored.discoveryReminderMinutes ?? 5,
+        inactivityReminderMinutes: stored.inactivityReminderMinutes ?? 15,
+        discoveredAreaReminders: stored.discoveredAreaReminders ?? false,
+      }
       : defaultActivityNotificationPreferences();
   } catch {
     return defaultActivityNotificationPreferences();
@@ -126,7 +127,7 @@ type NearbyMilestone = {
   remainingKm: number;
   progress: number;
   title: string;
-  distanceScope: string;
+  cityName: string | null;
 };
 
 export function morningInviteMessage(
@@ -139,8 +140,8 @@ export function morningInviteMessage(
     if (next) candidates.push({
       remainingKm: next.thresholdKm - travelledDistanceKm,
       progress: worldMilestoneProgress(travelledDistanceKm),
-      title: `${next.title} milestone`,
-      distanceScope: "",
+      title: next.title,
+      cityName: null,
     });
   }
   if (city) {
@@ -148,8 +149,8 @@ export function morningInviteMessage(
     if (milestone.next) candidates.push({
       remainingKm: milestone.next.thresholdKm - city.discoveredKm,
       progress: milestone.progress,
-      title: `${milestone.next.title} milestone in ${city.cityName}`,
-      distanceScope: " of new ground",
+      title: milestone.next.title,
+      cityName: city.cityName,
     });
   }
   const closest = candidates
@@ -158,9 +159,11 @@ export function morningInviteMessage(
   if (closest) {
     const meters = Math.ceil(closest.remainingKm * 1_000);
     const distance = meters >= 1_000 ? "1 km" : `${meters} m`;
-    return `Just ${distance}${closest.distanceScope} to your ${closest.title}. Head out for a walk today!`;
+    return closest.cityName === null
+      ? t("notification.globalMilestoneNear", { distance, milestone: closest.title })
+      : t("notification.cityMilestoneNear", { distance, milestone: closest.title, city: closest.cityName });
   }
-  return "A new day, a new path. Where will you discover today?";
+  return t("A new day, a new path. Where will you discover today?");
 }
 
 export function weeklyRecapMessage(
@@ -168,11 +171,11 @@ export function weeklyRecapMessage(
   travelledDistanceKm: number,
   streakDays: number,
 ): string {
-  return `${discoveryDistanceKm.toFixed(1)} km of new ground, ${travelledDistanceKm.toFixed(1)} km travelled, and a ${streakDays}-day streak.`;
+  return t("{{value0}} km of new ground, {{value1}} km travelled, and a {{value2}}-day streak.", { value0: formatNumber(discoveryDistanceKm, 1), value1: formatNumber(travelledDistanceKm, 1), value2: streakDays });
 }
 
 export function streakReminderMessage(streakDays: number): string {
-  return `A short walk today keeps your ${streakDays}-day streak going.`;
+  return t("A short walk today keeps your {{value0}}-day streak going.", { value0: streakDays });
 }
 
 export function streakReminderDate(
@@ -181,7 +184,7 @@ export function streakReminderDate(
   reminderTime: string,
 ): Date | null {
   if (!isReminderTime(reminderTime)) {
-    throw new RangeError(`Invalid streak reminder time: ${reminderTime}. Expected HH:mm.`);
+    throw new RangeError(t("Invalid streak reminder time: {{value0}}. Expected HH:mm.", { value0: reminderTime }));
   }
   const [hour, minute] = reminderTime.split(":").map(Number);
   const scheduled = new Date(now);

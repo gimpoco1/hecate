@@ -1,4 +1,5 @@
-import { errorDiagnostic } from './diagnostics'
+import { t } from "./i18n";
+import { errorDiagnostic } from "./diagnostics";
 import type { LocalNotifications } from "@capacitor/local-notifications";
 import type { AppLauncher } from "@capacitor/app-launcher";
 import { JOURNEY_SPEED_STOP_ACTION_TYPE_ID, registerNotificationActions } from "./notificationActions";
@@ -22,20 +23,20 @@ export async function openJourneySpeedStopReport(
   client: Pick<typeof AppLauncher, "openUrl">,
   report: JourneySpeedStopReport,
 ): Promise<void> {
-  const subject = "Incorrect journey speed stop";
+  const subject = t("Incorrect journey speed stop");
   const body = [
-    "My journey was stopped for moving too fast, but I believe that was an error.",
+    t("My journey was stopped for moving too fast, but I believe that was an error."),
     "",
-    "What happened:",
+    t("What happened:"),
     "",
     "",
-    `Account ID: ${report.userId}`,
-    `Journey ID: ${report.walkId}`,
+    t("Account ID: {{value0}}", { value0: report.userId }),
+    t("Journey ID: {{value0}}", { value0: report.walkId }),
   ].join("\n");
   const url = `mailto:supporthecate@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   const { completed } = await client.openUrl({ url });
   if (!completed) {
-    throw new Error(`No email app accepted the speed-stop report for journey ${report.walkId}. Contact supporthecate@gmail.com and include this journey ID.`);
+    throw new Error(t("No email app accepted the speed-stop report for journey {{value0}}. Contact supporthecate@gmail.com and include this journey ID.", { value0: report.walkId }));
   }
 }
 
@@ -56,8 +57,8 @@ export async function sendJourneySpeedStopNotification(
       await client.schedule({
         notifications: [{
           id: JOURNEY_SPEED_STOP_NOTIFICATION_ID,
-          title: "Journey stopped — speed too high",
-          body: JOURNEY_SPEED_STOP_MESSAGE,
+          title: t("Journey stopped — speed too high"),
+          body: t(JOURNEY_SPEED_STOP_MESSAGE),
           isExactNotification: false,
           sound: "default",
           threadIdentifier: "hecate-journeys",

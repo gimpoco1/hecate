@@ -1,3 +1,4 @@
+import { formatNumber, t, useAppTranslation } from "../i18n";
 import { useState } from "react";
 import { CITY_MILESTONE_TIERS } from "../badges";
 import { AchievementArtwork } from "./AchievementArtwork";
@@ -19,6 +20,7 @@ const JOURNEY_CITY_MILESTONES_EXPLANATION_ID =
   "journey-city-milestones-explanation";
 
 export function CityMilestones({ progress }: Props) {
+  useAppTranslation();
   const [infoOpen, setInfoOpen] = useState(false);
   const earnedCount = CITY_MILESTONE_TIERS.filter(
     (tier) => progress.discoveredKm >= tier.thresholdKm,
@@ -32,13 +34,11 @@ export function CityMilestones({ progress }: Props) {
       <div className="account-milestones__heading">
         <span>
           <span className="account-milestones__title-row">
-            <strong id={JOURNEY_CITY_MILESTONES_TITLE_ID}>
-              City milestones
-            </strong>
+            <strong id={JOURNEY_CITY_MILESTONES_TITLE_ID}>{t("City milestones")}</strong>
             <button
               type="button"
               className="account-milestones__info-button"
-              aria-label="Why these city milestones are shown"
+              aria-label={t("Why these city milestones are shown")}
               aria-expanded={infoOpen}
               aria-controls={JOURNEY_CITY_MILESTONES_EXPLANATION_ID}
               onClick={() => setInfoOpen((current) => !current)}
@@ -46,21 +46,16 @@ export function CityMilestones({ progress }: Props) {
               <InfoIcon size={15} strokeWidth={1.9} />
             </button>
           </span>
-          <small>Your progress in {progress.cityName}</small>
+          <small>{t("Your progress in {{value0}}", { value0: progress.cityName })}</small>
         </span>
-        <small>
-          {earnedCount} / {CITY_MILESTONE_TIERS.length} earned
-        </small>
+        <small>{t("{{value0}} / {{value1}} earned", { value0: earnedCount, value1: CITY_MILESTONE_TIERS.length })}</small>
       </div>
       {infoOpen && (
         <p
           className="account-milestones__explanation"
           id={JOURNEY_CITY_MILESTONES_EXPLANATION_ID}
           role="note"
-        >
-          These milestones follow the city currently shown on your map and
-          update when that city changes.
-        </p>
+        >{t("These milestones follow the city currently shown on your map and update when that city changes.")}</p>
       )}
       <div className="account-milestones__list">
         {CITY_MILESTONE_TIERS.map((milestone) => {
@@ -75,8 +70,8 @@ export function CityMilestones({ progress }: Props) {
               key={milestone.id}
               aria-label={
                 earned
-                  ? `${milestone.title} earned in ${progress.cityName}`
-                  : `${milestone.title} requires ${milestone.thresholdKm} kilometers in ${progress.cityName}. ${remainingKm.toFixed(1)} kilometers remaining.`
+                  ? t("{{value0}} earned in {{value1}}", { value0: milestone.title, value1: progress.cityName })
+                  : t("{{value0}} requires {{value1}} kilometers in {{value2}}. {{value3}} kilometers remaining.", { value0: milestone.title, value1: milestone.thresholdKm, value2: progress.cityName, value3: formatNumber(remainingKm, 1) })
               }
             >
               <AchievementArtwork
@@ -86,16 +81,11 @@ export function CityMilestones({ progress }: Props) {
               />
               <strong>{milestone.title}</strong>
               {earned ? (
-                <span className="account-milestone__goal">
-                  Earned at {milestone.thresholdKm} km
-                </span>
+                <span className="account-milestone__goal">{t("Earned at {{value0}} km", { value0: milestone.thresholdKm })}</span>
               ) : (
                 <span className="account-milestone__goal">
-                  <strong>
-                    {progress.discoveredKm.toFixed(1)} / {milestone.thresholdKm}{" "}
-                    km
-                  </strong>
-                  <small>{remainingKm.toFixed(1)} km left</small>
+                  <strong>{t("{{value0}} / {{value1}}{{value2}} km", { value0: formatNumber(progress.discoveredKm, 1), value1: milestone.thresholdKm, value2: " " })}</strong>
+                  <small>{t("{{value0}} km left", { value0: formatNumber(remainingKm, 1) })}</small>
                 </span>
               )}
               <CityLevelStars level={milestone.level} decorative />

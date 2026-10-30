@@ -1,3 +1,4 @@
+import { decimalSeparator, useAppTranslation } from "../i18n";
 import { motion, useSpring, useTransform, type MotionValue } from "motion/react";
 import { useEffect } from "react";
 import "./Counter.css";
@@ -45,10 +46,11 @@ type CounterDigitProps = {
 };
 
 function CounterDigit({ place, value, height }: CounterDigitProps) {
+  useAppTranslation();
   if (place === ".") {
     return (
       <span className="counter-digit counter-digit--decimal" style={{ height }}>
-        .
+        {decimalSeparator()}
       </span>
     );
   }

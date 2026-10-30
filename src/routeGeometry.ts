@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { distanceKm } from "./geo";
 import type { RoutePoint } from "./explorationRouting";
 
@@ -16,7 +17,7 @@ export function prepareRouteGeometry(points: readonly RoutePoint[]): RouteGeomet
     segments.push({ start, end, startKm: distance, endKm: distance + lengthKm, lengthKm });
     distance += lengthKm;
   }
-  if (segments.length === 0) throw new RangeError("Navigation needs a route with nonzero distance.");
+  if (segments.length === 0) throw new RangeError(t("Navigation needs a route with nonzero distance."));
   return { segments, distanceKm: distance };
 }
 

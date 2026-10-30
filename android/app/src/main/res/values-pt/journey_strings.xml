@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="journey_channel">Percursos</string>
+    <string name="journey_channel_description">Distância, novos caminhos, tempo decorrido e controlos do percurso em direto</string>
+    <string name="journey_exploring">A explorar…</string>
+    <string name="journey_complete">Percurso concluído</string>
+    <string name="journey_stop">Terminar percurso</string>
+    <string name="journey_walk">este percurso</string>
+    <string name="journey_walked">percorridos</string>
+    <string name="journey_new_area">novos caminhos</string>
+</resources>

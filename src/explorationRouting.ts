@@ -1,3 +1,4 @@
+import { t, currentLanguage } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
 import { backtrackedDistanceKm, closedRouteLoops } from "./routeQuality";
 import { discoveredDistanceForFootprints, discoveryCellKey, discoveryFootprintCells, distanceKm, pointToDiscoveryCell } from "./geo";
@@ -31,21 +32,21 @@ export class ExplorationRoutingError extends Error {
 
 export class DestinationTooCloseError extends ExplorationRoutingError {
   constructor() {
-    super("Choose somewhere at least 100 m away. Tap another point on the map or search for a different place.");
+    super(t("Choose somewhere at least 100 m away. Tap another point on the map or search for a different place."));
     this.name = "DestinationTooCloseError";
   }
 }
 
 export class RouteDistanceExceededError extends ExplorationRoutingError {
   constructor(readonly status: number) {
-    super("This journey exceeds the routing service’s distance limit. Choose a closer destination.");
+    super(t("This journey exceeds the routing service’s distance limit. Choose a closer destination."));
     this.name = "RouteDistanceExceededError";
   }
 }
 
 class RouteRequestError extends ExplorationRoutingError {
   constructor(readonly status: number) {
-    super(`Route request failed (HTTP ${status}). Try again or contact support if this continues.`);
+    super(t("Route request failed (HTTP {{value0}}). Try again or contact support if this continues.", { value0: status }));
     this.name = "RouteRequestError";
   }
 }
@@ -92,26 +93,26 @@ function object(value: unknown): value is Record<string, unknown> {
 }
 
 function parseManeuvers(legs: unknown, distanceMeters: number, geometry: RouteGeometry): RouteManeuver[] {
-  if (!Array.isArray(legs) || legs.length === 0) throw new ExplorationRoutingError("Routing service returned no maneuver legs.");
+  if (!Array.isArray(legs) || legs.length === 0) throw new ExplorationRoutingError(t("Routing service returned no maneuver legs."));
   let offsetMeters = 0;
   const steps = legs.flatMap((leg: unknown) => {
-    if (!object(leg) || !Array.isArray(leg.steps) || leg.steps.length === 0) throw new ExplorationRoutingError("Routing service returned no maneuver steps.");
+    if (!object(leg) || !Array.isArray(leg.steps) || leg.steps.length === 0) throw new ExplorationRoutingError(t("Routing service returned no maneuver steps."));
     return leg.steps.map((step: unknown): JunctionManeuver => {
       if (!object(step) || typeof step.distance !== "number" || !Number.isFinite(step.distance) || step.distance < 0 ||
         !object(step.maneuver) || typeof step.maneuver.instruction !== "string" || !step.maneuver.instruction.trim() || typeof step.maneuver.type !== "string" ||
         (step.maneuver.modifier !== undefined && typeof step.maneuver.modifier !== "string") ||
         (step.name !== undefined && typeof step.name !== "string")) {
-        throw new ExplorationRoutingError(`Routing service returned an invalid maneuver: ${JSON.stringify(step)}`);
+        throw new ExplorationRoutingError(t("Routing service returned an invalid maneuver: {{value0}}", { value0: JSON.stringify(step) }));
       }
       const roadName = (step.name ?? "").trim();
       const keepOnRoad = /^Keep (?:left|right) to stay on /i.test(step.maneuver.instruction);
       const maneuver: RouteManeuver = { roadName,
-        instruction: keepOnRoad ? step.maneuver.instruction.replace(/^Keep (?:left|right) to stay on /i, "Stay on ") : step.maneuver.instruction,
+        instruction: keepOnRoad ? step.maneuver.instruction.replace(/^Keep (?:left|right) to stay on /i, t("Stay on ")) : step.maneuver.instruction,
         symbol: maneuverSymbol(step.maneuver.type, step.maneuver.modifier ?? ""), fraction: Math.min(1, offsetMeters / distanceMeters) };
       offsetMeters += step.distance;
       const bearings = [step.maneuver.bearing_before, step.maneuver.bearing_after].map((value: unknown): number | null => {
         if (value === undefined) return null;
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 360) throw new ExplorationRoutingError(`Invalid maneuver bearing: ${JSON.stringify(value)}`);
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 360) throw new ExplorationRoutingError(t("Invalid maneuver bearing: {{value0}}", { value0: JSON.stringify(value) }));
         return value;
       });
       return { maneuver, type: step.maneuver.type, bearingBefore: bearings[0], bearingAfter: bearings[1] };
@@ -124,7 +125,7 @@ function parseManeuvers(legs: unknown, distanceMeters: number, geometry: RouteGe
     const sameStreet = maneuver.roadName !== "" && maneuver.roadName === combined[index - 1]?.maneuver.roadName;
     const locallyStraight = bearingBefore !== null && bearingAfter !== null && Math.abs(((bearingAfter - bearingBefore + 540) % 360) - 180) < 25;
     return maneuver.endFraction === undefined && junctionTurn && (sameStreet || locallyStraight) && routeContinuesStraight(geometry, maneuver.fraction)
-      ? { ...maneuver, symbol: "straight", instruction: maneuver.roadName ? `Stay on ${maneuver.roadName}.` : "Continue straight." }
+      ? { ...maneuver, symbol: "straight", instruction: maneuver.roadName ? t("Stay on {{value0}}.", { value0: maneuver.roadName }) : t("Continue straight.") }
       : maneuver;
   });
 }
@@ -132,20 +133,20 @@ function parseManeuvers(legs: unknown, distanceMeters: number, geometry: RouteGe
 /** Parses only fields needed for previews; invalid provider data fails explicitly. */
 export function parsePlannedRoutes(value: unknown): Omit<PlannedRoute, "newGroundKm" | "unproductiveLoopKm">[] {
   if (!object(value) || value.code !== "Ok" || !Array.isArray(value.routes) || value.routes.length === 0) {
-    throw new ExplorationRoutingError(`Routing service returned no usable routes: ${JSON.stringify(value)}`);
+    throw new ExplorationRoutingError(t("Routing service returned no usable routes: {{value0}}", { value0: JSON.stringify(value) }));
   }
   return value.routes.map((route: unknown, index: number) => {
     if (!object(route) || typeof route.distance !== "number" || !Number.isFinite(route.distance) || route.distance <= 0 ||
       typeof route.duration !== "number" || !Number.isFinite(route.duration) || route.duration <= 0 ||
       !object(route.geometry) || route.geometry.type !== "LineString" || !Array.isArray(route.geometry.coordinates) ||
       route.geometry.coordinates.length < 2) {
-      throw new ExplorationRoutingError(`Routing service returned invalid route ${index}: ${JSON.stringify(route)}`);
+      throw new ExplorationRoutingError(t("Routing service returned invalid route {{value0}}: {{value1}}", { value0: index, value1: JSON.stringify(route) }));
     }
     const points = route.geometry.coordinates.map((position: unknown): RoutePoint => {
       if (!Array.isArray(position) || position.length < 2 || typeof position[0] !== "number" ||
         typeof position[1] !== "number" || !Number.isFinite(position[0]) || !Number.isFinite(position[1]) ||
         Math.abs(position[0]) > 180 || Math.abs(position[1]) > 85) {
-        throw new ExplorationRoutingError(`Route ${index} contains invalid coordinates: ${JSON.stringify(position)}`);
+        throw new ExplorationRoutingError(t("Route {{value0}} contains invalid coordinates: {{value1}}", { value0: index, value1: JSON.stringify(position) }));
       }
       return { lng: position[0], lat: position[1] };
     });
@@ -158,7 +159,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
     locations: locations.map(({ lat, lng }, index) => ({
       lat, lon: lng, radius: 50, type: index === 0 || index === locations.length - 1 ? "break" : "through",
     })),
-    costing: mode, format: "osrm", shape_format: "geojson", directions_type: "instructions", language: "en-US", alternates: locations.length === 2 ? 2 : 0,
+    costing: mode, format: "osrm", shape_format: "geojson", directions_type: "instructions", language: currentLanguage(), alternates: locations.length === 2 ? 2 : 0,
     costing_options: mode === "pedestrian"
       ? { pedestrian: { walking_speed: 5.1 } }
       : { bicycle: { bicycle_type: "hybrid" } },
@@ -166,7 +167,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
   const url = new URL(ROUTER_URL);
   url.searchParams.set("json", JSON.stringify(params));
   for (let attempt = 1; attempt <= 2; attempt += 1) {
-    if (signal.aborted) throw new DOMException("Route planning was cancelled.", "AbortError");
+    if (signal.aborted) throw new DOMException(t("Route planning was cancelled."), "AbortError");
     const controller = new AbortController();
     const cancel = (): void => controller.abort();
     signal.addEventListener("abort", cancel, { once: true });
@@ -192,7 +193,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       for (const route of routes) {
         if (distanceKm(coordinate(origin), coordinate(route.points[0])) > 0.15 ||
           distanceKm(coordinate(destination), coordinate(route.points[route.points.length - 1])) > 0.15) {
-          throw new ExplorationRoutingError("No accessible path within 150 m of the chosen start or destination. Choose a point closer to a street or path.");
+          throw new ExplorationRoutingError(t("No accessible path within 150 m of the chosen start or destination. Choose a point closer to a street or path."));
         }
       }
       return routes;
@@ -200,9 +201,9 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       if (signal.aborted || (!timedOut && !(error instanceof TypeError) &&
         !(error instanceof RouteRequestError && error.status >= 500))) throw error;
       const failure = timedOut
-        ? new ExplorationRoutingError(`Route request timed out after 20 seconds. Check your connection and try again.`)
+        ? new ExplorationRoutingError("Route request timed out after 20 seconds. Check your connection and try again.")
         : error instanceof TypeError
-          ? new ExplorationRoutingError(`Could not contact the routing service. Check your internet connection and try again. Endpoint: ${url.origin}.`)
+          ? new ExplorationRoutingError(t("Could not contact the routing service. Check your internet connection and try again. Endpoint: {{value0}}.", { value0: url.origin }))
           : error;
       if (attempt === 2) throw failure;
       console.warn("Route request failed; retrying", { mode, attempt, error: errorDiagnostic(failure) });
@@ -211,7 +212,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
       signal.removeEventListener("abort", cancel);
     }
   }
-  throw new ExplorationRoutingError("Route request exhausted its attempts.");
+  throw new ExplorationRoutingError(t("Route request exhausted its attempts."));
 }
 
 type DetourCorridor = { entry: number; exit: number };
@@ -332,7 +333,7 @@ export async function calculateNavigationRoute(
   signal: AbortSignal,
 ): Promise<RoutePlan> {
   const routes = await requestRoutes([origin, destination], mode, signal);
-  if (routes.length === 0) throw new ExplorationRoutingError("No accessible direct route found for this transport mode.");
+  if (routes.length === 0) throw new ExplorationRoutingError(t("No accessible direct route found for this transport mode."));
   const fastest = [...routes].sort((a, b) => a.durationSeconds - b.durationSeconds)[0];
   const known = new Set(cells.flatMap(discoveryFootprintCells).map(discoveryCellKey));
   return { origin, destination, mode, extraMinutes: 0, routes: [scoreRoute(fastest, "direct", known)] };
@@ -352,7 +353,7 @@ export async function calculateExplorationRoutes(
   extraMinutes: number,
   signal: AbortSignal,
 ): Promise<RoutePlan> {
-  if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError("Choose an extra-time target of 5, 10, or 20 minutes.");
+  if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError(t("Choose an extra-time target of 5, 10, or 20 minutes."));
   const direct = await calculateDirectRoute(origin, destination, cells, mode, signal);
   return findExplorationRoutes(direct, cells, extraMinutes, signal, () => {});
 }
@@ -365,7 +366,7 @@ export async function findExplorationRoutes(
   signal: AbortSignal,
   onRoutesFound: (plan: RoutePlan) => void,
 ): Promise<RoutePlan> {
-  if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError("Choose an extra-time target of 5, 10, or 20 minutes.");
+  if (!ROUTE_BUDGETS.includes(extraMinutes)) throw new ExplorationRoutingError(t("Choose an extra-time target of 5, 10, or 20 minutes."));
   const { origin, destination, mode } = direct;
   const separationKm = validateDestination(origin, destination);
   const known = new Set(cells.flatMap(discoveryFootprintCells).map(discoveryCellKey));
