@@ -1,6 +1,23 @@
 import { t } from "./i18n";
 import type { Coordinate, DiscoveryCell, PendingWalk } from "./types";
-import { distanceKm } from "./geo";
+import { discoveredDistanceKm, distanceKm, mergeRoutePoints } from "./geo";
+
+export function importedRouteProgress(
+  previousPoints: Coordinate[],
+  walks: PendingWalk[],
+): { points: Coordinate[]; addedKm: number; newGroundKmByWalk: Map<string, number> } {
+  const previousDistance = discoveredDistanceKm(previousPoints);
+  let points = previousPoints;
+  let distance = previousDistance;
+  const newGroundKmByWalk = new Map<string, number>();
+  for (const walk of walks) {
+    points = mergeRoutePoints(points, walk.points.map(point => ({ ...point, walkId: walk.id })));
+    const nextDistance = discoveredDistanceKm(points);
+    newGroundKmByWalk.set(walk.id, Math.max(0, nextDistance - distance));
+    distance = nextDistance;
+  }
+  return { points, addedKm: Math.max(0, distance - previousDistance), newGroundKmByWalk };
+}
 
 const MAX_GPX_POINTS_PER_SEGMENT = 20_000;
 
@@ -124,9 +141,11 @@ export function parseGpx(
     throw new Error(t("The GPX file does not contain a track or route."));
   }
 
+  const totalPointCount = segments.reduce((count, segment) => count + segment.length, 0);
+  const fallbackStartedAt = fallbackRecordedAt - (totalPointCount - 1) * 1_000;
   let fallbackOffset = 0;
   return segments.map((segment, segmentIndex) => {
-    const points = parseSegment(segment, fallbackRecordedAt + fallbackOffset);
+    const points = parseSegment(segment, fallbackStartedAt + fallbackOffset);
     fallbackOffset += segment.length * 1_000;
     if (
       points.some(

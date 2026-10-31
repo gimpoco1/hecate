@@ -146,6 +146,11 @@ export class ExplorationReminder {
     return this.lastPromptAt;
   }
 
+  cancelUndeliveredPrompt(promptedAt: number, previousPromptedAt: number): void {
+    if (this.lastPromptAt !== promptedAt) return;
+    this.lastPromptAt = previousPromptedAt;
+  }
+
   get pausedUntil() {
     return this.pauseUntil;
   }

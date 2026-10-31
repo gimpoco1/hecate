@@ -1,3 +1,5 @@
+import { errorDiagnostic } from "../diagnostics";
+import { observeAuthSession } from "../authSession";
 import { formatNumber, t, useAppTranslation, setLanguagePreference } from "../i18n";
 import { LeaderboardLanguageButton, LanguageSettings } from "./LanguageSettings";
 import { AuthEntry } from "./AuthEntry";
@@ -691,7 +693,7 @@ function LeaderboardAccountPanel({
               <button
                 className="leaderboard-link-button"
                 type="button"
-                onClick={() => void supabase?.auth.signOut()}
+                onClick={() => void supabase?.auth.signOut({ scope: "local" })}
                 disabled={pending}
               >{t("Sign out")}</button>
             </div>
@@ -868,14 +870,7 @@ export function WebLeaderboard() {
 
   useEffect(() => {
     if (!supabase) return;
-    let active = true;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (active) setUser(data.session?.user ?? null);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
+    return observeAuthSession(supabase, (session, event) => {
       if (event === "SIGNED_OUT") {
         setAppearancePreference("system");
         void setLanguagePreference("system").catch((error: Error) => {
@@ -884,11 +879,10 @@ export function WebLeaderboard() {
         });
       }
       setUser(session?.user ?? null);
+    }, (error) => {
+      console.error("Could not read account session", { error: errorDiagnostic(error) });
+      setLoadError(error.message);
     });
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
   }, []);
 
   useEffect(() => {

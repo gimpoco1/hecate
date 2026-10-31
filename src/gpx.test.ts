@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   compactImportedRoute,
+  importedRouteProgress,
   persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
 } from "./gpx";
 import type { Coordinate, PendingWalk } from "./types";
+import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 
 const importedPoints: Coordinate[] = [
   { lat: 41.1, lng: 2.1, recordedAt: 1, walkId: "stored-walk" },
@@ -75,6 +77,39 @@ describe("GPX duplicate detection", () => {
 });
 
 describe("GPX import persistence", () => {
+  it("credits overlapping imported segments only for the new ground they add", () => {
+    const points = Array.from({ length: 21 }, (_, index) => ({
+      lat: 41,
+      lng: 2 + index * 0.0001,
+      recordedAt: index * 1_000,
+    }));
+    const first = candidateWalk("first", points);
+    const repeated = candidateWalk("repeated", points.map(point => ({
+      ...point,
+      recordedAt: point.recordedAt + 60_000,
+    })));
+    const result = importedRouteProgress([], [first, repeated]);
+
+    expect(result.newGroundKmByWalk.get("first")).toBeGreaterThan(0);
+    expect(result.newGroundKmByWalk.get("repeated")).toBe(0);
+    expect(result.addedKm).toBeCloseTo(discoveredDistanceKm(result.points));
+    expect(result.addedKm).toBeCloseTo(
+      [...result.newGroundKmByWalk.values()].reduce((total, km) => total + km, 0),
+    );
+    expect(result.addedKm).toBeLessThan(routeDistanceKm(result.points));
+    expect(first.points).toBe(points);
+    expect(points.every(point => !("walkId" in point))).toBe(true);
+
+    const subsequent = importedRouteProgress(result.points, [
+      candidateWalk("another-import", points.map(point => ({
+        ...point,
+        recordedAt: point.recordedAt + 120_000,
+      }))),
+    ]);
+    expect(subsequent.addedKm).toBe(0);
+    expect(subsequent.newGroundKmByWalk.get("another-import")).toBe(0);
+  });
+
   it("persists discovery cells before marking any route as stored", async () => {
     const operations: string[] = [];
     const walks = [

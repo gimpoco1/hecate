@@ -147,6 +147,7 @@ export async function initializeWebAuth(): Promise<void> {
 export async function initializeNativeAuthLinks() {
   if (!Capacitor.isNativePlatform() || !supabase) return;
 
+  await initializeNativeSessionRefresh();
   if (Capacitor.getPlatform() === "ios") await initializeAppleCredentialChecks();
 
   const handledUrls = new Set<string>();
@@ -165,6 +166,32 @@ export async function initializeNativeAuthLinks() {
   await CapacitorApp.addListener("appUrlOpen", event => openCallback(event.url));
   const launch = await CapacitorApp.getLaunchUrl();
   if (launch?.url) openCallback(launch.url);
+}
+
+/** Native app state, rather than WebView visibility, owns the refresh timer. */
+async function initializeNativeSessionRefresh(): Promise<void> {
+  const client = supabase;
+  if (!client) throw new Error(t("Account sign-in is not configured in this build."));
+  let stateChanged = false;
+  let pendingUpdate = Promise.resolve();
+  await CapacitorApp.addListener("appStateChange", state => {
+    stateChanged = true;
+    pendingUpdate = pendingUpdate.then(() => state.isActive
+      ? client.auth.startAutoRefresh()
+      : client.auth.stopAutoRefresh()).catch((error: Error) => {
+      console.error("Could not update native session refresh", { isActive: state.isActive, error: errorDiagnostic(error) });
+      window.dispatchEvent(new CustomEvent("hecate:auth-error", { detail: error.message }));
+    });
+  });
+  const state = await CapacitorApp.getState();
+  if (stateChanged) {
+    await pendingUpdate;
+    return;
+  }
+  pendingUpdate = pendingUpdate.then(() => state.isActive
+    ? client.auth.startAutoRefresh()
+    : client.auth.stopAutoRefresh());
+  await pendingUpdate;
 }
 
 /** Honor Apple consent revocation and account deletion, including changes made while Hecate was closed. */

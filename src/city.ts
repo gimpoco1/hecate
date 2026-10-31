@@ -151,13 +151,10 @@ export function preferredCityForView(
     (city): city is CityBoundary => city !== null,
   );
   const matching = candidates.filter((city) => isPointInCity(viewCenter, city));
-  if (!matching.length) return currentCity ?? viewedCity ?? null;
+  if (!matching.length) return null;
   return (
     cityForMapCenter(viewCenter, matching) ??
-    matching[0] ??
-    currentCity ??
-    viewedCity ??
-    null
+    matching[0] ?? null
   );
 }
 

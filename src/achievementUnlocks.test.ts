@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   confirmedPendingAchievementIds,
   dismissAchievementUnlock,
@@ -7,6 +7,8 @@ import {
   reconcileAchievementUnlocks,
   syncAchievementUnlocks,
 } from "./achievementUnlocks";
+
+vi.mock("./storage", () => ({ supabase: null }));
 
 const values = new Map<string, string>();
 
@@ -116,7 +118,7 @@ describe("achievement unlock delivery", () => {
     ).toEqual({ newlyEarned: [], pending: [] });
   });
 
-  it("removes an unlock that is absent from the complete evaluation", () => {
+  it("keeps a dismissed unlock acknowledged when evaluations temporarily lose it", () => {
     reconcileAchievementUnlocks("user-1", []);
     reconcileAchievementUnlocks("user-1", ["the-long-way"]);
     dismissAchievementUnlock("user-1", "the-long-way");
@@ -127,10 +129,19 @@ describe("achievement unlock delivery", () => {
     });
     expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(false);
     expect(reconcileAchievementUnlocks("user-1", ["the-long-way"])).toEqual({
-      newlyEarned: ["the-long-way"],
-      pending: ["the-long-way"],
+      newlyEarned: [],
+      pending: [],
     });
-    expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(true);
+    expect(isAchievementUnlockPending("user-1", "the-long-way")).toBe(false);
+    expect(loadAchievementUnlocks("user-1")?.acknowledged).toEqual(["the-long-way"]);
+  });
+
+  it("migrates previously acknowledged badges before an incomplete startup evaluation", () => {
+    values.set("hecate:achievement-unlocks:v1:user-1", JSON.stringify({
+      version: 3, earned: ["momentum"], pending: [],
+    }));
+    reconcileAchievementUnlocks("user-1", []);
+    expect(reconcileAchievementUnlocks("user-1", ["momentum"])).toEqual({ newlyEarned: [], pending: [] });
   });
 
   it("removes an unconfirmed unlock from the complete evaluation", () => {

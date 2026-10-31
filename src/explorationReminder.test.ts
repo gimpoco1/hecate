@@ -6,6 +6,29 @@ const start = { lng: 2.17, lat: 41.38, accuracy: 5, recordedAt: 1_000_000 };
 const step = (index: number) => ({ ...start, lng: start.lng + index * .00043, recordedAt: start.recordedAt + index * 60_000 });
 
 describe("private exploration reminders", () => {
+  it("does not impose a two-hour cooldown when notification delivery fails", () => {
+    const reminder = new ExplorationReminder(0, 0, 5, "all");
+    for (let index = 0; index < 5; index += 1) reminder.observe(step(index), false);
+    expect(reminder.observe(step(5), false)).toBe("discovered");
+    reminder.cancelUndeliveredPrompt(step(5).recordedAt, 0);
+    expect(reminder.promptedAt).toBe(0);
+    for (let index = 6; index < 11; index += 1) expect(reminder.observe(step(index), false)).toBeNull();
+    expect(reminder.observe(step(11), false)).toBe("discovered");
+  });
+
+  it("does not let an older delivery failure erase a more recent reminder", () => {
+    const reminder = new ExplorationReminder(0, 0, 5, "all");
+    for (let index = 0; index <= 5; index += 1) reminder.observe(step(index), false);
+    const previous = reminder.promptedAt;
+    for (let index = 126; index <= 131; index += 1) reminder.observe(step(index), false);
+    const latest = reminder.promptedAt;
+    expect(latest).toBe(step(131).recordedAt);
+    reminder.cancelUndeliveredPrompt(previous, 0);
+    expect(reminder.promptedAt).toBe(latest);
+    reminder.cancelUndeliveredPrompt(latest, previous);
+    expect(reminder.promptedAt).toBe(previous);
+  });
+
   it("prompts on discovered ground when enabled and shares the cooldown across areas", () => {
     const reminder = new ExplorationReminder(0, 0, 5, "all");
     for (let index = 0; index < 5; index += 1) expect(reminder.observe(step(index), false)).toBeNull();

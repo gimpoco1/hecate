@@ -1,5 +1,26 @@
-import { discoveryCellCenter } from "./geo";
+import { discoveryCellCenter, discoveryCellKey, discoveryFootprintCells } from "./geo";
 import type { DiscoveryCell } from "./types";
+
+/** Highlight only reveal footprints that were not already uncovered before the journey. */
+export function newlyRevealedCells(
+  previousCells: DiscoveryCell[],
+  journeyCells: DiscoveryCell[],
+): DiscoveryCell[] {
+  const revealed = new Map<string, DiscoveryCell>();
+  for (const cell of journeyCells) {
+    for (const footprint of discoveryFootprintCells(cell)) {
+      const key = discoveryCellKey(footprint);
+      revealed.set(key, footprint);
+    }
+  }
+  for (const cell of previousCells) {
+    if (revealed.size === 0) break;
+    for (const footprint of discoveryFootprintCells(cell)) {
+      revealed.delete(discoveryCellKey(footprint));
+    }
+  }
+  return [...revealed.values()];
+}
 
 export function discoveryHighlightData(
   cells: DiscoveryCell[],

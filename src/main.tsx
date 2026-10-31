@@ -56,7 +56,10 @@ void initializeWebAuth().then(renderExperience).catch((error: Error) => {
   retry.textContent = t("Return to Hecate and try again");
   document.getElementById("root")!.replaceChildren(message, retry);
 });
-void initializeNativeAuthLinks();
+void initializeNativeAuthLinks().catch((error: Error) => {
+  console.error("Could not initialize native authentication", { error: errorDiagnostic(error) });
+  window.dispatchEvent(new CustomEvent("hecate:auth-error", { detail: error.message }));
+});
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", async () => {

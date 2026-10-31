@@ -86,6 +86,20 @@ describe("city discovery", () => {
     expect(cityAreaKm2(city)).toBeLessThan(6);
   });
 
+  it("clears the previous city as soon as the map center leaves its boundary", () => {
+    expect(preferredCityForView({ lng: 0, lat: 0 }, city, city, [city])).toBe(city);
+    expect(preferredCityForView({ lng: 2, lat: 41 }, city, city, [city])).toBeNull();
+    expect(preferredCityForView({ lng: 2, lat: 41 }, city, null, [city])).toBeNull();
+  });
+
+  it("selects a newly viewed city without retaining the user-location city", () => {
+    const destination: CityBoundary = { ...city, id: "test:destination", name: "Destination", geometry: {
+      type: "Polygon", coordinates: [[[2, 41], [2.1, 41], [2.1, 41.1], [2, 41.1], [2, 41]]],
+    } };
+    expect(preferredCityForView({ lng: 2.05, lat: 41.05 }, city, destination, [city])).toBe(destination);
+    expect(preferredCityForView({ lng: 0, lat: 0 }, city, destination, [city])).toBe(city);
+  });
+
   it("turns revealed cells into a bounded percentage", () => {
     const cell = pointToDiscoveryCell({ lng: 0, lat: 0, recordedAt: 1 });
     const percentage = discoveredCityPercentage([cell], city);

@@ -16,6 +16,7 @@ import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
 import type { User } from "@supabase/supabase-js";
 import { authRedirectUrl } from "../auth";
+import { observeAuthSession } from "../authSession";
 import {
   isAutomaticUpdatesEnabled,
   setAutomaticUpdatesEnabled,
@@ -93,6 +94,7 @@ export type GpxImportedRoute = {
   title: string;
   addedAt: number;
   addedKm: number;
+  newGroundKm?: number;
 };
 export type GpxImportResult = {
   message: string;
@@ -126,6 +128,9 @@ function readGpxImportHistory(userId: string): GpxImportedRoute[] {
             id: item.id,
             title: item.title,
             addedAt: item.addedAt,
+            ...(Number.isFinite(item.newGroundKm) && item.newGroundKm >= 0
+              ? { newGroundKm: item.newGroundKm }
+              : {}),
             addedKm:
               Number.isFinite(item.addedKm) && item.addedKm > 0
                 ? item.addedKm
@@ -325,29 +330,17 @@ export function SyncSheet({
       return;
     }
 
-    let active = true;
     setAuthLoading(true);
-    void supabase.auth.getSession().then(({ data, error }) => {
-      if (!active) return;
-      setUser(data.session?.user ?? null);
-      setMessage(error?.message ?? "");
-      setMessageTone(error ? "error" : "success");
-      setAuthLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
+    return observeAuthSession(supabase, (session) => {
       setUser(session?.user ?? null);
       if (session?.user) setMessage("");
       setAuthLoading(false);
+    }, (error) => {
+      console.error("Could not read account session", { error: errorDiagnostic(error) });
+      setMessage(error.message);
+      setMessageTone("error");
+      setAuthLoading(false);
     });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
   }, [open]);
 
   useEffect(() => {
@@ -451,7 +444,7 @@ export function SyncSheet({
     if (!supabase) return;
     setAuthPending(true);
     setMessage("");
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       setMessage(error.message);
       setMessageTone("error");
@@ -1056,14 +1049,31 @@ export function SyncSheet({
                                       route.addedAt,
                                     ).toISOString()}
                                   >{t("Added {{value0}}", { value0: formatGpxImportDate(route.addedAt) })}</time>
+                                </span>
+                                <span className="gpx-import-sheet__history-stats">
                                   {route.addedKm > 0 && (
-                                    <span>{t("+{{value0}}{{value1}} added", { value0: formatGpxImportDistance(route.addedKm), value1: " " })}</span>
+                                    <span className="gpx-import-sheet__history-stat">
+                                      <span>{t("Route distance")}</span>
+                                      <strong>{formatGpxImportDistance(route.addedKm)}</strong>
+                                    </span>
+                                  )}
+                                  {route.newGroundKm !== undefined && (
+                                    <span className="gpx-import-sheet__history-stat">
+                                      <span>{t("New ground")}</span>
+                                      <strong>+{formatGpxImportDistance(route.newGroundKm)}</strong>
+                                    </span>
                                   )}
                                 </span>
                               </button>
                             </li>
                           ))}
                         </ul>
+                      )}
+                      {gpxImportedRoutes.length > 0 && (
+                        <div className="gpx-import-sheet__history-info">
+                          <InfoIcon size={13} strokeWidth={2} />
+                          <p>{t("Route distance includes repeated ground. Your map shows new ground in the selected city.")}</p>
+                        </div>
                       )}
                     </section>
                   </div>

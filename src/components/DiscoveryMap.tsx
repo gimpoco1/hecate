@@ -436,6 +436,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         settledZoom,
       );
     };
+    const handleViewMove = (event: FollowCameraEvent): void => {
+      if (event.hecateFollowCamera) return;
+      const center = map.getCenter();
+      onViewChangeRef.current?.({ lng: center.lng, lat: center.lat }, map.getZoom());
+    };
     const handleNavigationMove = (event: FollowCameraEvent): void => {
       if (event.hecateNavigationPoint) markerRef.current?.setLngLat(event.hecateNavigationPoint);
     };
@@ -466,6 +471,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       onMapClickRef.current?.();
     });
     map.on("moveend", handleMoveEnd);
+    map.on("move", handleViewMove);
     return () => {
       canvas.removeEventListener("pointerdown", handlePointerDown, true);
       canvas.removeEventListener("wheel", interruptCamera, true);

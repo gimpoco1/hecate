@@ -41,7 +41,7 @@ import {
 } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
-import { discoveryHighlightData } from "./discoveryHighlights";
+import { discoveryHighlightData, newlyRevealedCells } from "./discoveryHighlights";
 import type {
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
@@ -242,17 +242,20 @@ import {
 } from "./walkJournal";
 import {
   compactImportedRoute,
+  importedRouteProgress,
   parseGpx,
   persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
 } from "./gpx";
+import { observeAuthSession } from "./authSession";
 
 type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
   walkId: string;
   points: Coordinate[];
   cells: DiscoveryCell[];
+  highlightCells: DiscoveryCell[];
   startedAt: number;
   finishedAt: number;
   newGroundKm: number;
@@ -296,18 +299,26 @@ async function sendReminderNotification(
   minutes: number,
   kind: ReminderKind,
 ) {
-  await LocalNotifications.schedule({
-    notifications: [
-      {
-        id: REMINDER_NOTIFICATION_ID,
-        title: t("Ready to record your journey?"),
-        body: reminderMessage(minutes),
-        isExactNotification: false,
-        schedule: { at: new Date(Date.now() + 1_000) },
-        extra: { kind, userId },
-      },
-    ],
-  });
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: REMINDER_NOTIFICATION_ID,
+            title: t("Ready to record your journey?"),
+            body: reminderMessage(minutes),
+            isExactNotification: false,
+            schedule: { at: new Date(Date.now() + 1_000) },
+            extra: { kind, userId },
+          },
+        ],
+      });
+      return;
+    } catch (error) {
+      console.warn("Could not schedule discovery reminder", { attempt, error: errorDiagnostic(error) });
+      if (attempt === 3) throw error;
+    }
+  }
 }
 
 async function sendAchievementNotification(
@@ -1070,6 +1081,7 @@ export default function App() {
     cityMetrics: [],
   });
   const [discoveryProgressReady, setDiscoveryProgressReady] = useState(false);
+  const [achievementEvaluationGeneration, setAchievementEvaluationGeneration] = useState(0);
   const [achievementEvaluations, setAchievementEvaluations] = useState<
     AchievementEvaluation[]
   >([]);
@@ -1375,7 +1387,8 @@ export default function App() {
   );
 
   const summaryCity = useMemo(() => {
-    if (!isCityScale || !viewCenter) return activeCity ?? null;
+    if (!isCityScale) return null;
+    if (!viewCenter) return activeCity ?? null;
     const knownCities = [cityBoundary, ...discoveredCities].filter(
       (city): city is CityBoundary => city !== null,
     );
@@ -1385,7 +1398,7 @@ export default function App() {
       viewedCity,
       knownCities,
     );
-    return selected ?? viewedCity ?? activeCity ?? null;
+    return selected;
   }, [
     activeCity,
     cityBoundary,
@@ -1401,12 +1414,12 @@ export default function App() {
     ) ?? null)
     : null;
   const currentCityDistance =
-    summaryCityProgress?.distance ?? discoveryDistance;
-  const currentCityMilestone = cityMilestoneProgress(currentCityDistance);
-  const currentCityMilestoneRemaining = currentCityMilestone.next
+    isCityScale ? summaryCityProgress?.distance ?? null : discoveryDistance;
+  const currentCityMilestone = currentCityDistance === null ? null : cityMilestoneProgress(currentCityDistance);
+  const currentCityMilestoneRemaining = currentCityMilestone?.next && currentCityDistance !== null
     ? Math.max(0, currentCityMilestone.next.thresholdKm - currentCityDistance)
     : 0;
-  const currentCityMilestoneLevel = currentCityMilestone.next
+  const currentCityMilestoneLevel = currentCityMilestone?.next
     ? currentCityMilestone.next.level - 1
     : 3;
   const summaryCityPercentage = summaryCityProgress?.percentage ?? null;
@@ -1896,6 +1909,7 @@ export default function App() {
           return;
         }
         setAchievementEvaluations(event.data.achievementEvaluations);
+        setAchievementEvaluationGeneration(event.data.generation);
       },
     );
     worker.addEventListener("error", (event) => {
@@ -1971,27 +1985,26 @@ export default function App() {
       tracking === "tracking" ||
       walkFinalizing ||
       !documentVisible ||
+      achievementEvaluationGeneration !== discoveryMetricsGenerationRef.current ||
       !discoveryHistoryReadyRef.current ||
       citiesLoadedUserId !== accountUserId
     )
       return;
-    const localBeforeReconcile = loadAchievementUnlocks(accountUserId);
-    const unlocks = reconcileAchievementUnlocks(
-      accountUserId,
-      earnedAchievementIds,
-    );
-    setAchievementCelebrations(
-      confirmedPendingAchievementIds(unlocks.pending, earnedAchievementIds),
-    );
-    void syncAchievementUnlocks(
-      accountUserId,
-      earnedAchievementIds,
-      localBeforeReconcile,
-      unlocks.newlyEarned,
-    )
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active || accountUserIdRef.current !== accountUserId) return null;
+      const localBeforeReconcile = loadAchievementUnlocks(accountUserId);
+      const unlocks = reconcileAchievementUnlocks(accountUserId, earnedAchievementIds);
+      return syncAchievementUnlocks(
+        accountUserId,
+        earnedAchievementIds,
+        localBeforeReconcile,
+        unlocks.newlyEarned,
+      );
+    })
       .then((synced) => {
         if (
-          accountUserIdRef.current === accountUserId &&
+          active && accountUserIdRef.current === accountUserId &&
           document.visibilityState === "visible" &&
           synced
         ) {
@@ -2005,8 +2018,10 @@ export default function App() {
       .catch((error) => {
         console.warn("Could not sync achievement unlocks", errorDiagnostic(error));
       });
+    return () => { active = false; };
   }, [
     accountUserId,
+    achievementEvaluationGeneration,
     citiesLoadedUserId,
     documentVisible,
     earnedAchievementIds,
@@ -2022,9 +2037,11 @@ export default function App() {
       tracking === "tracking" ||
       walkFinalizing ||
       !discoveryHistoryReadyRef.current ||
+      achievementEvaluationGeneration !== discoveryMetricsGenerationRef.current ||
       citiesLoadedUserId !== accountUserId
     )
       return;
+    let active = true;
     const retry = () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
       const local = loadAchievementUnlocks(accountUserId);
@@ -2035,7 +2052,7 @@ export default function App() {
         [],
       )
         .then((synced) => {
-          if (accountUserIdRef.current === accountUserId && synced) {
+          if (active && accountUserIdRef.current === accountUserId && synced) {
             setAchievementCelebrations(
               confirmedPendingAchievementIds(
                 synced.pending,
@@ -2044,16 +2061,20 @@ export default function App() {
             );
           }
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          console.warn("Could not retry achievement unlock sync", errorDiagnostic(error));
+        });
     };
     window.addEventListener("online", retry);
     document.addEventListener("visibilitychange", retry);
     return () => {
+      active = false;
       window.removeEventListener("online", retry);
       document.removeEventListener("visibilitychange", retry);
     };
   }, [
     accountUserId,
+    achievementEvaluationGeneration,
     citiesLoadedUserId,
     earnedAchievementIds,
     tracking,
@@ -2063,21 +2084,7 @@ export default function App() {
   useEffect(() => {
     purgeLegacyDiscoveryCache();
     if (!supabase) return;
-    let active = true;
-    const client = supabase;
-    void client.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      const nextUserId = data.session?.user.id ?? null;
-      if (nextUserId !== accountUserIdRef.current)
-        setDiscoveryLoading(Boolean(nextUserId));
-      setAccountUserId(nextUserId);
-      setAccountUserEmail(data.session?.user.email ?? "");
-      setAuthReady(true);
-    });
-    const {
-      data: { subscription },
-    } = client.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
+    return observeAuthSession(supabase, (session, event) => {
       if (event === "SIGNED_OUT") {
         setAppearancePreference("system");
         void setLanguagePreference("system").catch((error: Error) => {
@@ -2091,11 +2098,10 @@ export default function App() {
       setAccountUserId(nextUserId);
       setAccountUserEmail(session?.user.email ?? "");
       setAuthReady(true);
+    }, (error) => {
+      console.error("Could not read account session", { error: errorDiagnostic(error) });
+      setJourneyStopMessage(error.message);
     });
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
   }, []);
 
   useEffect(() => {
@@ -3063,23 +3069,28 @@ export default function App() {
               return;
             }
             const unmapped = isUnmappedArea(point, cellKeysRef.current);
-            const kind = reminderRef.current.observe(point, unmapped);
+            const reminder = reminderRef.current;
+            const previousPromptedAt = reminder.promptedAt;
+            const kind = reminder.observe(point, unmapped);
             if (!kind) return;
-            saveReminderPreference(
-              accountUserId,
-              true,
-              reminderRef.current.promptedAt,
-              reminderRef.current.pausedUntil,
-            );
-            if (nativeApp)
-              void sendReminderNotification(
-                accountUserId,
-                reminderRef.current.durationMinutes,
-                kind,
-              ).catch((error) =>
-                console.warn("Could not show discovery reminder", errorDiagnostic(error)),
-              );
-            else if (visible) setReminderPrompt(kind);
+            const promptedAt = reminder.promptedAt;
+            const savePrompt = (): void => {
+              if (accountUserIdRef.current !== accountUserId || reminderRef.current !== reminder || !reminderEnabledRef.current) return;
+              saveReminderPreference(accountUserId, true, promptedAt, reminder.pausedUntil);
+            };
+            if (nativeApp) {
+              void sendReminderNotification(accountUserId, reminder.durationMinutes, kind)
+                .then(savePrompt, (error) => {
+                  reminder.cancelUndeliveredPrompt(promptedAt, previousPromptedAt);
+                  console.warn("Could not show discovery reminder", { error: errorDiagnostic(error) });
+                })
+                .catch((error) => {
+                  console.warn("Could not save discovery reminder cooldown", { error: errorDiagnostic(error) });
+                });
+            } else if (visible) {
+              setReminderPrompt(kind);
+              savePrompt();
+            }
           },
           (error) => {
             if (disposed || foregroundTrackerRef.current !== tracker) return;
@@ -3352,9 +3363,10 @@ export default function App() {
       currentZoom >= 6 === nextZoom >= 6 ? currentZoom : nextZoom,
     );
   }, []);
-  const onViewChange = useCallback((center: { lng: number; lat: number }) => {
+  const onViewChange = useCallback((center: { lng: number; lat: number }, viewZoom: number) => {
     setViewCenter(center);
-  }, []);
+    onZoomChange(viewZoom);
+  }, [onZoomChange]);
 
   const focusOnUserPoint = (point: Coordinate) => {
     followCameraEnabledRef.current = true;
@@ -3683,6 +3695,7 @@ export default function App() {
           walkId: active.id,
           points: active.points,
           cells: newCells,
+          highlightCells: newlyRevealedCells(previousCells, newCells),
           startedAt: active.startedAt,
           finishedAt: completed.finishedAt,
           newGroundKm,
@@ -3890,8 +3903,7 @@ export default function App() {
       walk.points.map((point) => ({ ...point, walkId: walk.id })),
     );
     const importedDiscoveryPoints = newWalks.flatMap((walk) => walk.points);
-    const previousDistance = discoveredDistanceKm(pointsRef.current);
-    const mergedPoints = mergeRoutePoints(pointsRef.current, importedPoints);
+    const { points: mergedPoints, addedKm, newGroundKmByWalk } = importedRouteProgress(pointsRef.current, compactWalks);
     const mergedCells = mergeDiscoveryCells(
       cellsRef.current,
       discoveryCellsFromPoints(importedDiscoveryPoints),
@@ -3923,10 +3935,6 @@ export default function App() {
     lastPointRef.current = mergedPoints.at(-1);
     setPoints(mergedPoints);
     setCells(mergedCells);
-    const addedKm = Math.max(
-      0,
-      discoveredDistanceKm(mergedPoints) - previousDistance,
-    );
     const importedAt = Date.now();
     const baseTitle = file.name.replace(/\.gpx$/i, "").trim() || t("GPX route");
     const importedRoutes = newWalks.map((walk, index) => ({
@@ -3937,6 +3945,7 @@ export default function App() {
           : t("{{value0}} · Segment {{value1}}", { value0: baseTitle, value1: index + 1 }),
       addedAt: importedAt,
       addedKm: routeDistanceKm(walk.points),
+      newGroundKm: newGroundKmByWalk.get(walk.id)!,
     }));
     return {
       tone: "success",
@@ -4274,6 +4283,7 @@ export default function App() {
       cells: discoveryCellsFromPoints(points).filter(
         (cell) => !previousCells.has(discoveryCellKey(cell)),
       ),
+      highlightCells: newlyRevealedCells(discoveryCellsFromPoints(previousPoints), discoveryCellsFromPoints(points)),
       startedAt,
       finishedAt,
       newGroundKm: Math.max(
@@ -5327,12 +5337,19 @@ export default function App() {
       const map = mapRef.current;
       if (!map || coordinates.length === 0) return;
       map.stop();
-      const longitudes = coordinates.map((point) => point[0]);
-      const latitudes = coordinates.map((point) => point[1]);
+      const bounds = coordinates.reduce(
+        (current, point) => ({
+          west: Math.min(current.west, point[0]),
+          south: Math.min(current.south, point[1]),
+          east: Math.max(current.east, point[0]),
+          north: Math.max(current.north, point[1]),
+        }),
+        { west: Infinity, south: Infinity, east: -Infinity, north: -Infinity },
+      );
       map.fitBounds(
         [
-          [Math.min(...longitudes), Math.min(...latitudes)],
-          [Math.max(...longitudes), Math.max(...latitudes)],
+          [bounds.west, bounds.south],
+          [bounds.east, bounds.north],
         ],
         {
           padding: { top: 90, right: 38, bottom: 170, left: 38 },
@@ -5689,7 +5706,7 @@ export default function App() {
           <span>{t("Hecate")}</span>
         </button>
         <div className="topbar-account">
-          {accountUserId && summaryCity && isCityScale && (
+          {accountUserId && summaryCity && isCityScale && currentCityMilestone && summaryCityProgress && (
             <button
               className="map-milestone"
               type="button"
@@ -6060,7 +6077,7 @@ export default function App() {
                 ) : accountUserId ? (
                   <>
                     <div className="distance">
-                      {formatDistance(currentCityDistance)}
+                      {currentCityDistance === null ? "—" : formatDistance(currentCityDistance)}
                     </div>
                     {summaryCity && (
                       <button
@@ -6361,9 +6378,9 @@ export default function App() {
                 className="exploration-recap__view"
                 type="button"
                 data-testid="recap-view-on-map"
-                disabled={explorationSummary.cells.length === 0}
+                disabled={explorationSummary.highlightCells.length === 0}
                 onClick={() => {
-                  showNewDiscoveriesOnMap(explorationSummary.cells);
+                  showNewDiscoveriesOnMap(explorationSummary.highlightCells);
                   setExplorationSummary(null);
                 }}
               >{t("View on map")}</button>
