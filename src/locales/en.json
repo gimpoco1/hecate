@@ -1045,5 +1045,16 @@
   "Journey route": "Journey route",
   "Newly discovered streets": "Newly discovered streets",
   "Journey start": "Journey start",
-  "Journey finish": "Journey finish"
+  "Journey finish": "Journey finish",
+  "Journeys per day": "Journeys per day",
+  "Previous week": "Previous week",
+  "Next week": "Next week",
+  "This week": "This week",
+  "No journeys this week.": "No journeys this week.",
+  "No journeys on this day.": "No journeys on this day.",
+  "journeyCount_one": "{{count}} journey",
+  "journeyCount_other": "{{count}} journeys",
+  "journeysOnDay_one": "{{count}} journey on {{date}}",
+  "journeysOnDay_other": "{{count}} journeys on {{date}}",
+  "Last week": "Last week"
 }

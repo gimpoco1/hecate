@@ -1045,5 +1045,16 @@
   "Journey route": "Trayecto recorrido",
   "Newly discovered streets": "Calles recién descubiertas",
   "Journey start": "Inicio del trayecto",
-  "Journey finish": "Final del trayecto"
+  "Journey finish": "Final del trayecto",
+  "Journeys per day": "Trayectos por día",
+  "Previous week": "Semana anterior",
+  "Next week": "Semana siguiente",
+  "This week": "Esta semana",
+  "No journeys this week.": "No hay trayectos esta semana.",
+  "No journeys on this day.": "No hay trayectos este día.",
+  "journeyCount_one": "{{count}} trayecto",
+  "journeyCount_other": "{{count}} trayectos",
+  "journeysOnDay_one": "{{count}} trayecto el {{date}}",
+  "journeysOnDay_other": "{{count}} trayectos el {{date}}",
+  "Last week": "La semana pasada"
 }

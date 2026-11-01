@@ -1058,5 +1058,18 @@
   "Journey route": "Ruta putovanja",
   "Newly discovered streets": "Novootkrivene ulice",
   "Journey start": "Početak putovanja",
-  "Journey finish": "Kraj putovanja"
+  "Journey finish": "Kraj putovanja",
+  "Journeys per day": "Putovanja po danu",
+  "Previous week": "Prethodni tjedan",
+  "Next week": "Sljedeći tjedan",
+  "This week": "Ovaj tjedan",
+  "No journeys this week.": "Nema putovanja ovaj tjedan.",
+  "No journeys on this day.": "Nema putovanja na ovaj dan.",
+  "journeyCount_one": "{{count}} putovanje",
+  "journeyCount_other": "{{count}} putovanja",
+  "journeysOnDay_one": "{{count}} putovanje na datum {{date}}",
+  "journeysOnDay_other": "{{count}} putovanja na datum {{date}}",
+  "journeyCount_few": "{{count}} putovanja",
+  "journeysOnDay_few": "{{count}} putovanja na datum {{date}}",
+  "Last week": "Prošli tjedan"
 }
