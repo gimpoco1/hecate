@@ -7,7 +7,7 @@ import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { useAppearance } from "../appearance";
-import { mdiPaletteOutline } from "@mdi/js";
+import { mdiHistory, mdiPaletteOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
 import { useEffect, useState } from "react";
@@ -81,6 +81,7 @@ type Props = {
   onShowGpxImport: (points: Coordinate[]) => void;
   onShowGpxImportRoute: (routeId: string) => void;
   onWalkingStatsOpen: () => void;
+  onJourneyHistoryOpen: () => void;
   onCitiesOpen: () => void;
   onAchievementsOpen: () => void;
   onSavedPlacesOpen: () => void;
@@ -185,6 +186,7 @@ export function SyncSheet({
   onShowGpxImport,
   onShowGpxImportRoute,
   onWalkingStatsOpen,
+  onJourneyHistoryOpen,
   onCitiesOpen,
   onAchievementsOpen,
   onSavedPlacesOpen,
@@ -738,6 +740,13 @@ export function SyncSheet({
                       {favoritePlaces.length}{" "}
                       {t("placeLabel", { count: favoritePlaces.length })}
                     </small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                  <button type="button" className="account-feature-tile" data-testid="profile-journey-history" onClick={onJourneyHistoryOpen}>
+                    <span className="account-feature-tile__mark" aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiHistory} /></svg>
+                    </span>
+                    <strong>{t("Journey history")}</strong>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                 </div>

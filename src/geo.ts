@@ -57,19 +57,47 @@ export type DiscoveryJourneyMetric = {
   newGroundKmByRegion?: Record<string, number>
 };
 
+export type DiscoveryJourneyRoute = DiscoveryJourneyMetric & { newGroundSegments: Coordinate[][] };
+
+/** Return the end of a sampled route corresponding to credited discovery distance. */
+function creditedRouteEnd(points: Coordinate[], creditedKm: number): Coordinate[] {
+  const reversed: Coordinate[] = [points[points.length - 1]];
+  let remainingKm = creditedKm;
+  for (let index = points.length - 1; index > 0 && remainingKm > 0; index -= 1) {
+    const end = points[index];
+    const start = points[index - 1];
+    const lengthKm = distanceKm(start, end);
+    if (lengthKm <= remainingKm) {
+      reversed.push(start);
+      remainingKm -= lengthKm;
+    } else {
+      const progress = remainingKm / lengthKm;
+      reversed.push({
+        lng: end.lng + (start.lng - end.lng) * progress,
+        lat: end.lat + (start.lat - end.lat) * progress,
+        recordedAt: end.recordedAt + (start.recordedAt - end.recordedAt) * progress,
+      });
+      remainingKm = 0;
+    }
+  }
+  return reversed.reverse();
+}
+
 function discoveryJourneyMetricsForFootprints(
   points: Coordinate[],
   footprintForPoint: (point: Coordinate) => DiscoveryCell[],
   regionForPoint?: (point: Coordinate) => string | null,
 ) {
   const revealed = new Set<string>();
-  const metrics = new Map<string, DiscoveryJourneyMetric>();
+  const metrics = new Map<string, DiscoveryJourneyRoute>();
 
   for (const [segmentIndex, segment] of splitRoute(points).entries()) {
     const firstPoint = segment[0];
     if (!firstPoint) continue;
     const journeyId = firstPoint.walkId ?? `journey-${segmentIndex}`;
     let newGroundKm = 0;
+    const newGroundSegments: Coordinate[][] = [];
+    const samples: Coordinate[] = [firstPoint];
     const newGroundKmByRegion: Record<string, number> = {};
     let travelledKm = 0;
     footprintForPoint(firstPoint).forEach(cell => revealed.add(discoveryCellKey(cell)));
@@ -90,6 +118,7 @@ function discoveryJourneyMetricsForFootprints(
           lat: previous.lat + (point.lat - previous.lat) * progress,
           recordedAt: previous.recordedAt + (point.recordedAt - previous.recordedAt) * progress,
         };
+        samples.push(sample);
         const footprint = footprintForPoint(sample);
         const unlocksNewGround = footprint.some(cell => !revealed.has(discoveryCellKey(cell)));
         distanceSinceLastUnlockKm += stepDistance;
@@ -99,6 +128,7 @@ function discoveryJourneyMetricsForFootprints(
           // cannot claim a long, already-known street before its endpoint.
           const creditedKm = Math.min(distanceSinceLastUnlockKm, DISCOVERY_RADIUS_M / 1_000);
           newGroundKm += creditedKm;
+          newGroundSegments.push(creditedRouteEnd(samples, creditedKm));
           const regionId = regionForPoint?.(sample);
           if (regionId) {
             newGroundKmByRegion[regionId] = (newGroundKmByRegion[regionId] ?? 0) + creditedKm;
@@ -117,6 +147,7 @@ function discoveryJourneyMetricsForFootprints(
       finishedAt: Math.max(existing.finishedAt, segment.at(-1)?.recordedAt ?? firstPoint.recordedAt),
       travelledKm: existing.travelledKm + travelledKm,
       newGroundKm: existing.newGroundKm + newGroundKm,
+      newGroundSegments: [...existing.newGroundSegments, ...newGroundSegments],
       newGroundKmByRegion: Object.entries(newGroundKmByRegion).reduce(
         (totals, [regionId, distance]) => ({
           ...totals,
@@ -131,6 +162,7 @@ function discoveryJourneyMetricsForFootprints(
       finishedAt: segment.at(-1)?.recordedAt ?? firstPoint.recordedAt,
       travelledKm,
       newGroundKm,
+      newGroundSegments,
       newGroundKmByRegion,
     });
   }

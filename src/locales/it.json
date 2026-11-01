@@ -1038,5 +1038,12 @@
   "Go to {{city}}": "Vai a {{city}}",
   "Could not load the Hecate logo. Reopen the artwork and try again.": "Impossibile caricare il logo di Hecate. Riapri l’opera d’arte e riprova.",
   "of new ground": "di nuovo territorio",
-  "{{percentage}} explored · {{date}}": "{{percentage}} della città · {{date}}"
+  "{{percentage}} explored · {{date}}": "{{percentage}} della città · {{date}}",
+  "Journey history": "Cronologia dei tragitti",
+  "Journey routes are orange. Newly discovered ground is green.": "I tragitti sono arancioni. Le nuove aree scoperte sono verdi.",
+  "Map legend": "Legenda della mappa",
+  "Journey route": "Tragitto percorso",
+  "Newly discovered streets": "Nuove strade scoperte",
+  "Journey start": "Inizio del tragitto",
+  "Journey finish": "Fine del tragitto"
 }

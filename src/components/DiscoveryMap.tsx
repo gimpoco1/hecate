@@ -13,12 +13,12 @@ import {
 import { favoritePlaceIconVector, type FavoritePlace } from "../favoritePlaces";
 import {
   discoveryCellCenter,
+  distanceKm,
   splitRoute,
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
-import { discoveryHighlightData } from "../discoveryHighlights";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
-import { useAppearance } from "../appearance";
+import { useAppearance, type ColorTheme } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
@@ -29,7 +29,7 @@ type Props = {
   points: Coordinate[];
   cells: DiscoveryCell[];
   highlightedPoints: Coordinate[];
-  highlightedCells: DiscoveryCell[];
+  highlightedNewGroundSegments: Coordinate[][];
   currentPoint?: Coordinate;
   navigationFollowing: boolean;
   onUserMarkerChange?: (marker: maplibregl.Marker | null) => void;
@@ -162,7 +162,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   points,
   cells,
   highlightedPoints,
-  highlightedCells,
+  highlightedNewGroundSegments,
   currentPoint,
   navigationFollowing,
   onUserMarkerChange,
@@ -200,7 +200,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onFavoriteSelectRef = useRef(onFavoriteSelect);
   const favoritePlacementActiveRef = useRef(favoritePlacementActive);
   const highlightedPointsRef = useRef(highlightedPoints);
-  const highlightedCellsRef = useRef(highlightedCells);
+  const highlightedNewGroundSegmentsRef = useRef(highlightedNewGroundSegments);
   const onViewChangeRef = useRef(onViewChange);
   const onUserNavigationRef = useRef(onUserNavigation);
   const onHeadingChangeRef = useRef(onHeadingChange);
@@ -256,12 +256,12 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       syncHighlightedRoute(map, highlightedPoints, fogLayer.id);
   }, [highlightedPoints, mapRef]);
   useEffect(() => {
-    highlightedCellsRef.current = highlightedCells;
+    highlightedNewGroundSegmentsRef.current = highlightedNewGroundSegments;
     const map = mapRef.current;
     const fogLayer = fogLayerRef.current;
     if (map && fogLayer)
-      syncHighlightedDiscoveries(map, highlightedCells, fogLayer.id);
-  }, [highlightedCells, mapRef]);
+      syncHighlightedDiscoveries(map, highlightedNewGroundSegments, fogLayer.id, theme);
+  }, [highlightedNewGroundSegments, highlightedPoints, mapRef, theme]);
   useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
@@ -370,8 +370,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
-      if (highlightedCellsRef.current.length > 0)
-        syncHighlightedDiscoveries(map, highlightedCellsRef.current, fogLayer.id);
+      if (highlightedNewGroundSegmentsRef.current.length > 0)
+        syncHighlightedDiscoveries(map, highlightedNewGroundSegmentsRef.current, fogLayer.id, themeRef.current);
       if (highlightedPointsRef.current.length > 0) {
         syncHighlightedRoute(
           map,
@@ -491,6 +491,28 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    const start = highlightedPoints[0];
+    const finish = highlightedPoints.at(-1);
+    if (!map || !start || !finish) return;
+    const nearStart = distanceKm(start, finish) < 0.02;
+    const endpoints = [
+      { point: start, label: t("Journey start"), className: "journey-endpoint--start", offset: nearStart ? -15 : 0 },
+      { point: finish, label: t("Journey finish"), className: "journey-endpoint--finish", offset: nearStart ? 15 : 0 },
+    ];
+    const markers = endpoints.map(endpoint => {
+      const element = document.createElement("div");
+      element.className = `journey-endpoint ${endpoint.className}`;
+      element.setAttribute("role", "img");
+      element.setAttribute("aria-label", endpoint.label);
+      element.title = endpoint.label;
+      return new maplibregl.Marker({ element, anchor: "center", offset: [endpoint.offset, 0] })
+        .setLngLat([endpoint.point.lng, endpoint.point.lat]).addTo(map);
+    });
+    return () => markers.forEach(marker => marker.remove());
+  }, [highlightedPoints, mapRef, mapStyle]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!currentPoint) {
       onUserCenteredChangeRef.current?.(false);
       markerRef.current?.remove();
@@ -561,35 +583,69 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         className="map"
         aria-label={t("Interactive discovery map")}
       />
+      {(highlightedPoints.length > 0 || highlightedNewGroundSegments.length > 0) && (
+        <aside className="map-highlight-legend" data-testid="map-highlight-legend" aria-label={t("Map legend")}>
+          {highlightedPoints.length > 0 && <span><i className="map-highlight-legend__journey" aria-hidden="true" />{t("Travelled")}</span>}
+          {highlightedNewGroundSegments.length > 0 && <span><i className="map-highlight-legend__new" aria-hidden="true" />{t("New ground")}</span>}
+        </aside>
+      )}
     </div>
   );
 });
 
+/** Keep discoveries above the journey trace regardless of overlay creation order. */
+function orderJourneyHighlights(map: MapLibreMap, beforeLayerId: string): void {
+  const layerIds = ["hecate-highlighted-route-halo", "hecate-highlighted-route-line", "hecate-highlighted-discoveries-shadow", "hecate-highlighted-discoveries-streets"];
+  const layers = map.getStyle().layers.map(layer => layer.id);
+  const expected = layerIds.filter(id => layers.includes(id));
+  const anchorIndex = layers.indexOf(beforeLayerId);
+  if (expected.every((id, index) => layers[anchorIndex - expected.length + index] === id)) return;
+  for (const id of expected) map.moveLayer(id, beforeLayerId);
+}
+
 function syncHighlightedDiscoveries(
   map: MapLibreMap,
-  cells: DiscoveryCell[],
+  segments: Coordinate[][],
   beforeLayerId: string,
+  theme: ColorTheme,
 ): void {
   const sourceId = "hecate-highlighted-discoveries";
-  const layerId = "hecate-highlighted-discoveries-fill";
+  const layerId = "hecate-highlighted-discoveries-streets";
+  const shadowLayerId = "hecate-highlighted-discoveries-shadow";
   const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
-  if (cells.length === 0) {
+  if (segments.length === 0) {
     if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getLayer(shadowLayerId)) map.removeLayer(shadowLayerId);
     if (source) map.removeSource(sourceId);
     return;
   }
-  const data = discoveryHighlightData(cells);
+  const data: GeoJSON.Feature<GeoJSON.MultiLineString> = {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "MultiLineString", coordinates: segments.map(segment => segment.map(point => [point.lng, point.lat])) },
+  };
   if (source) {
-    source.setData(data);
+    if (JSON.stringify(source.serialize().data) !== JSON.stringify(data)) source.setData(data);
+    map.setPaintProperty(shadowLayerId, "line-opacity", theme === "light" ? 0.35 : 0);
+    orderJourneyHighlights(map, beforeLayerId);
     return;
   }
   map.addSource(sourceId, { type: "geojson", data });
   map.addLayer({
-    id: layerId,
-    type: "fill",
+    id: shadowLayerId,
+    type: "line",
     source: sourceId,
-    paint: { "fill-color": "#91b23c", "fill-opacity": 0.5 },
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#34402a", "line-width": 6, "line-blur": 3, "line-opacity": theme === "light" ? 0.35 : 0 },
   }, beforeLayerId);
+  map.addLayer({
+    id: layerId,
+    type: "line",
+    source: sourceId,
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#d9f26a", "line-width": 3, "line-opacity": 1 },
+  }, beforeLayerId);
+  orderJourneyHighlights(map, beforeLayerId);
 }
 
 function highlightedRouteData(points: Coordinate[]) {
@@ -600,16 +656,7 @@ function highlightedRouteData(points: Coordinate[]) {
       type: "MultiLineString" as const,
       coordinates: splitRoute(points)
         .filter((segment) => segment.length >= 2)
-        .map((segment) => {
-          const interval = Math.max(1, Math.ceil(segment.length / 2_000));
-          const sampled = segment.filter(
-            (_point, index) =>
-              index === 0 ||
-              index === segment.length - 1 ||
-              index % interval === 0,
-          );
-          return sampled.map((point) => [point.lng, point.lat]);
-        }),
+        .map(segment => segment.map(point => [point.lng, point.lat])),
     },
   };
 }
@@ -634,6 +681,7 @@ function syncHighlightedRoute(
   }
   if (source) {
     source.setData(highlightedRouteData(points));
+    orderJourneyHighlights(map, beforeLayerId);
     return;
   }
   if (!map.getLayer(beforeLayerId)) return;
@@ -649,9 +697,8 @@ function syncHighlightedRoute(
       source: sourceId,
       paint: {
         "line-color": "rgba(255, 255, 255, 0.94)",
-        "line-width": 9,
+        "line-width": 6.5,
         "line-opacity": 0.9,
-        "line-blur": 1.5,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     },
@@ -663,12 +710,13 @@ function syncHighlightedRoute(
       type: "line",
       source: sourceId,
       paint: {
-        "line-color": "#91b23c",
-        "line-width": 5,
-        "line-opacity": 1,
+        "line-color": "#88939e",
+        "line-width": 3,
+        "line-opacity": 0.85,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     },
     beforeLayerId,
   );
+  orderJourneyHighlights(map, beforeLayerId);
 }

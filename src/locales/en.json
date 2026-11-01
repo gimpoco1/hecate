@@ -1038,5 +1038,12 @@
   "Go to {{city}}": "Go to {{city}}",
   "Could not load the Hecate logo. Reopen the artwork and try again.": "Could not load the Hecate logo. Reopen the artwork and try again.",
   "of new ground": "of new ground",
-  "{{percentage}} explored · {{date}}": "{{percentage}} explored · {{date}}"
+  "{{percentage}} explored · {{date}}": "{{percentage}} explored · {{date}}",
+  "Journey history": "Journey history",
+  "Journey routes are orange. Newly discovered ground is green.": "Journey routes are orange. Newly discovered ground is green.",
+  "Map legend": "Map legend",
+  "Journey route": "Journey route",
+  "Newly discovered streets": "Newly discovered streets",
+  "Journey start": "Journey start",
+  "Journey finish": "Journey finish"
 }

@@ -1051,5 +1051,12 @@
   "Go to {{city}}": "Idi u {{city}}",
   "Could not load the Hecate logo. Reopen the artwork and try again.": "Nije moguće učitati logotip Hecate. Ponovno otvori umjetničko djelo i pokušaj opet.",
   "of new ground": "novog područja",
-  "{{percentage}} explored · {{date}}": "{{percentage}} grada istraženo · {{date}}"
+  "{{percentage}} explored · {{date}}": "{{percentage}} grada istraženo · {{date}}",
+  "Journey history": "Povijest putovanja",
+  "Journey routes are orange. Newly discovered ground is green.": "Rute putovanja su narančaste. Novootkrivena područja su zelena.",
+  "Map legend": "Legenda karte",
+  "Journey route": "Ruta putovanja",
+  "Newly discovered streets": "Novootkrivene ulice",
+  "Journey start": "Početak putovanja",
+  "Journey finish": "Kraj putovanja"
 }
