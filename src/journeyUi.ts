@@ -8,11 +8,6 @@ export function journeySheetOffsetPx(
   return expandedHeight - visibleHeight;
 }
 
-/** Keep the recap consistent with its whole-metre distance display. */
-export function shouldShowExplorationRecap(newGroundKm: number) {
-  return Math.round(Math.max(0, newGroundKm) * 1_000) > 0;
-}
-
 /**
  * A collapsed sheet opens only after a deliberate upward drag. An expanded
  * sheet stays open until it is deliberately dragged down.

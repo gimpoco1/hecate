@@ -1,5 +1,8 @@
+import type { DiscoveryJourneyRoute } from "./geo";
 import { cityPointPredicate, type CityBoundary } from "./city";
 import type { Coordinate } from "./types";
+
+export type JourneyHistoryEntry = DiscoveryJourneyRoute & { cityNames: string[] };
 
 export type JourneyHistoryFilters = { weekStart: number; selectedDay: number | null };
 
@@ -19,13 +22,23 @@ export function shiftJourneyDay(timestamp: number, days: number): number {
 }
 
 /** Match recorded locations against saved boundaries, preferring canonical regions. */
-export function journeyCityNames(points: Coordinate[], cities: CityBoundary[]): string[] {
+function journeyCityMatcher(cities: CityBoundary[]): (points: Coordinate[]) => string[] {
   const boundaries = [...cities].sort((first, second) => Number(second.id.startsWith("region:")) - Number(first.id.startsWith("region:")))
     .map(city => ({ name: city.name, contains: cityPointPredicate(city) }));
-  return [...new Set(points.flatMap(point => {
+  return points => [...new Set(points.flatMap(point => {
     const city = boundaries.find(boundary => boundary.contains(point));
     return city ? [city.name] : [];
   }))];
+}
+
+export function journeyCityNames(points: Coordinate[], cities: CityBoundary[]): string[] {
+  return journeyCityMatcher(cities)(points);
+}
+
+/** Prepare history in the metrics worker, compiling city boundaries once per update. */
+export function journeyHistoryEntries(journeys: DiscoveryJourneyRoute[], cities: CityBoundary[]): JourneyHistoryEntry[] {
+  const cityNames = journeyCityMatcher(cities);
+  return journeys.map(journey => ({ ...journey, cityNames: cityNames(journey.points) }));
 }
 
 /** Serialize a calendar date without converting local midnight to UTC. */

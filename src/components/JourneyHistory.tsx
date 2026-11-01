@@ -1,15 +1,13 @@
 import { mdiCalendarOutline } from "@mdi/js";
-import type { CityBoundary } from "../city";
 import { formatElapsedDuration } from "../durationFormat";
-import { useMemo } from "react";
-import { journeyCityNames, journeyDateValue, parseJourneyDate, journeyWeekStart, shiftJourneyDay, type JourneyHistoryFilters } from "../journeyHistory";
+import { journeyDateValue, parseJourneyDate, journeyWeekStart, shiftJourneyDay, type JourneyHistoryFilters, type JourneyHistoryEntry } from "../journeyHistory";
 import { currentLanguage, formatNumber, t, useAppTranslation } from "../i18n";
 import type { DiscoveryJourneyRoute } from "../geo";
 import { ArrowLeftIcon, ChevronIcon, RouteIcon, XIcon } from "./Icons";
 
 type Props = {
-  journeys: DiscoveryJourneyRoute[];
-  cities: CityBoundary[];
+  journeys: JourneyHistoryEntry[];
+  loading: boolean;
   filters: JourneyHistoryFilters;
   onFiltersChange: (filters: JourneyHistoryFilters) => void;
   onShowMap: (journey: DiscoveryJourneyRoute) => void;
@@ -21,11 +19,10 @@ function formatDistance(distanceKm: number): string {
   return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m` : `${formatNumber(distanceKm, 2)} km`;
 }
 
-export function JourneyHistory({ journeys, cities, filters, onFiltersChange, onShowMap, onBack, onClose }: Props) {
+export function JourneyHistory({ journeys, loading, filters, onFiltersChange, onShowMap, onBack, onClose }: Props) {
   useAppTranslation();
   const currentWeek = journeyWeekStart(Date.now());
   const { weekStart, selectedDay } = filters;
-  const cityNamesByJourney = useMemo(() => new Map(journeys.map(journey => [journey.journeyId, journeyCityNames(journey.points, cities)])), [journeys, cities]);
   const earliestJourney = journeys.reduce((earliest, journey) => Math.min(earliest, journey.startedAt), Date.now());
   const weekEnd = shiftJourneyDay(weekStart, 7);
   const weekJourneys = journeys.filter(journey => journey.startedAt >= weekStart && journey.startedAt < weekEnd);
@@ -93,8 +90,9 @@ export function JourneyHistory({ journeys, cities, filters, onFiltersChange, onS
         <span role="status">{new Date(selectedDay).toLocaleDateString(currentLanguage(), { weekday: "long", month: "short", day: "numeric" })} · {t("journeyCount", { count: visibleJourneys.length })}</span>
         <button type="button" className="journey-history-tools__clear" data-testid="journey-clear-filter" onClick={() => onFiltersChange({ weekStart, selectedDay: null })}><XIcon size={13} />{t("Clear filter")}</button>
       </div>}
-      {visibleJourneys.length === 0 && <p className="journey-history-empty" role="status">{t(selectedDay === null ? "No journeys this week." : "No journeys on this day.")}</p>}
-      <div className="journey-history-list">
+      {!loading && visibleJourneys.length === 0 && <p className="journey-history-empty" role="status">{t(selectedDay === null ? "No journeys this week." : "No journeys on this day.")}</p>}
+      {loading && journeys.length === 0 && <p className="journey-history-empty" role="status">{t("Loading journeys…")}</p>}
+      <div className="journey-history-list" aria-busy={loading}>
         {visibleJourneys.map(journey => <article className="journey-history-entry" key={journey.journeyId} data-testid="journey-history-entry">
           <header className="journey-history-entry__header">
             <time dateTime={new Date(journey.startedAt).toISOString()}>
@@ -103,7 +101,7 @@ export function JourneyHistory({ journeys, cities, filters, onFiltersChange, onS
             </time>
             <span className="journey-history-entry__duration">{formatElapsedDuration(journey.finishedAt - journey.startedAt)}</span>
           </header>
-          <div className="journey-history-entry__cities">{cityNamesByJourney.get(journey.journeyId)?.map(name => <span className="journey-history-entry__city" data-testid="journey-history-city" key={name}>{name}</span>)}</div>
+          <div className="journey-history-entry__cities">{journey.cityNames.map(name => <span className="journey-history-entry__city" data-testid="journey-history-city" key={name}>{name}</span>)}</div>
           <div className="journey-history-entry__bottom">
             <dl className="journey-history-entry__metrics">
               <div><dt>{t("Travelled")}</dt><dd>{formatDistance(journey.travelledKm)}</dd></div>

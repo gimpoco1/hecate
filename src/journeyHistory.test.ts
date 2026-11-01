@@ -1,6 +1,7 @@
+import { discoveryJourneyMetrics } from "./geo";
 import type { CityBoundary } from "./city";
 import { describe, expect, it } from "vitest";
-import { journeyCityNames, journeyDateValue, parseJourneyDate, journeyWeekStart, shiftJourneyDay } from "./journeyHistory";
+import { journeyCityNames, journeyHistoryEntries, journeyDateValue, parseJourneyDate, journeyWeekStart, shiftJourneyDay } from "./journeyHistory";
 
 describe("journey calendar", () => {
   it("assigns Sunday to its preceding Monday across a year boundary", () => {
@@ -29,6 +30,24 @@ describe("journey cities", () => {
     const points = [.5, .6, 1.5, 3].map((lng, recordedAt) => ({ lng, lat: 1, recordedAt }));
     expect(journeyCityNames(points, boundaries)).toEqual(["First city", "Second city"]);
     expect(journeyCityNames(points, [])).toEqual([]);
+  });
+
+  it("prepares city chips without changing route metrics or discovery geometry", () => {
+    const points = [
+      { lng: .5, lat: 1, recordedAt: 1000, walkId: "first" },
+      { lng: .501, lat: 1, recordedAt: 61000, walkId: "first" },
+      { lng: 1.5, lat: 1, recordedAt: 121000, walkId: "second" },
+      { lng: 1.501, lat: 1, recordedAt: 181000, walkId: "second" },
+    ];
+    const journeys = discoveryJourneyMetrics(points);
+    const entries = journeyHistoryEntries(journeys, [city("region:one", "First city", 0, 1), city("region:two", "Second city", 1, 2)]);
+    expect(entries.map(entry => entry.cityNames)).toEqual([["First city"], ["Second city"]]);
+    entries.forEach((entry, index) => {
+      expect(entry.newGroundKm).toBe(journeys[index].newGroundKm);
+      expect(entry.points).toBe(journeys[index].points);
+      expect(entry.newGroundSegments).toBe(journeys[index].newGroundSegments);
+      expect(journeys[index]).not.toHaveProperty("cityNames");
+    });
   });
 });
 

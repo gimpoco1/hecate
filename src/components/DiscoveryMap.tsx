@@ -52,6 +52,7 @@ type Props = {
   onUserCenteredChange?: (centered: boolean) => void;
   mapRef: React.MutableRefObject<MapLibreMap | null>;
   fogLayerRef?: React.MutableRefObject<DiscoveryFogLayer | null>;
+  initialBounds?: maplibregl.LngLatBoundsLike;
   initialCenter?: [number, number];
   initialZoom?: number;
 };
@@ -181,6 +182,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   onUserCenteredChange,
   mapRef,
   fogLayerRef: externalFogLayerRef,
+  initialBounds,
   initialCenter = [7, 24],
   initialZoom = 1.35,
 }: Props) {
@@ -337,6 +339,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const map = new maplibregl.Map({
       container,
       style: mapStyle,
+      bounds: initialBounds,
+      fitBoundsOptions: { padding: 28, maxZoom: 16 },
       center: initialCenter,
       zoom: initialZoom,
       pitch: 0,

@@ -4,20 +4,8 @@ import {
   isInSystemGestureZone,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
-  shouldShowExplorationRecap,
   shouldStartJourneyDrag,
 } from "./journeyUi";
-
-describe("exploration recap visibility", () => {
-  it("hides journeys whose displayed new-ground distance is zero", () => {
-    expect(shouldShowExplorationRecap(0)).toBe(false);
-    expect(shouldShowExplorationRecap(0.00049)).toBe(false);
-  });
-
-  it("shows journeys with at least one displayed metre of new ground", () => {
-    expect(shouldShowExplorationRecap(0.0005)).toBe(true);
-  });
-});
 
 describe("journey drawer gesture", () => {
   it("slides a full-height sheet without resizing its layout", () => {

@@ -1060,5 +1060,7 @@
   "Weekly totals": "Totais semanais",
   "Active time": "Tempo ativo",
   "Jump to date": "Ir para data",
-  "Clear filter": "Limpar filtro"
+  "Clear filter": "Limpar filtro",
+  "No new ground on this journey.": "Nenhum novo trecho neste trajeto.",
+  "Loading journeys…": "A carregar trajetos…"
 }
