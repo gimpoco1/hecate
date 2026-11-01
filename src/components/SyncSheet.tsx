@@ -589,7 +589,7 @@ export function SyncSheet({
 
   return (
     <div
-      className={`sheet-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
+      className={`sheet-backdrop profile-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
       style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
       onClick={onClose}
     >

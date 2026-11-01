@@ -1071,5 +1071,9 @@
   "journeysOnDay_other": "{{count}} putovanja na datum {{date}}",
   "journeyCount_few": "{{count}} putovanja",
   "journeysOnDay_few": "{{count}} putovanja na datum {{date}}",
-  "Last week": "Prošli tjedan"
+  "Last week": "Prošli tjedan",
+  "Weekly totals": "Tjedni zbrojevi",
+  "Active time": "Aktivno vrijeme",
+  "Jump to date": "Idi na datum",
+  "Clear filter": "Ukloni filtar"
 }

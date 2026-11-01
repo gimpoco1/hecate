@@ -1,3 +1,4 @@
+import { journeyWeekStart } from "../journeyHistory";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { discoveryJourneyMetrics } from "../geo";
@@ -14,7 +15,7 @@ describe("JourneyHistory", () => {
     expect(journeys).toHaveLength(2);
     expect(journeys[1].newGroundKm).toBe(0);
     expect(journeys[1].travelledKm).toBeGreaterThan(0);
-    const markup = renderToStaticMarkup(<JourneyHistory journeys={journeys} onShowMap={() => undefined} onBack={() => undefined} onClose={() => undefined} />);
+    const markup = renderToStaticMarkup(<JourneyHistory journeys={journeys} cities={[]} filters={{ weekStart: journeyWeekStart(Date.now()), selectedDay: null }} onFiltersChange={() => undefined} onShowMap={() => undefined} onBack={() => undefined} onClose={() => undefined} />);
     expect(markup.match(/data-testid="journey-history-entry"/g)).toHaveLength(2);
     expect(markup.match(/data-testid="journey-history-show-map"/g)).toHaveLength(2);
 

@@ -1,3 +1,5 @@
+import { journeyWeekStart, type JourneyHistoryFilters } from "./journeyHistory";
+import { formatElapsedDuration } from "./durationFormat";
 import { JourneyHistory } from "./components/JourneyHistory";
 import { Trans } from "react-i18next";
 import { formatNumber, t, useAppTranslation, currentLanguage, languagePreference, setLanguagePreference } from "./i18n";
@@ -617,12 +619,6 @@ function formatDuration(startedAt: number, finishedAt: number) {
   return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
 }
 
-function formatElapsedDuration(durationMs: number) {
-  const minutes = Math.max(0, Math.round(durationMs / 60_000));
-  if (minutes < 60) return t("{{value0}} min", { value0: minutes });
-  const hours = Math.floor(minutes / 60);
-  return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
-}
 
 function formatStreakDays(days: number) {
   return t("day", { count: days });
@@ -1087,6 +1083,7 @@ export default function App() {
   >([]);
   const discoveryMetricsGenerationRef = useRef(0);
   const [journeyHistoryOpen, setJourneyHistoryOpen] = useState(false);
+  const [journeyHistoryFilters, setJourneyHistoryFilters] = useState<JourneyHistoryFilters>(() => ({ weekStart: journeyWeekStart(Date.now()), selectedDay: null }));
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
   const [achievementCelebrations, setAchievementCelebrations] = useState<
@@ -2548,6 +2545,7 @@ export default function App() {
     setCoverageInfoOpen(false);
     setExplorationSummary(null);
     setJourneyHistoryOpen(false);
+    setJourneyHistoryFilters({ weekStart: journeyWeekStart(Date.now()), selectedDay: null });
     initialMapFocusUserRef.current = null;
     setDiscoveryLoading(Boolean(accountUserId));
     if (discoveryUiRefreshTimerRef.current !== null)
@@ -6331,7 +6329,7 @@ export default function App() {
         onBack={() => setAchievementsOpen(false)}
         onClose={closeProfileDialog}
       />
-      {journeyHistoryOpen && <JourneyHistory journeys={journeyHistory} onBack={() => setJourneyHistoryOpen(false)} onClose={closeProfileDialog} onShowMap={journey => {
+      {journeyHistoryOpen && <JourneyHistory journeys={journeyHistory} cities={discoveredCities} filters={journeyHistoryFilters} onFiltersChange={setJourneyHistoryFilters} onBack={() => setJourneyHistoryOpen(false)} onClose={closeProfileDialog} onShowMap={journey => {
         showRouteOnMap(journey.points);
         setHighlightedNewGroundSegments(journey.newGroundSegments);
         setJourneyHistoryOpen(false);

@@ -1056,5 +1056,9 @@
   "journeyCount_other": "{{count}} trayectos",
   "journeysOnDay_one": "{{count}} trayecto el {{date}}",
   "journeysOnDay_other": "{{count}} trayectos el {{date}}",
-  "Last week": "La semana pasada"
+  "Last week": "La semana pasada",
+  "Weekly totals": "Totales semanales",
+  "Active time": "Tiempo activo",
+  "Jump to date": "Ir a una fecha",
+  "Clear filter": "Quitar filtro"
 }

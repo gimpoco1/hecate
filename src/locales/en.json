@@ -1056,5 +1056,9 @@
   "journeyCount_other": "{{count}} journeys",
   "journeysOnDay_one": "{{count}} journey on {{date}}",
   "journeysOnDay_other": "{{count}} journeys on {{date}}",
-  "Last week": "Last week"
+  "Last week": "Last week",
+  "Weekly totals": "Weekly totals",
+  "Active time": "Active time",
+  "Jump to date": "Jump to date",
+  "Clear filter": "Clear filter"
 }
