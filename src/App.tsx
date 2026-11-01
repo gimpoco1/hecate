@@ -1,3 +1,4 @@
+import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
 import { formatElapsedDuration } from "./durationFormat";
 import { JourneyHistory } from "./components/JourneyHistory";
@@ -254,7 +255,7 @@ import { observeAuthSession } from "./authSession";
 type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
   walkId: string;
-  points: Coordinate[];
+  route: JourneyRecapRoute;
   cells: DiscoveryCell[];
   startedAt: number;
   finishedAt: number;
@@ -1086,20 +1087,6 @@ export default function App() {
   const [journeyHistoryFilters, setJourneyHistoryFilters] = useState<JourneyHistoryFilters>(() => ({ weekStart: journeyWeekStart(Date.now()), selectedDay: null }));
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
-  const recapPoints = explorationSummary?.points;
-  const recapWalkId = explorationSummary?.walkId;
-  const recapJourney = useMemo(() => {
-    if (!recapPoints || !recapWalkId) return null;
-    const journey = discoveryJourneyMetrics(mergeRoutePoints(points, recapPoints))
-      .find(journey => journey.journeyId === recapWalkId);
-    if (!journey) throw new Error("Could not find the completed journey for its recap map.");
-    const firstPoint = journey.points[0];
-    const bounds = journey.points.reduce((current, point) => ({
-      west: Math.min(current.west, point.lng), east: Math.max(current.east, point.lng),
-      south: Math.min(current.south, point.lat), north: Math.max(current.north, point.lat),
-    }), { west: firstPoint.lng, east: firstPoint.lng, south: firstPoint.lat, north: firstPoint.lat });
-    return { journey, bounds, cells: discoveryCellsFromPoints(journey.points) };
-  }, [recapPoints, recapWalkId, points]);
   const [achievementCelebrations, setAchievementCelebrations] = useState<
     PersonalAchievementId[]
   >([]);
@@ -3710,7 +3697,7 @@ export default function App() {
         );
         const summary: ExplorationSummary = {
           walkId: active.id,
-          points: active.points,
+          route: createJourneyRecapRoute(pointsRef.current, completed),
           cells: newCells,
           startedAt: active.startedAt,
           finishedAt: completed.finishedAt,
@@ -4299,7 +4286,7 @@ export default function App() {
     );
     setExplorationSummary({
       walkId,
-      points,
+      route: createJourneyRecapRoute(previousPoints.map(point => ({ ...point, walkId: "dev-previous-journey", recordedAt: point.recordedAt - 3_600_000 })), { id: walkId, startedAt, finishedAt, points }),
       cells: discoveryCellsFromPoints(points).filter(
         (cell) => !previousCells.has(discoveryCellKey(cell)),
       ),
@@ -6347,7 +6334,7 @@ export default function App() {
         showCompletedJourneyOnMap(journey.points, journey.newGroundSegments);
         setJourneyHistoryOpen(false);
       }} />}
-      {explorationSummary && recapJourney && (
+      {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">
           <section
             className="exploration-recap"
@@ -6361,15 +6348,15 @@ export default function App() {
               <DiscoveryMap
                 navigationFollowing={false}
                 mode="discover"
-                points={explorationSummary.points}
-                cells={recapJourney.cells}
-                highlightedPoints={recapJourney.journey.points}
-                highlightedNewGroundSegments={recapJourney.journey.newGroundSegments}
+                points={explorationSummary.route.points}
+                cells={explorationSummary.route.cells}
+                highlightedPoints={explorationSummary.route.points}
+                highlightedNewGroundSegments={explorationSummary.route.newGroundSegments}
                 onZoomChange={onPreviewZoomChange}
                 mapRef={previewMapRef}
                 initialBounds={[
-                  [recapJourney.bounds.west, recapJourney.bounds.south],
-                  [recapJourney.bounds.east, recapJourney.bounds.north],
+                  [explorationSummary.route.bounds.west, explorationSummary.route.bounds.south],
+                  [explorationSummary.route.bounds.east, explorationSummary.route.bounds.north],
                 ]}
               />
             </div>
@@ -6406,7 +6393,7 @@ export default function App() {
                 type="button"
                 data-testid="recap-view-on-map"
                 onClick={() => {
-                  showCompletedJourneyOnMap(recapJourney.journey.points, recapJourney.journey.newGroundSegments);
+                  showCompletedJourneyOnMap(explorationSummary.route.points, explorationSummary.route.newGroundSegments);
                   setExplorationSummary(null);
                 }}
               >{t("View on map")}</button>
