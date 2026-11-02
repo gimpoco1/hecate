@@ -1,5 +1,6 @@
+import { ImportedRouteCard } from "./ImportedRouteCard";
 import { Trans } from "react-i18next";
-import { formatNumber, t, useAppTranslation, currentLanguage } from "../i18n";
+import { t, useAppTranslation } from "../i18n";
 import { LanguageButton, LanguageSettings } from "./LanguageSettings";
 import { AuthEntry } from "./AuthEntry";
 import { errorDiagnostic } from "../diagnostics";
@@ -546,14 +547,6 @@ export function SyncSheet({
     }, 80);
   };
 
-  const formatGpxImportDate = (addedAt: number) =>
-    new Intl.DateTimeFormat(currentLanguage(), {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(addedAt);
-  const formatGpxImportDistance = (distanceKm: number) =>
-    `${distanceKm < 10 ? formatNumber(distanceKm, 2) : formatNumber(distanceKm, 1)} km`;
-
   const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
@@ -867,7 +860,7 @@ export function SyncSheet({
                   </span>
                   <span>
                     <strong>{t("Import GPX")}</strong>
-                    <small>{t("Add past routes from Strava or other services")}</small>
+                    <small>{t("Add routes from GPX files")}</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
@@ -988,7 +981,7 @@ export function SyncSheet({
                   <div className="eyebrow">{t("Your data")}</div>
                   <h2 id="gpx-import-sheet-title">{t("Import GPX")}</h2>
                   <div className="gpx-import-sheet__content">
-                    <p className="gpx-import-sheet__file-description">{t("Export a GPX file from Strava or most activity apps, then add it to your map here.")}</p>
+                    <p className="gpx-import-sheet__file-description">{t("Import a GPX file exported from Hecate, Strava, or another activity app to add the route to your map.")}</p>
                     <section className="gpx-import-sheet__privacy">
                       <strong>{t("Your import stays private")}</strong>
                       <p>{t("Imported routes add new ground to your map but don’t unlock achievements. Cities from an import are only added to the leaderboard when you add them to your public snapshot.")}</p>
@@ -1044,37 +1037,7 @@ export function SyncSheet({
                       ) : (
                         <ul>
                           {gpxImportedRoutes.map((route) => (
-                            <li key={route.id}>
-                              <button
-                                type="button"
-                                className="gpx-import-sheet__history-route"
-                                onClick={() => onShowGpxImportRoute(route.id)}
-                                aria-label={t("Show imported route {{value0}} on the map", { value0: route.title })}
-                              >
-                                <strong>{route.title}</strong>
-                                <span className="gpx-import-sheet__history-meta">
-                                  <time
-                                    dateTime={new Date(
-                                      route.addedAt,
-                                    ).toISOString()}
-                                  >{t("Added {{value0}}", { value0: formatGpxImportDate(route.addedAt) })}</time>
-                                </span>
-                                <span className="gpx-import-sheet__history-stats">
-                                  {route.addedKm > 0 && (
-                                    <span className="gpx-import-sheet__history-stat">
-                                      <span>{t("Route distance")}</span>
-                                      <strong>{formatGpxImportDistance(route.addedKm)}</strong>
-                                    </span>
-                                  )}
-                                  {route.newGroundKm !== undefined && (
-                                    <span className="gpx-import-sheet__history-stat">
-                                      <span>{t("New ground")}</span>
-                                      <strong>+{formatGpxImportDistance(route.newGroundKm)}</strong>
-                                    </span>
-                                  )}
-                                </span>
-                              </button>
-                            </li>
+                            <ImportedRouteCard key={route.id} route={route} onShowMap={onShowGpxImportRoute} />
                           ))}
                         </ul>
                       )}

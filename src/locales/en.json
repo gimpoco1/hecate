@@ -623,7 +623,7 @@
   "Choose the discovery nudges you want to receive": "Choose the discovery nudges you want to receive",
   "Open GPX import": "Open GPX import",
   "Import GPX": "Import GPX",
-  "Add past routes from Strava or other services": "Add past routes from Strava or other services",
+  "Add routes from GPX files": "Add routes from GPX files",
   "Sign out": "Sign out",
   "Delete account": "Delete account",
   "Delete your account?": "Delete your account?",
@@ -635,7 +635,7 @@
   "Preferences": "Preferences",
   "Close GPX import": "Close GPX import",
   "Your data": "Your data",
-  "Export a GPX file from Strava or most activity apps, then add it to your map here.": "Export a GPX file from Strava or most activity apps, then add it to your map here.",
+  "Import a GPX file exported from Hecate, Strava, or another activity app to add the route to your map.": "Import a GPX file exported from Hecate, Strava, or another activity app to add the route to your map.",
   "Your import stays private": "Your import stays private",
   "Imported routes add new ground to your map but don’t unlock achievements. Cities from an import are only added to the leaderboard when you add them to your public snapshot.": "Imported routes add new ground to your map but don’t unlock achievements. Cities from an import are only added to the leaderboard when you add them to your public snapshot.",
   "Exporting from Strava": "Exporting from Strava",
@@ -1066,5 +1066,7 @@
   "Export GPX": "Export GPX",
   "A journey needs at least two points to export GPX.": "A journey needs at least two points to export GPX.",
   "The journey contains an invalid coordinate or timestamp.": "The journey contains an invalid coordinate or timestamp.",
-  "Could not export this journey. Check available storage and try again.": "Could not export this journey. Check available storage and try again."
+  "Could not export this journey. Check available storage and try again.": "Could not export this journey. Check available storage and try again.",
+  "City explored": "City explored",
+  "Next milestone": "Next milestone"
 }

@@ -110,7 +110,7 @@ export function JourneyHistory({ journeys, loading, filters, onFiltersChange, on
       {!loading && visibleJourneys.length === 0 && <p className="journey-history-empty" role="status">{t(selectedDay === null ? "No journeys this week." : "No journeys on this day.")}</p>}
       {loading && journeys.length === 0 && <p className="journey-history-empty" role="status">{t("Loading journeys…")}</p>}
       <div className="journey-history-list" aria-busy={loading}>
-        {visibleJourneys.map(journey => <article className="journey-history-entry" key={journey.journeyId} data-testid="journey-history-entry">
+        {visibleJourneys.map(journey => <article className="collection-card journey-history-entry" key={journey.journeyId} data-testid="journey-history-entry">
           <header className="journey-history-entry__header">
             <time dateTime={new Date(journey.startedAt).toISOString()}>
               <strong>{new Date(journey.startedAt).toLocaleDateString(currentLanguage(), { dateStyle: "medium" })}</strong>
@@ -122,13 +122,13 @@ export function JourneyHistory({ journeys, loading, filters, onFiltersChange, on
             <span className="journey-history-entry__duration">{formatElapsedDuration(journey.finishedAt - journey.startedAt)}</span>
           </div>
           {exportError?.journeyId === journey.journeyId && <p className="journey-history-entry__export-error" role="alert">{exportError.message}</p>}
-          <dl className="journey-history-entry__metrics">
+          <dl className="collection-card__metrics">
             <div><dt>{t("Travelled")}</dt><dd>{formatDistance(journey.travelledKm)}</dd></div>
             <div><dt>{t("New ground")}</dt><dd>{formatDistance(journey.newGroundKm)}</dd></div>
           </dl>
-          <div className="journey-history-entry__actions">
-            <button className="journey-history-entry__map" type="button" data-testid="journey-history-show-map" onClick={() => onShowMap(journey)}><RouteIcon size={16} strokeWidth={1.8} />{t("View on map")}</button>
-            <button className="journey-history-entry__export" type="button" data-testid="journey-export-gpx" disabled={exportingJourney !== null} aria-busy={exportingJourney === journey.journeyId} onClick={() => void exportGpx(journey)}>
+          <div className="collection-card__actions">
+            <button className="collection-card__primary" type="button" data-testid="journey-history-show-map" onClick={() => onShowMap(journey)}><RouteIcon size={16} strokeWidth={1.8} />{t("View on map")}</button>
+            <button className="collection-card__secondary journey-history-entry__export" type="button" data-testid="journey-export-gpx" disabled={exportingJourney !== null} aria-busy={exportingJourney === journey.journeyId} onClick={() => void exportGpx(journey)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiDownload} /></svg>{t("Export GPX")}
             </button>
           </div>
