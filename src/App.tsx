@@ -1,3 +1,4 @@
+import { WeeklyJourneyActivity } from "./components/WeeklyJourneyActivity";
 import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
 import { formatElapsedDuration } from "./durationFormat";
@@ -501,6 +502,8 @@ export function saveCachedDiscoveryProgress(
 }
 
 type JourneyDetailsProps = {
+  journeys: JourneyHistoryEntry[];
+  onJourneyDayOpen: (day: number) => void;
   accountUserId: string | null;
   expanded: boolean;
   todayDiscoveryDistance: number;
@@ -516,6 +519,8 @@ type JourneyDetailsProps = {
 };
 
 const JourneyDetails = memo(function JourneyDetails({
+  journeys,
+  onJourneyDayOpen,
   accountUserId,
   expanded,
   todayDiscoveryDistance,
@@ -595,6 +600,7 @@ const JourneyDetails = memo(function JourneyDetails({
                 </dd>
               </div>
             </dl>
+            <WeeklyJourneyActivity key={accountUserId} journeys={journeys} onDaySelect={onJourneyDayOpen} />
           </section>
           {cityProgress && <CityMilestones progress={cityProgress} />}
         </>
@@ -886,6 +892,8 @@ export default function App() {
     if (feedbackOpen && authReady && !accountUserId) setSyncOpen(true);
   }, [feedbackOpen, authReady, accountUserId]);
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
+  const [journeyPanelOrigin, setJourneyPanelOrigin] = useState<"drawer" | "profile">("profile");
+  const [profileReturnHighlight, setProfileReturnHighlight] = useState<"history" | "stats" | null>(null);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
   const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
@@ -5305,6 +5313,7 @@ export default function App() {
   };
 
   const closeProfileDialog = () => {
+    setProfileReturnHighlight(null);
     setJourneyHistoryOpen(false);
     if (!accountUserId) setFeedbackOpen(false);
     setGlobalMilestonesOpen(false);
@@ -6178,6 +6187,12 @@ export default function App() {
             </div>
           )}
           <JourneyDetails
+            journeys={journeyHistory}
+            onJourneyDayOpen={day => {
+              setJourneyPanelOrigin("drawer");
+              setJourneyHistoryFilters({ weekStart: journeyWeekStart(day), selectedDay: day });
+              setJourneyHistoryOpen(true);
+            }}
             accountUserId={accountUserId}
             expanded={citiesExpanded}
             todayDiscoveryDistance={discoveryProgress.todayDiscoveryDistance}
@@ -6191,7 +6206,10 @@ export default function App() {
             }
             weekActiveDeltaTimeMs={discoveryProgress.weekActiveDeltaTimeMs}
             cityProgress={accountCityProgress}
-            onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
+            onWalkingStatsOpen={() => {
+              setJourneyPanelOrigin("drawer");
+              setGlobalMilestonesOpen(true);
+            }}
           />
         </section>
       )}
@@ -6243,6 +6261,8 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          returnHighlight={profileReturnHighlight}
+          onReturnHighlightEnd={() => setProfileReturnHighlight(null)}
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
           onFeedbackOpen={() => setFeedbackOpen(true)}
@@ -6277,9 +6297,13 @@ export default function App() {
           onShowGpxImport={showImportedRoutesOnMap}
           onShowGpxImportRoute={showRouteById}
           onWalkingStatsOpen={() => {
+            setJourneyPanelOrigin("profile");
             setGlobalMilestonesOpen(true);
           }}
-          onJourneyHistoryOpen={() => setJourneyHistoryOpen(true)}
+          onJourneyHistoryOpen={() => {
+            setJourneyPanelOrigin("profile");
+            setJourneyHistoryOpen(true);
+          }}
           onCitiesOpen={() => {
             setCitiesOpen(true);
           }}
@@ -6297,8 +6321,10 @@ export default function App() {
         travelledKm={discoveryProgress.travelledDistance}
         walkingStats={discoveryProgress.walkingStats}
         discoveredCityCount={cityProgresses.length}
-        backLabel={syncOpen ? t("Back to profile") : t("Back to journey")}
+        backLabel={t("Back to profile")}
         onBack={() => {
+          setSyncOpen(true);
+          setProfileReturnHighlight(journeyPanelOrigin === "drawer" ? "stats" : null);
           setGlobalMilestonesOpen(false);
         }}
         onClose={closeProfileDialog}
@@ -6335,7 +6361,11 @@ export default function App() {
         onBack={() => setAchievementsOpen(false)}
         onClose={closeProfileDialog}
       />
-      {journeyHistoryOpen && <JourneyHistory journeys={journeyHistory} loading={!historyLoaded} filters={journeyHistoryFilters} onFiltersChange={setJourneyHistoryFilters} onBack={() => setJourneyHistoryOpen(false)} onClose={closeProfileDialog} onShowMap={journey => {
+      {journeyHistoryOpen && <JourneyHistory backLabel={t("Back to profile")} journeys={journeyHistory} loading={!historyLoaded} filters={journeyHistoryFilters} onFiltersChange={setJourneyHistoryFilters} onBack={() => {
+        setSyncOpen(true);
+        setProfileReturnHighlight(journeyPanelOrigin === "drawer" ? "history" : null);
+        setJourneyHistoryOpen(false);
+      }} onClose={closeProfileDialog} onShowMap={journey => {
         showCompletedJourneyOnMap(journey.points, journey.newGroundSegments);
         setJourneyHistoryOpen(false);
       }} />}

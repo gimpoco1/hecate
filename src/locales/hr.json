@@ -1083,5 +1083,14 @@
   "The journey contains an invalid coordinate or timestamp.": "Putovanje sadrži nevažeću koordinatu ili vremensku oznaku.",
   "Could not export this journey. Check available storage and try again.": "Izvoz putovanja nije uspio. Provjeri slobodan prostor i pokušaj ponovno.",
   "City explored": "Istraženost grada",
-  "Next milestone": "Sljedeća prekretnica"
+  "Next milestone": "Sljedeća prekretnica",
+  "Discovery ratio this week": "Udio novootkrivenih dionica ovaj tjedan",
+  "New ground as a share of distance travelled": "Novootkrivene dionice u odnosu na prijeđenu udaljenost",
+  "Active days this week": "Aktivni dani ovaj tjedan",
+  "{{value0}} of 7 days": "{{value0}} od 7 dana",
+  "Discovery ratio": "Udio novootkrivenih dionica",
+  "Active days": "Aktivni dani",
+  "{{date}}: {{distance}} travelled": "{{date}}: prijeđeno {{distance}}",
+  "Most new ground": "Najviše novootkrivenih dionica",
+  "Most new ground: {{distance}}": "Najviše novootkrivenih dionica: {{distance}}"
 }

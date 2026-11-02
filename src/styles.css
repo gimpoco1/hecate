@@ -6917,7 +6917,7 @@ button {
 
 :root:not([data-theme="dark"]) .map-highlight-legend__new { box-shadow: 0 1px 3px rgba(52, 64, 42, .35); }
 
-.journey-week { margin: 22px 0 20px; padding: 16px 14px 12px; border: 1px solid rgba(var(--theme-border-rgb, 26, 58, 47), .12); border-radius: 18px; background: var(--theme-surface, #fffdf8); }
+.journey-week { margin: 22px 0 20px; padding: 16px 14px 12px; border: 1px solid rgba(var(--theme-border-rgb, 26, 58, 47), .1); border-radius: 20px; background: var(--theme-surface, white); }
 .journey-week__navigation { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 8px; }
 .journey-week__navigation > div { display: grid; gap: 4px; text-align: center; }
 .journey-week__navigation strong { font-size: 13px; }
@@ -6925,15 +6925,6 @@ button {
 .journey-week__navigation .icon-button { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; box-shadow: none; background: var(--theme-surface-alt, #e9ebe5); }
 .journey-week__previous svg { transform: rotate(180deg); }
 .journey-week__navigation button:disabled { opacity: .25; cursor: default; }
-.journey-week__chart { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin-top: 12px; }
-.journey-week__chart button { display: grid; justify-items: center; gap: 5px; min-width: 0; padding: 6px 0 9px; border: 0; border-radius: 10px; background: transparent; color: var(--theme-text-muted, #63716b); cursor: pointer; }
-.journey-week__chart button[aria-pressed="true"] { background: var(--theme-surface-alt, #e9ebe5); color: var(--forest); }
-.journey-week__bar-space { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 5px; height: 70px; width: 100%; }
-.journey-week__count { font-size: 10px; font-weight: 600; }
-.journey-week__bar { display: block; width: min(22px, 65%); border-radius: 5px 5px 2px 2px; background: var(--theme-accent, #8fa744); }
-.journey-week__chart button[aria-pressed="true"] .journey-week__bar { background: var(--forest); }
-.journey-week__weekday { font-size: 10px; }
-.journey-week__date { font-size: 12px; font-weight: 600; }
 .journey-week button:focus-visible { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
 .journey-history-sheet .journey-history-empty { padding: 20px 0; text-align: center; }
 
@@ -6955,7 +6946,6 @@ button {
 .journey-week__date-picker input { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; opacity: 0; cursor: pointer; }
 .journey-week__date-picker input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; cursor: pointer; }
 .journey-week__date-picker:focus-within { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
-.journey-history-selection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin: -8px 0 12px; color: var(--theme-text-muted, #63716b); font-size: 11px; }
 .journey-history-tools__clear:focus-visible { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
 
 .exploration-recap__map .map-highlight-legend { display: none; }
@@ -6978,3 +6968,62 @@ button {
 .collection-card__primary { border: 1px solid transparent; background: var(--theme-surface-alt, #e9ebe5); color: var(--forest); }
 .collection-card__secondary { border: 1px solid rgba(var(--theme-border-rgb, 26, 58, 47), .16); background: transparent; color: var(--theme-text-muted, #63716b); }
 .collection-card__actions svg { flex-shrink: 0; }
+
+.weekly-journey-activity__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12px; }
+.weekly-journey-activity__heading strong { flex-shrink: 0; font-size: 13px; }
+.weekly-journey-activity__ratio { height: 5px; margin: 8px 0 0; overflow: hidden; border-radius: 5px; background: var(--theme-surface-alt, #e9ebe5); }
+.weekly-journey-activity__ratio > span { display: block; height: 100%; border-radius: inherit; background: var(--theme-accent, #8fa744); }
+.weekly-journey-activity__days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 14px; }
+.weekly-journey-activity__day { display: grid; width: 100%; padding: 4px 0; border: 0; border-radius: 8px; background: transparent; font: inherit; cursor: pointer; justify-items: center; gap: 8px; min-width: 0; color: var(--theme-text-muted, #63716b); font-size: 10px; }
+.weekly-journey-activity__day > span { max-width: 100%; }
+
+.weekly-journey-activity__navigation { margin-bottom: 18px; }
+.weekly-journey-activity__bar-space { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; width: 100%; height: 78px; }
+.weekly-journey-activity__distance { font-size: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.weekly-journey-activity__bar { position: relative; display: block; overflow: hidden; width: min(22px, 70%); flex-shrink: 0; border-radius: 5px 5px 2px 2px; background: var(--theme-accent, #8fa744); }
+.weekly-journey-activity__day small { font-size: 10px; font-weight: 600; }
+.journey-week button:focus-visible { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
+
+.weekly-journey-activity__active-label { display: flex; align-items: baseline; gap: 8px; }
+.weekly-journey-activity__active-label strong { color: var(--theme-text-muted, #63716b); font-size: 11px; font-weight: 500; }
+.weekly-journey-activity__day small { position: relative; display: grid; place-items: center; width: 24px; height: 24px; margin-top: -4px; border-radius: 50%; }
+.weekly-journey-activity__legend { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; color: var(--theme-text-muted, #63716b); font-size: 9px; line-height: 1.4; }
+
+.weekly-journey-activity__new-ground { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--lime); }
+.weekly-journey-activity__legend i { flex-shrink: 0; width: 8px; height: 8px; border-radius: 2px; background: var(--lime); box-shadow: 0 1px 3px rgba(52, 64, 42, .18); }
+
+.weekly-journey-activity__day:disabled { opacity: .5; cursor: default; }
+
+.weekly-journey-activity__discovery-summary { margin-top: 14px; }
+.weekly-journey-activity__day[aria-pressed="true"] { background: var(--theme-surface-alt, #e9ebe5); color: var(--forest); }
+
+.journey-week__selection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 10px; color: var(--theme-text-muted, #63716b); font-size: 11px; }
+
+.journey-global-stats > .journey-week {
+  margin: 14px 0 0;
+}
+
+.account-feature-tile--return {
+  animation: profile-return-highlight 2.2s ease-out;
+}
+@keyframes profile-return-highlight {
+  0%, 35% { box-shadow: 0 0 0 2px #78817e, 0 0 16px rgba(80, 89, 85, .22); }
+  100% { box-shadow: 0 0 0 2px transparent, 0 0 16px transparent; }
+}
+
+.journey-week__empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 26px 0 16px;
+  color: var(--theme-text-muted, #63716b);
+  font-size: 13px;
+}
+.journey-week__empty-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--theme-surface-alt, #e9ebe5);
+}

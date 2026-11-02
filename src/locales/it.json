@@ -1068,5 +1068,14 @@
   "The journey contains an invalid coordinate or timestamp.": "Il tragitto contiene una coordinata o una data non valida.",
   "Could not export this journey. Check available storage and try again.": "Impossibile esportare il tragitto. Controlla lo spazio disponibile e riprova.",
   "City explored": "Città esplorata",
-  "Next milestone": "Prossimo traguardo"
+  "Next milestone": "Prossimo traguardo",
+  "Discovery ratio this week": "Quota di nuovi tratti questa settimana",
+  "New ground as a share of distance travelled": "Nuovi tratti rispetto alla distanza percorsa",
+  "Active days this week": "Giorni attivi questa settimana",
+  "{{value0}} of 7 days": "{{value0}} giorni su 7",
+  "Discovery ratio": "Quota di nuovi tratti",
+  "Active days": "Giorni attivi",
+  "{{date}}: {{distance}} travelled": "{{date}}: {{distance}} percorsi",
+  "Most new ground": "Più nuovi tratti",
+  "Most new ground: {{distance}}": "Più nuovi tratti: {{distance}}"
 }

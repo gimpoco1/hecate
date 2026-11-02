@@ -1068,5 +1068,14 @@
   "The journey contains an invalid coordinate or timestamp.": "The journey contains an invalid coordinate or timestamp.",
   "Could not export this journey. Check available storage and try again.": "Could not export this journey. Check available storage and try again.",
   "City explored": "City explored",
-  "Next milestone": "Next milestone"
+  "Next milestone": "Next milestone",
+  "Discovery ratio this week": "Discovery ratio this week",
+  "New ground as a share of distance travelled": "New ground as a share of distance travelled",
+  "Active days this week": "Active days this week",
+  "{{value0}} of 7 days": "{{value0}} of 7 days",
+  "Discovery ratio": "Discovery ratio",
+  "Active days": "Active days",
+  "{{date}}: {{distance}} travelled": "{{date}}: {{distance}} travelled",
+  "Most new ground": "Most new ground",
+  "Most new ground: {{distance}}": "Most new ground: {{distance}}"
 }

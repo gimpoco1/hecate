@@ -11,7 +11,7 @@ import { useAppearance } from "../appearance";
 import { mdiHistory, mdiPaletteOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -53,6 +53,8 @@ import type {
 
 type Props = {
   open: boolean;
+  returnHighlight: "history" | "stats" | null;
+  onReturnHighlightEnd: () => void;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   onFeedbackOpen: () => void;
@@ -161,6 +163,8 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 
 export function SyncSheet({
   open,
+  returnHighlight,
+  onReturnHighlightEnd,
   initialAuthIntent = "signin",
   onClose,
   onFeedbackOpen,
@@ -220,6 +224,14 @@ export function SyncSheet({
   const [locationAuthorization, setLocationAuthorization] =
     useState<LocationAuthorization | null>(null);
   const [locationAuthorizationError, setLocationAuthorizationError] = useState("");
+  const historyTileRef = useRef<HTMLButtonElement>(null);
+  const statsTileRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open || returnHighlight === null) return;
+    const tile = returnHighlight === "history" ? historyTileRef.current : statsTileRef.current;
+    tile?.scrollIntoView({ block: "nearest", behavior: "instant" });
+  }, [open, returnHighlight]);
+
   useEffect(() => {
     if (!notificationSettingsSheetOpen || !Capacitor.isNativePlatform()) return;
     let active = true;
@@ -670,7 +682,10 @@ export function SyncSheet({
                 <div className="account-activity-grid">
                   <button
                     type="button"
-                    className="account-feature-tile"
+                    ref={statsTileRef}
+                    data-testid="profile-journey-stats"
+                    className={`account-feature-tile${returnHighlight === "stats" ? " account-feature-tile--return" : ""}`}
+                    onAnimationEnd={event => { if (event.target === event.currentTarget) onReturnHighlightEnd(); }}
                     aria-label={t("Open walking stats. Current global rank: {{value0}}.", { value0: currentWorldRank.title })}
                     onClick={onWalkingStatsOpen}
                   >
@@ -735,7 +750,7 @@ export function SyncSheet({
                     </small>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
-                  <button type="button" className="account-feature-tile" data-testid="profile-journey-history" onClick={onJourneyHistoryOpen}>
+                  <button type="button" ref={historyTileRef} className={`account-feature-tile${returnHighlight === "history" ? " account-feature-tile--return" : ""}`} onAnimationEnd={event => { if (event.target === event.currentTarget) onReturnHighlightEnd(); }} data-testid="profile-journey-history" onClick={onJourneyHistoryOpen}>
                     <span className="account-feature-tile__mark" aria-hidden="true">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiHistory} /></svg>
                     </span>
