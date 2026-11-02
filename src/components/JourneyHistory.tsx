@@ -1,4 +1,7 @@
-import { mdiCalendarOutline } from "@mdi/js";
+import { useState } from "react";
+import { exportJourneyGpx } from "../gpxExport";
+import { errorDiagnostic } from "../diagnostics";
+import { mdiCalendarOutline, mdiDownload } from "@mdi/js";
 import { formatElapsedDuration } from "../durationFormat";
 import { journeyDateValue, parseJourneyDate, journeyWeekStart, shiftJourneyDay, type JourneyHistoryFilters, type JourneyHistoryEntry } from "../journeyHistory";
 import { currentLanguage, formatNumber, t, useAppTranslation } from "../i18n";
@@ -21,6 +24,20 @@ function formatDistance(distanceKm: number): string {
 
 export function JourneyHistory({ journeys, loading, filters, onFiltersChange, onShowMap, onBack, onClose }: Props) {
   useAppTranslation();
+  const [exportingJourney, setExportingJourney] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<{ journeyId: string; message: string } | null>(null);
+  const exportGpx = async (journey: DiscoveryJourneyRoute): Promise<void> => {
+    setExportingJourney(journey.journeyId);
+    setExportError(null);
+    try {
+      await exportJourneyGpx(journey.points);
+    } catch (failure) {
+      console.error("Journey GPX export failed", { journeyId: journey.journeyId, error: errorDiagnostic(failure) });
+      setExportError({ journeyId: journey.journeyId, message: failure instanceof Error ? failure.message : t("Could not export this journey. Check available storage and try again.") });
+    } finally {
+      setExportingJourney(null);
+    }
+  };
   const currentWeek = journeyWeekStart(Date.now());
   const { weekStart, selectedDay } = filters;
   const earliestJourney = journeys.reduce((earliest, journey) => Math.min(earliest, journey.startedAt), Date.now());
@@ -99,15 +116,21 @@ export function JourneyHistory({ journeys, loading, filters, onFiltersChange, on
               <strong>{new Date(journey.startedAt).toLocaleDateString(currentLanguage(), { dateStyle: "medium" })}</strong>
               <span>{new Date(journey.startedAt).toLocaleTimeString(currentLanguage(), { timeStyle: "short" })}</span>
             </time>
-            <span className="journey-history-entry__duration">{formatElapsedDuration(journey.finishedAt - journey.startedAt)}</span>
           </header>
-          <div className="journey-history-entry__cities">{journey.cityNames.map(name => <span className="journey-history-entry__city" data-testid="journey-history-city" key={name}>{name}</span>)}</div>
-          <div className="journey-history-entry__bottom">
-            <dl className="journey-history-entry__metrics">
-              <div><dt>{t("Travelled")}</dt><dd>{formatDistance(journey.travelledKm)}</dd></div>
-              <div><dt>{t("New ground")}</dt><dd>{formatDistance(journey.newGroundKm)}</dd></div>
-            </dl>
-            <button className="journey-history-entry__map" type="button" data-testid="journey-history-show-map" onClick={() => onShowMap(journey)} aria-label={t("View on map")} title={t("View on map")}><RouteIcon size={19} strokeWidth={1.8} /></button>
+          <div className="journey-history-entry__meta">
+            <div className="journey-history-entry__cities">{journey.cityNames.map(name => <span className="journey-history-entry__city" data-testid="journey-history-city" key={name}>{name}</span>)}</div>
+            <span className="journey-history-entry__duration">{formatElapsedDuration(journey.finishedAt - journey.startedAt)}</span>
+          </div>
+          {exportError?.journeyId === journey.journeyId && <p className="journey-history-entry__export-error" role="alert">{exportError.message}</p>}
+          <dl className="journey-history-entry__metrics">
+            <div><dt>{t("Travelled")}</dt><dd>{formatDistance(journey.travelledKm)}</dd></div>
+            <div><dt>{t("New ground")}</dt><dd>{formatDistance(journey.newGroundKm)}</dd></div>
+          </dl>
+          <div className="journey-history-entry__actions">
+            <button className="journey-history-entry__map" type="button" data-testid="journey-history-show-map" onClick={() => onShowMap(journey)}><RouteIcon size={16} strokeWidth={1.8} />{t("View on map")}</button>
+            <button className="journey-history-entry__export" type="button" data-testid="journey-export-gpx" disabled={exportingJourney !== null} aria-busy={exportingJourney === journey.journeyId} onClick={() => void exportGpx(journey)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiDownload} /></svg>{t("Export GPX")}
+            </button>
           </div>
         </article>)}
       </div>

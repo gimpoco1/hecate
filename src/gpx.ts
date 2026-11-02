@@ -1,6 +1,14 @@
 import { t } from "./i18n";
 import type { Coordinate, DiscoveryCell, PendingWalk } from "./types";
-import { discoveredDistanceKm, distanceKm, mergeRoutePoints } from "./geo";
+import { discoveryJourneyMetrics, discoveredDistanceKm, distanceKm, mergeRoutePoints } from "./geo";
+
+/** Use the same chronological discovery attribution as journey history for every selected GPX segment. */
+export function importedRouteHighlights(history: Coordinate[], routePoints: Coordinate[]): Coordinate[][] {
+  const routeIds = new Set(routePoints.flatMap(point => point.walkId ? [point.walkId] : []));
+  return discoveryJourneyMetrics(history)
+    .filter(journey => routeIds.has(journey.journeyId))
+    .flatMap(journey => journey.newGroundSegments);
+}
 
 export function importedRouteProgress(
   previousPoints: Coordinate[],
@@ -163,4 +171,26 @@ export function parseGpx(
       achievementEligible: false,
     };
   });
+}
+
+/** Export recorded coordinates and timestamps, with segments sized for Hecate's importer. */
+export function journeyToGpx(points: Coordinate[]): string {
+  if (points.length < 2) throw new RangeError(t("A journey needs at least two points to export GPX."));
+  for (const [index, point] of points.entries()) {
+    if (!Number.isFinite(point.lat) || point.lat < -90 || point.lat > 90
+      || !Number.isFinite(point.lng) || point.lng < -180 || point.lng > 180
+      || !Number.isFinite(point.recordedAt) || !Number.isFinite(new Date(point.recordedAt).getTime())) {
+      throw new RangeError(t("The journey contains an invalid coordinate or timestamp."));
+    }
+    if (index > 0 && point.recordedAt < points[index - 1].recordedAt) {
+      throw new RangeError(t("The GPX track points are not in chronological order."));
+    }
+  }
+  const segments: string[] = [];
+  for (let start = 0; start < points.length - 1; start += MAX_GPX_POINTS_PER_SEGMENT - 1) {
+    const track = points.slice(start, start + MAX_GPX_POINTS_PER_SEGMENT)
+      .map(point => `<trkpt lat="${point.lat}" lon="${point.lng}"><time>${new Date(point.recordedAt).toISOString()}</time></trkpt>`).join("");
+    segments.push(`<trkseg>${track}</trkseg>`);
+  }
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Hecate" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Hecate ${new Date(points[0].recordedAt).toISOString()}</name>${segments.join("")}</trk></gpx>`;
 }

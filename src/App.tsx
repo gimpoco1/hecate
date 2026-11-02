@@ -245,6 +245,7 @@ import {
 import {
   compactImportedRoute,
   importedRouteProgress,
+  importedRouteHighlights,
   parseGpx,
   persistImportedDiscovery,
   storedWalkRoutes,
@@ -5378,10 +5379,14 @@ export default function App() {
     [focusMapOnCoordinates],
   );
 
-  const showCompletedJourneyOnMap = (routePoints: Coordinate[], newGroundSegments: Coordinate[][]): void => {
+  const showCompletedJourneyOnMap = useCallback((routePoints: Coordinate[], newGroundSegments: Coordinate[][]): void => {
     showRouteOnMap(routePoints);
     setHighlightedNewGroundSegments(newGroundSegments);
-  };
+  }, [showRouteOnMap]);
+
+  const showImportedRoutesOnMap = useCallback((routePoints: Coordinate[]): void => {
+    showCompletedJourneyOnMap(routePoints, importedRouteHighlights(pointsRef.current, routePoints));
+  }, [showCompletedJourneyOnMap]);
 
   const showRouteById = useCallback(
     (routeId: string) => {
@@ -5389,9 +5394,9 @@ export default function App() {
         .filter((point) => point.walkId === routeId)
         .sort((first, second) => first.recordedAt - second.recordedAt);
       if (routePoints.length === 0) return;
-      showRouteOnMap(routePoints);
+      showImportedRoutesOnMap(routePoints);
     },
-    [showRouteOnMap],
+    [showImportedRoutesOnMap],
   );
 
   const openKeepsake = (city: CityBoundary, discoveredKm: number, percentage: number): void => {
@@ -6269,7 +6274,7 @@ export default function App() {
           }
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
-          onShowGpxImport={showRouteOnMap}
+          onShowGpxImport={showImportedRoutesOnMap}
           onShowGpxImportRoute={showRouteById}
           onWalkingStatsOpen={() => {
             setGlobalMilestonesOpen(true);
