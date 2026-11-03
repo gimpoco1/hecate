@@ -72,7 +72,7 @@ if (typeof window !== "undefined") {
 }
 
 export function useAppTranslation(): void { useTranslation(); }
-export type TranslationKey = keyof typeof en | "day" | "hour" | "minute" | "second" | "achievement" | "cityLabel" | "placeLabel" | "collectionLabel" | "walkLabel" | "recapNewAreas" | "explorersTogether" | "importedRoutes" | "moreAchievements";
+export type TranslationKey = keyof typeof en | "day" | "hour" | "minute" | "second" | "achievement" | "cityLabel" | "placeLabel" | "collectionLabel" | "walkLabel" | "recapNewAreas" | "explorersTogether" | "importedRoutes" | "moreAchievements" | "journeyCount" | "journeysOnDay";
 export function t(key: TranslationKey, values?: Record<string, string | number>): string {
   return i18next.t(key, values);
 }

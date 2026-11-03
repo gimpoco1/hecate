@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { discoveredAreaKm2, discoveredCellDistanceKm, discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, discoveryJourneyMetricsByRegion, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from "./geo";
+import { discoveredAreaKm2, discoveredCellDistanceKm, discoveredDistanceKm, discoveryCellCenter, discoveryCellsFromPoints, discoveryJourneyMetrics, discoveryJourneyMetricsByRegion, distanceKm, isUsableGpsPoint, mergeRoutePoints, metersToPixels, pointToDiscoveryCell, routeDistanceKm, shouldRecordPoint, splitRoute } from "./geo";
 
 describe("discovery route geometry", () => {
   const a = { lng: 2.17, lat: 41.38, recordedAt: 1_000, accuracy: 5 };
   const b = { lng: 2.171, lat: 41.38, recordedAt: 20_000, accuracy: 5 };
+
+  it("highlights the exact credited distance when new ground lies beside a familiar route", () => {
+    const known = [
+      { ...a, walkId: "known" },
+      { ...b, walkId: "known" },
+    ];
+    const nearby = known.map(point => ({ ...point, lat: point.lat + 0.0003, recordedAt: point.recordedAt + 60000, walkId: "nearby" }));
+    const journeys = discoveryJourneyMetrics([...known, ...nearby]);
+    const journey = journeys[1];
+    expect(journey.newGroundKm).toBeGreaterThan(0);
+    expect(journey.newGroundSegments.length).toBeGreaterThan(0);
+    expect(journey.newGroundSegments.reduce((total, segment) => total + routeDistanceKm(segment), 0)).toBeCloseTo(journey.newGroundKm, 7);
+    expect(journey.newGroundSegments.every(segment => segment.every(point => Math.abs(point.lat - nearby[0].lat) < 1e-10))).toBe(true);
+    const repeat = nearby.map(point => ({ ...point, recordedAt: point.recordedAt + 60000, walkId: "repeat" }));
+    const repeated = discoveryJourneyMetrics([...known, ...nearby, ...repeat])[2];
+    expect(repeated.newGroundKm).toBe(0);
+    expect(repeated.newGroundSegments).toEqual([]);
+  });
 
   it("calculates real-world path distance", () => {
     expect(distanceKm(a, b)).toBeGreaterThan(0.08);

@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   compactImportedRoute,
   importedRouteProgress,
+  importedRouteHighlights,
   persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
 } from "./gpx";
 import type { Coordinate, PendingWalk } from "./types";
-import { discoveredDistanceKm, routeDistanceKm } from "./geo";
+import { discoveryJourneyMetrics, discoveredDistanceKm, routeDistanceKm } from "./geo";
 
 const importedPoints: Coordinate[] = [
   { lat: 41.1, lng: 2.1, recordedAt: 1, walkId: "stored-walk" },
@@ -147,5 +148,30 @@ describe("GPX import persistence", () => {
       ),
     ).rejects.toThrow("cell sync failed");
     expect(savedWalkIds).toEqual([]);
+  });
+});
+
+describe("imported route map highlights", () => {
+  const first = [
+    { lng: 2.17, lat: 41.38, recordedAt: 1000, walkId: "import-first", achievementEligible: false },
+    { lng: 2.171, lat: 41.38, recordedAt: 61000, walkId: "import-first", achievementEligible: false },
+  ];
+  const second = first.map(point => ({ ...point, lat: point.lat + .01, recordedAt: point.recordedAt + 120000, walkId: "import-second" }));
+  const history = [...first, ...second];
+
+  it("matches the history card for a selected imported journey", () => {
+    const highlights = importedRouteHighlights(history, first);
+    expect(highlights.length).toBeGreaterThan(0);
+    expect(highlights).toEqual(discoveryJourneyMetrics(history)[0].newGroundSegments);
+    expect(highlights.every(segment => segment.every(point => point.lat === first[0].lat))).toBe(true);
+  });
+
+  it("highlights all segments selected by the import confirmation", () => {
+    expect(importedRouteHighlights(history, history)).toEqual(discoveryJourneyMetrics(history).flatMap(journey => journey.newGroundSegments));
+  });
+
+  it("does not highlight familiar ground on a repeated import", () => {
+    const repeated = first.map(point => ({ ...point, recordedAt: point.recordedAt + 240000, walkId: "repeat" }));
+    expect(importedRouteHighlights([...history, ...repeated], repeated)).toEqual([]);
   });
 });

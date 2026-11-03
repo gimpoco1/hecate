@@ -1,3 +1,4 @@
+import { journeyHistoryEntries, type JourneyHistoryEntry } from "./journeyHistory";
 import { evaluatePersonalAchievements } from "./achievements";
 import { discoveredCityProgress, type CityBoundary } from "./city";
 import { discoveryJourneyMetrics } from "./geo";
@@ -52,7 +53,14 @@ export type DiscoveryAchievementsResponse = {
   achievementEvaluations: ReturnType<typeof evaluatePersonalAchievements>;
 };
 
+export type DiscoveryHistoryResponse = {
+  kind: "history";
+  generation: number;
+  journeys: JourneyHistoryEntry[];
+};
+
 export type DiscoveryMetricsResponse =
+  | DiscoveryHistoryResponse
   | DiscoveryProgressResponse
   | DiscoveryAchievementsResponse;
 
@@ -60,6 +68,11 @@ self.addEventListener(
   "message",
   (event: MessageEvent<DiscoveryMetricsRequest>): void => {
     const { generation, points, cells, cities, achievementCityIds } = event.data;
+    const journeys = discoveryJourneyMetrics(points);
+    const history: DiscoveryHistoryResponse = {
+      kind: "history", generation, journeys: journeyHistoryEntries(journeys, cities),
+    };
+    self.postMessage(history);
     const cityMetrics = cities.map((city) => ({
       cityId: city.id,
       ...discoveredCityProgress(points, cells, city),
@@ -68,7 +81,6 @@ self.addEventListener(
     const achievementCities = cities.filter((city) =>
       achievementCityIdSet.has(city.id),
     );
-    const journeys = discoveryJourneyMetrics(points);
     const now = Date.now();
     const todayStart = startOfLocalDay(now);
     const weekStart = startOfLocalWeek(now);

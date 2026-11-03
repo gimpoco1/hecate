@@ -29,6 +29,12 @@ describe("walk recovery journal", () => {
     expect(loadWalkJournal("user-b")).toEqual([]);
   });
 
+  it("restores journey ownership from the journal when points have no journey ID", () => {
+    const legacyWalk = { ...walk, points: walk.points.map(({ lng, lat, recordedAt }) => ({ lng, lat, recordedAt })) };
+    saveWalkJournal("user-a", [legacyWalk], legacyWalk);
+    expect(loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [walk] });
+  });
+
   it("keeps failed uploads until they are confirmed, then clears the journal", () => {
     saveWalkJournal("user-a", [walk], null);
     expect(loadWalkJournal("user-a")).toEqual([walk]);

@@ -1,3 +1,8 @@
+import { WeeklyJourneyActivity } from "./components/WeeklyJourneyActivity";
+import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
+import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
+import { formatElapsedDuration } from "./durationFormat";
+import { JourneyHistory } from "./components/JourneyHistory";
 import { Trans } from "react-i18next";
 import { formatNumber, t, useAppTranslation, currentLanguage, languagePreference, setLanguagePreference } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
@@ -41,7 +46,6 @@ import {
 } from "@capacitor/local-notifications";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { DiscoveryFogLayer } from "./fogLayer";
-import { discoveryHighlightData, newlyRevealedCells } from "./discoveryHighlights";
 import type {
   DiscoveryMetricsRequest,
   DiscoveryMetricsResponse,
@@ -201,7 +205,6 @@ import {
   journeySheetOffsetPx,
   shouldAllowHeaderGesture,
   shouldExpandJourneySheet,
-  shouldShowExplorationRecap,
   shouldStartJourneyDrag,
 } from "./journeyUi";
 import {
@@ -243,6 +246,7 @@ import {
 import {
   compactImportedRoute,
   importedRouteProgress,
+  importedRouteHighlights,
   parseGpx,
   persistImportedDiscovery,
   storedWalkRoutes,
@@ -253,9 +257,8 @@ import { observeAuthSession } from "./authSession";
 type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
   walkId: string;
-  points: Coordinate[];
+  route: JourneyRecapRoute;
   cells: DiscoveryCell[];
-  highlightCells: DiscoveryCell[];
   startedAt: number;
   finishedAt: number;
   newGroundKm: number;
@@ -499,6 +502,8 @@ export function saveCachedDiscoveryProgress(
 }
 
 type JourneyDetailsProps = {
+  journeys: JourneyHistoryEntry[];
+  onJourneyDayOpen: (day: number) => void;
   accountUserId: string | null;
   expanded: boolean;
   todayDiscoveryDistance: number;
@@ -514,6 +519,8 @@ type JourneyDetailsProps = {
 };
 
 const JourneyDetails = memo(function JourneyDetails({
+  journeys,
+  onJourneyDayOpen,
   accountUserId,
   expanded,
   todayDiscoveryDistance,
@@ -593,6 +600,7 @@ const JourneyDetails = memo(function JourneyDetails({
                 </dd>
               </div>
             </dl>
+            <WeeklyJourneyActivity key={accountUserId} journeys={journeys} onDaySelect={onJourneyDayOpen} />
           </section>
           {cityProgress && <CityMilestones progress={cityProgress} />}
         </>
@@ -617,12 +625,6 @@ function formatDuration(startedAt: number, finishedAt: number) {
   return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
 }
 
-function formatElapsedDuration(durationMs: number) {
-  const minutes = Math.max(0, Math.round(durationMs / 60_000));
-  if (minutes < 60) return t("{{value0}} min", { value0: minutes });
-  const hours = Math.floor(minutes / 60);
-  return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
-}
 
 function formatStreakDays(days: number) {
   return t("day", { count: days });
@@ -890,6 +892,8 @@ export default function App() {
     if (feedbackOpen && authReady && !accountUserId) setSyncOpen(true);
   }, [feedbackOpen, authReady, accountUserId]);
   const [globalMilestonesOpen, setGlobalMilestonesOpen] = useState(false);
+  const [journeyPanelOrigin, setJourneyPanelOrigin] = useState<"drawer" | "profile">("profile");
+  const [profileReturnHighlight, setProfileReturnHighlight] = useState<"history" | "stats" | null>(null);
   const [savedPlacesOpen, setSavedPlacesOpen] = useState(false);
   const [citiesOpen, setCitiesOpen] = useState(false);
   const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
@@ -1014,7 +1018,7 @@ export default function App() {
   const [highlightedRoutePoints, setHighlightedRoutePoints] = useState<
     Coordinate[]
   >([]);
-  const [highlightedDiscoveryCells, setHighlightedDiscoveryCells] = useState<DiscoveryCell[]>([]);
+  const [highlightedNewGroundSegments, setHighlightedNewGroundSegments] = useState<Coordinate[][]>([]);
   const [favoriteDraft, setFavoriteDraft] = useState<FavoritePlace | null>(
     null,
   );
@@ -1086,6 +1090,10 @@ export default function App() {
     AchievementEvaluation[]
   >([]);
   const discoveryMetricsGenerationRef = useRef(0);
+  const [historyEntries, setHistoryEntries] = useState<JourneyHistoryEntry[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [journeyHistoryOpen, setJourneyHistoryOpen] = useState(false);
+  const [journeyHistoryFilters, setJourneyHistoryFilters] = useState<JourneyHistoryFilters>(() => ({ weekStart: journeyWeekStart(Date.now()), selectedDay: null }));
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
   const [achievementCelebrations, setAchievementCelebrations] = useState<
@@ -1124,6 +1132,7 @@ export default function App() {
   const viewCityLookupGenerationRef = useRef(0);
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
+  const journeyHistory = useMemo(() => historyEntries.filter(journey => journey.points.length >= 2 && journey.journeyId !== activeWalkRef.current?.id).sort((a, b) => b.startedAt - a.startedAt), [historyEntries, tracking]);
   const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastJourneyActivityUpdateRef = useRef(0);
   const [requestedJourneyStopId, setRequestedJourneyStopId] = useState<
@@ -1186,6 +1195,7 @@ export default function App() {
   const initialMapFocusUserRef = useRef<string | null>(null);
   const suppressJourneyClickRef = useRef(false);
   const previewMapRef = useRef<MapLibreMap | null>(null);
+  const onPreviewZoomChange = useCallback(() => undefined, []);
   const cellsRef = useRef<DiscoveryCell[]>([]);
   const cellKeysRef = useRef<Set<string>>(new Set());
   const discoveryHistoryReadyRef = useRef(false);
@@ -1888,6 +1898,11 @@ export default function App() {
       (event: MessageEvent<DiscoveryMetricsResponse>): void => {
         if (event.data.generation !== discoveryMetricsGenerationRef.current)
           return;
+        if (event.data.kind === "history") {
+          setHistoryEntries(event.data.journeys);
+          setHistoryLoaded(true);
+          return;
+        }
         if (event.data.kind === "progress") {
           const progress = {
             discoveryDistance: event.data.discoveryDistance,
@@ -2545,6 +2560,10 @@ export default function App() {
     setCitiesExpanded(false);
     setCoverageInfoOpen(false);
     setExplorationSummary(null);
+    setJourneyHistoryOpen(false);
+    setHistoryEntries([]);
+    setHistoryLoaded(false);
+    setJourneyHistoryFilters({ weekStart: journeyWeekStart(Date.now()), selectedDay: null });
     initialMapFocusUserRef.current = null;
     setDiscoveryLoading(Boolean(accountUserId));
     if (discoveryUiRefreshTimerRef.current !== null)
@@ -2731,6 +2750,16 @@ export default function App() {
       // can rebuild the public snapshot if this attempt fails.
       console.warn("Could not publish completed journey leaderboard data", errorDiagnostic(error));
       return false;
+    }
+  };
+
+  const syncCompletedJourney = async (walkId: string, userId: string, completedCells: DiscoveryCell[]): Promise<void> => {
+    await flushPendingWalks(userId);
+    if (accountUserIdRef.current !== userId) return;
+    await syncDiscoveryCells(completedCells, userId);
+    if (accountUserIdRef.current !== userId) return;
+    if (!pendingWalksRef.current.some(walk => walk.id === walkId)) {
+      await publishCompletedJourneyLeaderboard(userId);
     }
   };
 
@@ -3663,22 +3692,6 @@ export default function App() {
         );
         widgetStopRef.current = null;
       }
-      await flushPendingWalks(walkOwner);
-      // The recap and the next app launch must be based on the same completed
-      // discovery. Do not rely only on the debounced background cell sync.
-      let discoverySynced = false;
-      try {
-        await syncDiscoveryCells(cellsRef.current, walkOwner);
-        discoverySynced = true;
-      } catch {
-        /* The existing debounced sync retries if this request fails. */
-      }
-      const completedWalkSynced = !pendingWalksRef.current.some(
-        (walk) => walk.id === completed.id,
-      );
-      if (completedWalkSynced && discoverySynced) {
-        await publishCompletedJourneyLeaderboard(walkOwner);
-      }
       if (started) {
         const completedCells = cellsRef.current;
         const newCells = completedCells.filter(
@@ -3693,16 +3706,15 @@ export default function App() {
         );
         const summary: ExplorationSummary = {
           walkId: active.id,
-          points: active.points,
+          route: createJourneyRecapRoute(pointsRef.current, completed),
           cells: newCells,
-          highlightCells: newlyRevealedCells(previousCells, newCells),
           startedAt: active.startedAt,
           finishedAt: completed.finishedAt,
           newGroundKm,
           travelledKm: routeDistanceKm(active.points),
         };
         setExplorationSummary(
-          shouldShowExplorationRecap(newGroundKm) ? summary : null,
+          summary,
         );
 
         // React state can still describe the city where tracking began. Look
@@ -3712,6 +3724,7 @@ export default function App() {
         if (finalPoint) {
           void fetchCityBoundary(finalPoint)
             .then((city) => {
+              if (accountUserIdRef.current !== walkOwner) return;
               const percentageAdded = Math.max(
                 0,
                 discoveredCityPercentage(completedCells, city) -
@@ -3740,6 +3753,9 @@ export default function App() {
             });
         }
       }
+      void syncCompletedJourney(completed.id, walkOwner, [...cellsRef.current]).catch(error => {
+        console.warn("Could not finish syncing completed journey", { walkId: completed.id, userId: walkOwner, error: errorDiagnostic(error) });
+      });
     } else if (active && walkOwner) {
       if (widgetStop) {
         enqueueJourneyActivity(() =>
@@ -4279,11 +4295,10 @@ export default function App() {
     );
     setExplorationSummary({
       walkId,
-      points,
+      route: createJourneyRecapRoute(previousPoints.map(point => ({ ...point, walkId: "dev-previous-journey", recordedAt: point.recordedAt - 3_600_000 })), { id: walkId, startedAt, finishedAt, points }),
       cells: discoveryCellsFromPoints(points).filter(
         (cell) => !previousCells.has(discoveryCellKey(cell)),
       ),
-      highlightCells: newlyRevealedCells(discoveryCellsFromPoints(previousPoints), discoveryCellsFromPoints(points)),
       startedAt,
       finishedAt,
       newGroundKm: Math.max(
@@ -5298,6 +5313,8 @@ export default function App() {
   };
 
   const closeProfileDialog = () => {
+    setProfileReturnHighlight(null);
+    setJourneyHistoryOpen(false);
     if (!accountUserId) setFeedbackOpen(false);
     setGlobalMilestonesOpen(false);
     setSavedPlacesOpen(false);
@@ -5364,18 +5381,21 @@ export default function App() {
 
   const showRouteOnMap = useCallback(
     (routePoints: Coordinate[]) => {
-      setHighlightedDiscoveryCells([]);
+      setHighlightedNewGroundSegments([]);
       setHighlightedRoutePoints(routePoints);
       focusMapOnCoordinates(routePoints.map((point) => [point.lng, point.lat]));
     },
     [focusMapOnCoordinates],
   );
 
-  const showNewDiscoveriesOnMap = (newCells: DiscoveryCell[]): void => {
-    setHighlightedRoutePoints([]);
-    setHighlightedDiscoveryCells(newCells);
-    focusMapOnCoordinates(discoveryHighlightData(newCells).geometry.coordinates.flatMap((polygon) => polygon[0]));
-  };
+  const showCompletedJourneyOnMap = useCallback((routePoints: Coordinate[], newGroundSegments: Coordinate[][]): void => {
+    showRouteOnMap(routePoints);
+    setHighlightedNewGroundSegments(newGroundSegments);
+  }, [showRouteOnMap]);
+
+  const showImportedRoutesOnMap = useCallback((routePoints: Coordinate[]): void => {
+    showCompletedJourneyOnMap(routePoints, importedRouteHighlights(pointsRef.current, routePoints));
+  }, [showCompletedJourneyOnMap]);
 
   const showRouteById = useCallback(
     (routeId: string) => {
@@ -5383,9 +5403,9 @@ export default function App() {
         .filter((point) => point.walkId === routeId)
         .sort((first, second) => first.recordedAt - second.recordedAt);
       if (routePoints.length === 0) return;
-      showRouteOnMap(routePoints);
+      showImportedRoutesOnMap(routePoints);
     },
-    [showRouteOnMap],
+    [showImportedRoutesOnMap],
   );
 
   const openKeepsake = (city: CityBoundary, discoveredKm: number, percentage: number): void => {
@@ -5402,7 +5422,7 @@ export default function App() {
   const handleMapClick = useCallback(() => {
     setSelectedFavoritePlaceId(null);
     setHighlightedRoutePoints([]);
-    setHighlightedDiscoveryCells([]);
+    setHighlightedNewGroundSegments([]);
     if (journeyExpandedRef.current)
       settleJourneySheet(false, undefined, JOURNEY_MAP_TAP_CLOSE_DURATION_MS);
   }, [settleJourneySheet]);
@@ -5449,7 +5469,7 @@ export default function App() {
         points={points}
         cells={cells}
         highlightedPoints={highlightedRoutePoints}
-        highlightedCells={highlightedDiscoveryCells}
+        highlightedNewGroundSegments={highlightedNewGroundSegments}
         currentPoint={
           simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
         }
@@ -5908,7 +5928,7 @@ export default function App() {
             setFavoritePlacementActive(false);
             setFavoriteDraft(null);
             setHighlightedRoutePoints([]);
-            setHighlightedDiscoveryCells([]);
+            setHighlightedNewGroundSegments([]);
             setSelectedFavoritePlaceId(null);
             suspendFollowCamera();
             if (journeyExpandedRef.current) settleJourneySheet(false);
@@ -6001,7 +6021,7 @@ export default function App() {
             setSavedPlacesOpen(false);
             setFavoritePlacementActive(false);
             setHighlightedRoutePoints([]);
-            setHighlightedDiscoveryCells([]);
+            setHighlightedNewGroundSegments([]);
             setSelectedFavoritePlaceId(favorite.id);
             setRouteDestination({
               lng: favorite.lng,
@@ -6167,6 +6187,12 @@ export default function App() {
             </div>
           )}
           <JourneyDetails
+            journeys={journeyHistory}
+            onJourneyDayOpen={day => {
+              setJourneyPanelOrigin("drawer");
+              setJourneyHistoryFilters({ weekStart: journeyWeekStart(day), selectedDay: day });
+              setJourneyHistoryOpen(true);
+            }}
             accountUserId={accountUserId}
             expanded={citiesExpanded}
             todayDiscoveryDistance={discoveryProgress.todayDiscoveryDistance}
@@ -6180,7 +6206,10 @@ export default function App() {
             }
             weekActiveDeltaTimeMs={discoveryProgress.weekActiveDeltaTimeMs}
             cityProgress={accountCityProgress}
-            onWalkingStatsOpen={() => setGlobalMilestonesOpen(true)}
+            onWalkingStatsOpen={() => {
+              setJourneyPanelOrigin("drawer");
+              setGlobalMilestonesOpen(true);
+            }}
           />
         </section>
       )}
@@ -6214,6 +6243,7 @@ export default function App() {
       )}
       <div
         aria-hidden={
+          journeyHistoryOpen ||
           globalMilestonesOpen ||
           savedPlacesOpen ||
           citiesOpen ||
@@ -6221,6 +6251,7 @@ export default function App() {
           undefined
         }
         inert={
+          journeyHistoryOpen ||
           globalMilestonesOpen ||
           savedPlacesOpen ||
           citiesOpen ||
@@ -6230,6 +6261,8 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          returnHighlight={profileReturnHighlight}
+          onReturnHighlightEnd={() => setProfileReturnHighlight(null)}
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
           onFeedbackOpen={() => setFeedbackOpen(true)}
@@ -6261,10 +6294,15 @@ export default function App() {
           }
           onAllNotificationsChange={updateAllNotifications}
           onGpxImport={importGpxFile}
-          onShowGpxImport={showRouteOnMap}
+          onShowGpxImport={showImportedRoutesOnMap}
           onShowGpxImportRoute={showRouteById}
           onWalkingStatsOpen={() => {
+            setJourneyPanelOrigin("profile");
             setGlobalMilestonesOpen(true);
+          }}
+          onJourneyHistoryOpen={() => {
+            setJourneyPanelOrigin("profile");
+            setJourneyHistoryOpen(true);
           }}
           onCitiesOpen={() => {
             setCitiesOpen(true);
@@ -6283,8 +6321,10 @@ export default function App() {
         travelledKm={discoveryProgress.travelledDistance}
         walkingStats={discoveryProgress.walkingStats}
         discoveredCityCount={cityProgresses.length}
-        backLabel={syncOpen ? t("Back to profile") : t("Back to journey")}
+        backLabel={t("Back to profile")}
         onBack={() => {
+          setSyncOpen(true);
+          setProfileReturnHighlight(journeyPanelOrigin === "drawer" ? "stats" : null);
           setGlobalMilestonesOpen(false);
         }}
         onClose={closeProfileDialog}
@@ -6321,6 +6361,14 @@ export default function App() {
         onBack={() => setAchievementsOpen(false)}
         onClose={closeProfileDialog}
       />
+      {journeyHistoryOpen && <JourneyHistory backLabel={t("Back to profile")} journeys={journeyHistory} loading={!historyLoaded} filters={journeyHistoryFilters} onFiltersChange={setJourneyHistoryFilters} onBack={() => {
+        setSyncOpen(true);
+        setProfileReturnHighlight(journeyPanelOrigin === "drawer" ? "history" : null);
+        setJourneyHistoryOpen(false);
+      }} onClose={closeProfileDialog} onShowMap={journey => {
+        showCompletedJourneyOnMap(journey.points, journey.newGroundSegments);
+        setJourneyHistoryOpen(false);
+      }} />}
       {explorationSummary && (
         <div className="exploration-recap-backdrop" role="presentation">
           <section
@@ -6330,30 +6378,31 @@ export default function App() {
             aria-labelledby="exploration-recap-title"
           >
             <div className="eyebrow">{t("Exploration complete")}</div>
-            <h2 id="exploration-recap-title">{t("You made new ground yours.")}</h2>
+            <h2 id="exploration-recap-title">{t(Math.round(explorationSummary.newGroundKm * 1000) > 0 ? "You made new ground yours." : "Journey recap")}</h2>
             <div className="exploration-recap__map">
               <DiscoveryMap
                 navigationFollowing={false}
                 mode="discover"
-                points={explorationSummary.points}
-                cells={explorationSummary.cells}
-                highlightedPoints={[]}
-                highlightedCells={[]}
-                onZoomChange={() => undefined}
+                points={explorationSummary.route.points}
+                cells={explorationSummary.route.cells}
+                highlightedPoints={explorationSummary.route.points}
+                highlightedNewGroundSegments={explorationSummary.route.newGroundSegments}
+                onZoomChange={onPreviewZoomChange}
                 mapRef={previewMapRef}
-                initialCenter={[
-                  explorationSummary.points.at(-1)!.lng,
-                  explorationSummary.points.at(-1)!.lat,
+                initialBounds={[
+                  [explorationSummary.route.bounds.west, explorationSummary.route.bounds.south],
+                  [explorationSummary.route.bounds.east, explorationSummary.route.bounds.north],
                 ]}
-                initialZoom={14.2}
               />
             </div>
             <div className="exploration-recap__headline">
-              <Trans i18nKey="app.newGroundRecap" values={{ distance: formatDistance(explorationSummary.newGroundKm) }}
-                components={{ distance: <strong />, caption: <span /> }} />
+              {Math.round(explorationSummary.newGroundKm * 1000) > 0
+                ? <Trans i18nKey="app.newGroundRecap" values={{ distance: formatDistance(explorationSummary.newGroundKm) }}
+                  components={{ distance: <strong />, caption: <span /> }} />
+                : <><strong>{formatDistance(explorationSummary.travelledKm)}</strong><span>{t("No new ground on this journey.")}</span></>}
             </div>
             <div className="exploration-recap__insights">
-              {explorationSummary.travelledKm > 0 && (
+              {Math.round(explorationSummary.newGroundKm * 1000) > 0 && explorationSummary.travelledKm > 0 && (
                 <span>{t("{{value0}} % of this walk was new ground", { value0: Math.round(
                   (explorationSummary.newGroundKm /
                       explorationSummary.travelledKm) *
@@ -6361,12 +6410,12 @@ export default function App() {
                 ) })}</span>
               )}
               {explorationSummary.cityName &&
-                explorationSummary.cityPercentageAdded !== undefined && (
+                explorationSummary.cityPercentageAdded !== undefined && explorationSummary.cityPercentageAdded > 0 && (
                 <span>{t("+ {{value0}}{{value1}} of {{value2}}", { value0: formatRecapPercentage(
                   explorationSummary.cityPercentageAdded,
                 ), value1: " ", value2: explorationSummary.cityName })}</span>
               )}
-              <span>{t("recapNewAreas", { count: explorationSummary.cells.length })}</span>
+              {explorationSummary.cells.length > 0 && <span>{t("recapNewAreas", { count: explorationSummary.cells.length })}</span>}
               <span>{t("{{value0}}{{value1}} · {{value2}} travelled", { value0: formatDuration(
                 explorationSummary.startedAt,
                 explorationSummary.finishedAt,
@@ -6378,9 +6427,8 @@ export default function App() {
                 className="exploration-recap__view"
                 type="button"
                 data-testid="recap-view-on-map"
-                disabled={explorationSummary.highlightCells.length === 0}
                 onClick={() => {
-                  showNewDiscoveriesOnMap(explorationSummary.highlightCells);
+                  showCompletedJourneyOnMap(explorationSummary.route.points, explorationSummary.route.newGroundSegments);
                   setExplorationSummary(null);
                 }}
               >{t("View on map")}</button>

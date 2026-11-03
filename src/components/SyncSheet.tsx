@@ -1,5 +1,6 @@
+import { ImportedRouteCard } from "./ImportedRouteCard";
 import { Trans } from "react-i18next";
-import { formatNumber, t, useAppTranslation, currentLanguage } from "../i18n";
+import { t, useAppTranslation } from "../i18n";
 import { LanguageButton, LanguageSettings } from "./LanguageSettings";
 import { AuthEntry } from "./AuthEntry";
 import { errorDiagnostic } from "../diagnostics";
@@ -7,10 +8,10 @@ import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { useAppearance } from "../appearance";
-import { mdiPaletteOutline } from "@mdi/js";
+import { mdiHistory, mdiPaletteOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
@@ -52,6 +53,8 @@ import type {
 
 type Props = {
   open: boolean;
+  returnHighlight: "history" | "stats" | null;
+  onReturnHighlightEnd: () => void;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   onFeedbackOpen: () => void;
@@ -81,6 +84,7 @@ type Props = {
   onShowGpxImport: (points: Coordinate[]) => void;
   onShowGpxImportRoute: (routeId: string) => void;
   onWalkingStatsOpen: () => void;
+  onJourneyHistoryOpen: () => void;
   onCitiesOpen: () => void;
   onAchievementsOpen: () => void;
   onSavedPlacesOpen: () => void;
@@ -159,6 +163,8 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 
 export function SyncSheet({
   open,
+  returnHighlight,
+  onReturnHighlightEnd,
   initialAuthIntent = "signin",
   onClose,
   onFeedbackOpen,
@@ -185,6 +191,7 @@ export function SyncSheet({
   onShowGpxImport,
   onShowGpxImportRoute,
   onWalkingStatsOpen,
+  onJourneyHistoryOpen,
   onCitiesOpen,
   onAchievementsOpen,
   onSavedPlacesOpen,
@@ -217,6 +224,14 @@ export function SyncSheet({
   const [locationAuthorization, setLocationAuthorization] =
     useState<LocationAuthorization | null>(null);
   const [locationAuthorizationError, setLocationAuthorizationError] = useState("");
+  const historyTileRef = useRef<HTMLButtonElement>(null);
+  const statsTileRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open || returnHighlight === null) return;
+    const tile = returnHighlight === "history" ? historyTileRef.current : statsTileRef.current;
+    tile?.scrollIntoView({ block: "nearest", behavior: "auto" });
+  }, [open, returnHighlight]);
+
   useEffect(() => {
     if (!notificationSettingsSheetOpen || !Capacitor.isNativePlatform()) return;
     let active = true;
@@ -544,14 +559,6 @@ export function SyncSheet({
     }, 80);
   };
 
-  const formatGpxImportDate = (addedAt: number) =>
-    new Intl.DateTimeFormat(currentLanguage(), {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(addedAt);
-  const formatGpxImportDistance = (distanceKm: number) =>
-    `${distanceKm < 10 ? formatNumber(distanceKm, 2) : formatNumber(distanceKm, 1)} km`;
-
   const handleGpxFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
@@ -587,7 +594,7 @@ export function SyncSheet({
 
   return (
     <div
-      className={`sheet-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
+      className={`sheet-backdrop profile-backdrop${keyboardInset ? " sheet-backdrop--keyboard" : ""}`}
       style={keyboardInset ? { bottom: `${keyboardInset}px` } : undefined}
       onClick={onClose}
     >
@@ -675,7 +682,10 @@ export function SyncSheet({
                 <div className="account-activity-grid">
                   <button
                     type="button"
-                    className="account-feature-tile"
+                    ref={statsTileRef}
+                    data-testid="profile-journey-stats"
+                    className={`account-feature-tile${returnHighlight === "stats" ? " account-feature-tile--return" : ""}`}
+                    onAnimationEnd={event => { if (event.target === event.currentTarget) onReturnHighlightEnd(); }}
                     aria-label={t("Open walking stats. Current global rank: {{value0}}.", { value0: currentWorldRank.title })}
                     onClick={onWalkingStatsOpen}
                   >
@@ -738,6 +748,13 @@ export function SyncSheet({
                       {favoritePlaces.length}{" "}
                       {t("placeLabel", { count: favoritePlaces.length })}
                     </small>
+                    <ChevronIcon size={15} strokeWidth={2.3} />
+                  </button>
+                  <button type="button" ref={historyTileRef} className={`account-feature-tile${returnHighlight === "history" ? " account-feature-tile--return" : ""}`} onAnimationEnd={event => { if (event.target === event.currentTarget) onReturnHighlightEnd(); }} data-testid="profile-journey-history" onClick={onJourneyHistoryOpen}>
+                    <span className="account-feature-tile__mark" aria-hidden="true">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiHistory} /></svg>
+                    </span>
+                    <strong>{t("Journey history")}</strong>
                     <ChevronIcon size={15} strokeWidth={2.3} />
                   </button>
                 </div>
@@ -858,7 +875,7 @@ export function SyncSheet({
                   </span>
                   <span>
                     <strong>{t("Import GPX")}</strong>
-                    <small>{t("Add past routes from Strava or other services")}</small>
+                    <small>{t("Add routes from GPX files")}</small>
                   </span>
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
@@ -979,7 +996,7 @@ export function SyncSheet({
                   <div className="eyebrow">{t("Your data")}</div>
                   <h2 id="gpx-import-sheet-title">{t("Import GPX")}</h2>
                   <div className="gpx-import-sheet__content">
-                    <p className="gpx-import-sheet__file-description">{t("Export a GPX file from Strava or most activity apps, then add it to your map here.")}</p>
+                    <p className="gpx-import-sheet__file-description">{t("Import a GPX file exported from Hecate, Strava, or another activity app to add the route to your map.")}</p>
                     <section className="gpx-import-sheet__privacy">
                       <strong>{t("Your import stays private")}</strong>
                       <p>{t("Imported routes add new ground to your map but don’t unlock achievements. Cities from an import are only added to the leaderboard when you add them to your public snapshot.")}</p>
@@ -1035,37 +1052,7 @@ export function SyncSheet({
                       ) : (
                         <ul>
                           {gpxImportedRoutes.map((route) => (
-                            <li key={route.id}>
-                              <button
-                                type="button"
-                                className="gpx-import-sheet__history-route"
-                                onClick={() => onShowGpxImportRoute(route.id)}
-                                aria-label={t("Show imported route {{value0}} on the map", { value0: route.title })}
-                              >
-                                <strong>{route.title}</strong>
-                                <span className="gpx-import-sheet__history-meta">
-                                  <time
-                                    dateTime={new Date(
-                                      route.addedAt,
-                                    ).toISOString()}
-                                  >{t("Added {{value0}}", { value0: formatGpxImportDate(route.addedAt) })}</time>
-                                </span>
-                                <span className="gpx-import-sheet__history-stats">
-                                  {route.addedKm > 0 && (
-                                    <span className="gpx-import-sheet__history-stat">
-                                      <span>{t("Route distance")}</span>
-                                      <strong>{formatGpxImportDistance(route.addedKm)}</strong>
-                                    </span>
-                                  )}
-                                  {route.newGroundKm !== undefined && (
-                                    <span className="gpx-import-sheet__history-stat">
-                                      <span>{t("New ground")}</span>
-                                      <strong>+{formatGpxImportDistance(route.newGroundKm)}</strong>
-                                    </span>
-                                  )}
-                                </span>
-                              </button>
-                            </li>
+                            <ImportedRouteCard key={route.id} route={route} onShowMap={onShowGpxImportRoute} />
                           ))}
                         </ul>
                       )}

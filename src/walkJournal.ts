@@ -41,7 +41,10 @@ export function loadWalkJournalState(userId: string): WalkJournal {
     const active = validWalkShape(candidate.active)
       ? candidate.active
       : null;
-    return { active, pending };
+    return {
+      active: active ? { ...active, points: active.points.map(point => ({ ...point, walkId: active.id })) } : null,
+      pending: pending.map(walk => ({ ...walk, points: walk.points.map(point => ({ ...point, walkId: walk.id })) })),
+    };
   } catch {
     return { active: null, pending: [] };
   }
