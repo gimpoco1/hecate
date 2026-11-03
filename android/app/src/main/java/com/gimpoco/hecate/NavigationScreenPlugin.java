@@ -8,10 +8,34 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "NavigationScreen")
 public class NavigationScreenPlugin extends Plugin {
+    private boolean navigationActive = false;
+    private boolean activityResumed = false;
+
+    private void updateScreenFlag() {
+        if (navigationActive && activityResumed) {
+            getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
+    @Override
+    protected void handleOnResume() {
+        activityResumed = true;
+        updateScreenFlag();
+    }
+
+    @Override
+    protected void handleOnPause() {
+        activityResumed = false;
+        updateScreenFlag();
+    }
+
     @PluginMethod
     public void keepAwake(PluginCall call) {
         getActivity().runOnUiThread(() -> {
-            getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            navigationActive = true;
+            updateScreenFlag();
             call.resolve();
         });
     }
@@ -19,7 +43,8 @@ public class NavigationScreenPlugin extends Plugin {
     @PluginMethod
     public void allowSleep(PluginCall call) {
         getActivity().runOnUiThread(() -> {
-            getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            navigationActive = false;
+            updateScreenFlag();
             call.resolve();
         });
     }
