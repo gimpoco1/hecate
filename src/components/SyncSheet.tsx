@@ -229,7 +229,7 @@ export function SyncSheet({
   useEffect(() => {
     if (!open || returnHighlight === null) return;
     const tile = returnHighlight === "history" ? historyTileRef.current : statsTileRef.current;
-    tile?.scrollIntoView({ block: "nearest", behavior: "instant" });
+    tile?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [open, returnHighlight]);
 
   useEffect(() => {

@@ -628,21 +628,18 @@ function syncHighlightedDiscoveries(
     properties: {},
     geometry: { type: "MultiLineString", coordinates: segments.map(segment => segment.map(point => [point.lng, point.lat])) },
   };
-  if (source) {
-    if (JSON.stringify(source.serialize().data) !== JSON.stringify(data)) source.setData(data);
+  if (source) source.setData(data);
+  else map.addSource(sourceId, { type: "geojson", data });
+  if (map.getLayer(shadowLayerId)) {
     map.setPaintProperty(shadowLayerId, "line-opacity", theme === "light" ? 0.35 : 0);
-    orderJourneyHighlights(map, beforeLayerId);
-    return;
-  }
-  map.addSource(sourceId, { type: "geojson", data });
-  map.addLayer({
+  } else map.addLayer({
     id: shadowLayerId,
     type: "line",
     source: sourceId,
     layout: { "line-cap": "round", "line-join": "round" },
     paint: { "line-color": "#34402a", "line-width": 6, "line-blur": 3, "line-opacity": theme === "light" ? 0.35 : 0 },
   }, beforeLayerId);
-  map.addLayer({
+  if (!map.getLayer(layerId)) map.addLayer({
     id: layerId,
     type: "line",
     source: sourceId,
@@ -683,18 +680,13 @@ function syncHighlightedRoute(
     if (source) map.removeSource(sourceId);
     return;
   }
-  if (source) {
-    source.setData(highlightedRouteData(points));
-    orderJourneyHighlights(map, beforeLayerId);
-    return;
-  }
   if (!map.getLayer(beforeLayerId)) return;
-
-  map.addSource(sourceId, {
+  if (source) source.setData(highlightedRouteData(points));
+  else map.addSource(sourceId, {
     type: "geojson",
     data: highlightedRouteData(points),
   });
-  map.addLayer(
+  if (!map.getLayer(haloLayerId)) map.addLayer(
     {
       id: haloLayerId,
       type: "line",
@@ -708,7 +700,7 @@ function syncHighlightedRoute(
     },
     beforeLayerId,
   );
-  map.addLayer(
+  if (!map.getLayer(lineLayerId)) map.addLayer(
     {
       id: lineLayerId,
       type: "line",
