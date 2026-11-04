@@ -163,14 +163,14 @@ export function OnboardingTour({ descriptionValues, gesture, targetId, title, de
       transition={{ duration: motionEnabled && !interacting ? 0.25 : 0 }}
       aria-label={t("Getting started")}
     >
-      <div className="guide-heading">
-        <GuideMotionButton controls={guideMotion} />
-      </div>
       <motion.div key={`${title}:${description}`} aria-live="polite" aria-atomic="true"
         initial={{ opacity: motionEnabled ? 0 : 1, x: motionEnabled ? 12 : 0 }}
         animate={{ opacity: 1, x: 0 }} transition={{ duration: motionEnabled ? 0.25 : 0 }}
       >
-        <h2>{t(title)}</h2>
+        <div className="guide-heading">
+          <h2>{t(title)}</h2>
+          <GuideMotionButton controls={guideMotion} />
+        </div>
         <p>{t(description, descriptionValues)}</p>
       </motion.div>
       <div className="onboarding-tour-actions">

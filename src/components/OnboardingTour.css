@@ -1,6 +1,7 @@
 .onboarding-tour-highlight { position: fixed; z-index: 39; border: 3px solid var(--theme-text-accent, #183c2f); outline: 3px solid var(--lime); pointer-events: none; }
 .onboarding-tour { position: fixed; z-index: 40; width: min(320px, calc(100vw - 32px)); padding: 18px; overflow-y: auto; border: 1px solid var(--theme-border, #ccd3c9); border-radius: 20px; background: color-mix(in srgb, var(--theme-surface, #f7f4ed) 78%, transparent); backdrop-filter: blur(10px); color: var(--forest); box-shadow: 0 12px 40px #0003; }
-.onboarding-tour .guide-heading { justify-content: flex-end; }
+.onboarding-tour .guide-heading { align-items: flex-start; }
+.onboarding-tour .guide-heading .guide-motion-button { margin-top: -1px; }
 .onboarding-tour h2 { margin: 8px 0; font-size: 18px; line-height: 1.3; }
 .onboarding-tour p { margin: 0; font-size: 14px; line-height: 1.5; }
 .onboarding-tour-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 12px; }
