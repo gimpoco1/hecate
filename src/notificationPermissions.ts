@@ -35,3 +35,8 @@ export async function ensureNotificationPermission(
   }
   return permission.display === "granted";
 }
+
+/** Reads access for automatic scheduling without opening a system prompt. */
+export async function hasNotificationPermission(client: Pick<NotificationPermissionClient, "checkPermissions">): Promise<boolean> {
+  return (await client.checkPermissions()).display === "granted";
+}

@@ -1,3 +1,4 @@
+import { ContextualGuide } from "./ContextualGuide";
 import { useState } from "react";
 import { MapRewardPreview } from "./MapRewardPreview";
 import { MAP_REWARDS, type MapReward } from "../goalRewards";
@@ -46,7 +47,7 @@ export function AchievementCelebration({
           ))}
         </div>
         <div className="achievement-celebration__eyebrow">{t("Achievement unlocked")}</div>
-        <div className="achievement-celebration__artwork">
+        <div className="achievement-celebration__artwork" data-testid="guide-unlock">
           <AchievementArtwork
             image={achievement.image}
             title={achievement.title}
@@ -57,7 +58,8 @@ export function AchievementCelebration({
         <p id="achievement-celebration-description">
           {achievement.description}
         </p>
-        <button type="button" onClick={() => {
+        <ContextualGuide topic="unlock" />
+        <button type="button" data-testid="achievement-celebration-dismiss" onClick={() => {
           if (reward) {
             onViewMapReward(reward.id);
             setShowMap(true);

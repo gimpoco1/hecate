@@ -112,6 +112,18 @@ if (!androidSource.includes("public void getAuthorizationStatus(")) {
 ` + anchor);
   writeFileSync(androidPluginPath, androidSource);
 }
+// Older patches treated a never-requested Android location permission as denied.
+const androidAuthorizationOriginal = 'result.put("status", !foreground ? "denied" : background ? "always" : "whenInUse");';
+const androidAuthorizationUpdated = `PermissionState permission = getPermissionState("location");
+        boolean canRequest = permission == PermissionState.PROMPT || permission == PermissionState.PROMPT_WITH_RATIONALE;
+        result.put("status", !foreground ? (canRequest ? "notDetermined" : "denied") : background ? "always" : "whenInUse");`;
+if (androidSource.includes(androidAuthorizationOriginal)) {
+  androidSource = androidSource.replace(androidAuthorizationOriginal, androidAuthorizationUpdated);
+  writeFileSync(androidPluginPath, androidSource);
+} else if (!androidSource.includes(androidAuthorizationUpdated)) {
+  throw new Error("Background geolocation plugin changed; review Android requestable location authorization.");
+}
+
 const indicatorOriginal = "manager.showsBackgroundLocationIndicator = background";
 const indicatorReplacement = 'manager.showsBackgroundLocationIndicator = call.getBool("showsBackgroundLocationIndicator") ?? background';
 const methodsOriginal = 'CAPPluginMethod(name: "removeWatcher", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)';

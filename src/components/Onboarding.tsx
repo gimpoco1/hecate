@@ -1,0 +1,243 @@
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
+import { resetGuideMotion } from "../guideMotion";
+import { resetOnboardingTour } from "../onboardingTour";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { t, useAppTranslation } from "../i18n";
+import { GuideMotionButton } from "./GuideMotionButton";
+import { useGuideMotion } from "../guideMotion";
+import { HecateMark } from "./Icons";
+import { IntroArtwork, type IntroArtworkKind } from "./IntroArtwork";
+import { OnboardingLocationContext } from "../onboardingLocation";
+import type { Coordinate } from "../types";
+import { acquireForegroundLocation, requestForegroundLocationPermission, requestReminderMotionPermission, readReminderMotionAuthorization, reminderMotionPermissionLabel, hasBackgroundLocationPermission, readForegroundLocationPermission, openLocationSettings } from "../location";
+import { canRequestOnboardingNotifications, requestOnboardingNotifications, readOnboardingNotificationPermission } from "../onboardingPermissions";
+import { errorDiagnostic } from "../diagnostics";
+import "./Onboarding.css";
+
+const COMPLETION_KEY = "hecate.onboarding.v1";
+const RESTART_EVENT = "hecate:restart-onboarding";
+
+export function restartOnboarding(): void {
+  resetOnboardingTour();
+  resetGuideMotion();
+  localStorage.removeItem(COMPLETION_KEY);
+  window.dispatchEvent(new Event(RESTART_EVENT));
+}
+const introPages = [
+  { kind: "discover", title: "Your world, waiting to be revealed", description: "Explore on foot or by bike. Reveal new streets with every journey.", caption: null },
+  { kind: "journey", title: "Make your first discovery", description: "Tap Start on the map, head outside, then stop to see what you discovered.", caption: null },
+  { kind: "features", title: "Follow your curiosity", description: "Plan routes, save favorite places, and celebrate your progress in your profile.", caption: null },
+  { kind: "location", title: "Find your starting point", description: "See where you are and record the journeys you choose to start.", caption: "Optional. You choose when to record." },
+  { kind: "notifications", title: "A little nudge to explore", description: "Get a nudge to explore new ground, even with the app in the background.", caption: "Optional. Enable notifications now or later in Settings." },
+  { kind: "motion", title: "Keep discovery reminders working", description: "Allow {{permission}} to detect movement for background discovery reminders.", caption: "Also requires notifications and Always location access." },
+] as const satisfies readonly { kind: IntroArtworkKind; title: string; description: string; caption: string | null }[];
+
+export function Onboarding({ children }: { children: ReactNode }) {
+  useAppTranslation();
+  const motionControls = useGuideMotion();
+  const nativeApp = Capacitor.isNativePlatform();
+  const pages = nativeApp ? introPages : introPages.filter(page => page.kind !== "motion");
+  const [complete, setComplete] = useState(() => localStorage.getItem(COMPLETION_KEY) === "complete");
+  const [step, setStep] = useState(0);
+  const [requesting, setRequesting] = useState(false);
+  const [checkingPermission, setCheckingPermission] = useState(false);
+  const [motionAvailable, setMotionAvailable] = useState(true);
+  const [initialLocation, setInitialLocation] = useState<Coordinate | undefined>();
+  const [locationResult, setLocationResult] = useState<boolean | null>(null);
+  const [notificationResult, setNotificationResult] = useState<boolean | null>(null);
+  const [motionResult, setMotionResult] = useState<boolean | null>(null);
+  const [backgroundAllowed, setBackgroundAllowed] = useState<boolean | null>(null);
+  const [permissionError, setPermissionError] = useState("");
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const restart = (): void => {
+      setStep(0);
+      setCheckingPermission(false);
+      setRequesting(false);
+      setInitialLocation(undefined);
+      setLocationResult(null);
+      setNotificationResult(null);
+      setMotionResult(null);
+      setMotionAvailable(true);
+      setBackgroundAllowed(null);
+      setPermissionError("");
+      setComplete(false);
+    };
+    window.addEventListener(RESTART_EVENT, restart);
+    return () => window.removeEventListener(RESTART_EVENT, restart);
+  }, []);
+  useEffect(() => {
+    if (!complete) heading.current?.focus();
+  }, [step, complete]);
+
+  function finish(): void {
+    localStorage.setItem(COMPLETION_KEY, "complete");
+    setComplete(true);
+  }
+
+  async function enableLocation(): Promise<void> {
+    setRequesting(true);
+    setPermissionError("");
+    try {
+      const allowed = await requestForegroundLocationPermission();
+      setLocationResult(allowed);
+      if (allowed) setInitialLocation(await acquireForegroundLocation());
+    }
+    catch (cause) {
+      console.error("Could not enable location during onboarding", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Could not request location access. Please try again."));
+    } finally { setRequesting(false); }
+  }
+
+  async function enableNotifications(): Promise<void> {
+    setRequesting(true);
+    setPermissionError("");
+    try { setNotificationResult(await requestOnboardingNotifications()); }
+    catch (cause) {
+      console.error("Could not enable notifications during onboarding", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Could not request notification access. Please try again."));
+    } finally { setRequesting(false); }
+  }
+
+  async function enableMotion(): Promise<void> {
+    setRequesting(true);
+    setPermissionError("");
+    try {
+      setMotionResult(await requestReminderMotionPermission());
+      setBackgroundAllowed(await hasBackgroundLocationPermission());
+    } catch (cause) {
+      console.error("Could not enable onboarding motion permission", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Could not request motion access. Please try again."));
+    } finally { setRequesting(false); }
+  }
+
+  async function openPermissionSettings(): Promise<void> {
+    setPermissionError("");
+    try { await openLocationSettings(); }
+    catch (cause) {
+      console.error("Could not open onboarding permission settings", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Could not open device Settings."));
+    }
+  }
+
+  useEffect(() => {
+    if (complete || requesting) return;
+    const kind = pages[step].kind;
+    if (kind !== "notifications" && kind !== "motion" && kind !== "location") return;
+    let active = true;
+    const refresh = async (): Promise<void> => {
+      setCheckingPermission(true);
+      try {
+        if (kind === "location") {
+          const allowed = await readForegroundLocationPermission();
+          if (active) setLocationResult(allowed);
+        }
+        if (kind === "notifications") {
+          const result = await readOnboardingNotificationPermission();
+          if (active) setNotificationResult(result);
+        }
+        if (kind === "motion") {
+          const status = await readReminderMotionAuthorization();
+          const background = await hasBackgroundLocationPermission();
+          if (active) {
+            setMotionAvailable(status !== "unavailable");
+            setMotionResult(status === "notDetermined" ? null : status === "authorized");
+            setBackgroundAllowed(background);
+            if (status === "unavailable") setPermissionError(t("Motion detection isn’t available on this device."));
+          }
+        }
+      } catch (cause) {
+        if (active) setPermissionError(cause instanceof Error ? cause.message : t("Could not check permission status."));
+        console.error("Could not refresh onboarding permissions", { error: errorDiagnostic(cause) });
+      } finally { if (active) setCheckingPermission(false); }
+    };
+    void refresh();
+    const onVisible = (): void => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    let listener: { remove: () => Promise<void> } | undefined;
+    if (nativeApp) {
+      void CapacitorApp.addListener("appStateChange", ({ isActive }) => { if (isActive) void refresh(); })
+        .then(handle => { if (active) listener = handle; else void handle.remove(); })
+        .catch(cause => {
+          console.error("Could not observe onboarding permission changes", { error: errorDiagnostic(cause) });
+          if (active) setPermissionError(cause instanceof Error ? cause.message : t("Could not check permission status."));
+        });
+    }
+    return () => { active = false; document.removeEventListener("visibilitychange", onVisible); if (listener) void listener.remove(); };
+  }, [nativeApp, complete, step, requesting]);
+
+  function advancePage(): void {
+    setPermissionError("");
+    if (step === pages.length - 1) finish();
+    else setStep(step + 1);
+  }
+
+  async function next(): Promise<void> {
+    if (pages[step].kind !== "location" || locationResult !== true || initialLocation) {
+      advancePage();
+      return;
+    }
+    setRequesting(true);
+    setPermissionError("");
+    try {
+      setInitialLocation(await acquireForegroundLocation());
+      advancePage();
+    } catch (cause) {
+      console.error("Could not locate user during onboarding", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Location is unavailable."));
+    } finally { setRequesting(false); }
+  }
+
+  if (complete) return <OnboardingLocationContext.Provider value={initialLocation}>{children}</OnboardingLocationContext.Provider>;
+  const page = pages[step];
+  const permissionPage = page.kind === "location" || page.kind === "notifications" || page.kind === "motion";
+  const permissionResult = page.kind === "location" ? locationResult : page.kind === "motion" ? motionResult : notificationResult;
+  const needsSettings = nativeApp && permissionPage && (page.kind !== "motion" || motionAvailable) && (permissionResult === false || (page.kind === "motion" && motionResult === true && backgroundAllowed === false));
+  const notificationsSupported = canRequestOnboardingNotifications();
+  const showPermissionButton = permissionPage && permissionResult === null && (page.kind !== "notifications" || notificationsSupported) && (page.kind !== "motion" || motionAvailable);
+  const busy = requesting || checkingPermission;
+  return (
+    <main className="onboarding" data-testid="onboarding">
+      <div className="onboarding-layout">
+        <header className="onboarding-header">
+          <span className="onboarding-brand"><HecateMark size={28} /> Hecate</span>
+          <div className="guide-heading">
+            {page.kind === "discover" && <GuideMotionButton controls={motionControls} />}
+            <button type="button" data-testid="onboarding-skip" disabled={busy} onClick={finish}>{t("Skip intro")}</button>
+          </div>
+        </header>
+        <IntroArtwork kind={page.kind} />
+        <section className="onboarding-copy" aria-labelledby="onboarding-title">
+          <h1 id="onboarding-title" tabIndex={-1} ref={heading}>{t(page.title)}</h1>
+          <p className="onboarding-description">{t(page.description, { permission: reminderMotionPermissionLabel() })}</p>
+          {page.caption && permissionResult !== false && <p className="onboarding-caption">{t(page.caption)}</p>}
+          {permissionPage && permissionResult !== null && !(page.kind === "motion" && motionResult === true && backgroundAllowed === false) && (page.kind !== "motion" || motionAvailable) && <p className={`onboarding-permission-status${permissionResult === false ? " onboarding-warning" : ""}`} role="status">{permissionResult === false && <PermissionWarningIcon />}{permissionResult
+            ? page.kind === "location" ? t("Location is enabled.") : page.kind === "motion" ? t("{{permission}} is enabled.", { permission: reminderMotionPermissionLabel() }) : t("Notifications are enabled.")
+            : page.kind === "notifications" ? t("Notifications are blocked. Enable them in Settings.") : t("You can enable this later in Settings.")}</p>}
+          {page.kind === "notifications" && !notificationsSupported && <p className="onboarding-caption">{t("Notifications are available in the mobile app.")}</p>}
+          {page.kind === "motion" && motionResult === true && backgroundAllowed === false && <p className="onboarding-caption onboarding-warning"><PermissionWarningIcon />{t("Allow background location in Settings for discovery reminders.")}</p>}
+          {permissionError && <p className="onboarding-permission-error onboarding-warning" role="alert"><PermissionWarningIcon />{permissionError}</p>}
+        </section>
+        <footer className="onboarding-footer">
+          <div className="onboarding-progress" aria-hidden="true">{pages.map((item, index) => <span key={item.title} className={index === step ? "is-current" : ""} />)}</div>
+          <div className="onboarding-actions">
+            {step > 0 && <button type="button" className="onboarding-back" data-testid="onboarding-back" disabled={busy} onClick={() => { setPermissionError(""); setStep(step - 1); }}>{t("Back")}</button>}
+            {showPermissionButton ? <button type="button" className="onboarding-next" data-testid="onboarding-permission" disabled={busy}
+              onClick={() => void (page.kind === "location" ? enableLocation() : page.kind === "motion" ? enableMotion() : enableNotifications())}>
+              {checkingPermission ? t("Checking permission…") : requesting ? t("Requesting permission…") : page.kind === "location" ? t("Enable location") : page.kind === "motion" ? t("Enable {{permission}}", { permission: reminderMotionPermissionLabel() }) : t("Enable notifications")}
+            </button> : needsSettings ? <button type="button" className="onboarding-next" data-testid="onboarding-settings" disabled={busy} onClick={() => void openPermissionSettings()}>{t("Open Settings")}</button>
+              : <button type="button" className="onboarding-next" data-testid="onboarding-next" disabled={busy} onClick={() => void next()}>
+                {requesting ? t("Finding your location") : step === pages.length - 1 ? t("Explore with Hecate") : t("Continue")}
+              </button>}
+          </div>
+          {(showPermissionButton || needsSettings || (page.kind === "location" && locationResult === true && !initialLocation)) && <button type="button" className="onboarding-later" data-testid="onboarding-later" disabled={busy} onClick={advancePage}>{t("Not now")}</button>}
+        </footer>
+      </div>
+    </main>
+  );
+}
+
+function PermissionWarningIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m10.3 4-8 14a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4m0 4h.01" /></svg>;
+}

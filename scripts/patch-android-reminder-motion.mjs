@@ -199,7 +199,7 @@ if (!plugin.includes("public void getMotionAuthorizationStatus(")) {
             == com.google.android.gms.common.ConnectionResult.SUCCESS;
         PermissionState permission = getPermissionState("activityRecognition");
         result.put("status", !available ? "unavailable" : motionPermissionGranted() ? "authorized"
-            : permission == PermissionState.PROMPT ? "notDetermined" : "denied");
+            : (permission == PermissionState.PROMPT || permission == PermissionState.PROMPT_WITH_RATIONALE) ? "notDetermined" : "denied");
         call.resolve(result);
     }
 
@@ -262,6 +262,16 @@ if (!plugin.includes("pendingCleanupCalls")) {
                         while ((waiting = pendingCleanupCalls.poll()) != null) removeAllWatchers(waiting);`);
   plugin = replaceRequired(plugin, "                    public void onServiceDisconnected(ComponentName name) {\n                    }", "                    public void onServiceDisconnected(ComponentName name) {\n                        BackgroundGeolocation.this.service = null;\n                    }");
   writeFileSync(pluginPath, plugin);
+}
+
+plugin = readFileSync(pluginPath, "utf8");
+const previousMotionStatus = 'permission == PermissionState.PROMPT ? "notDetermined" : "denied"';
+const requestableMotionStatus = '(permission == PermissionState.PROMPT || permission == PermissionState.PROMPT_WITH_RATIONALE) ? "notDetermined" : "denied"';
+if (plugin.includes(previousMotionStatus)) {
+  plugin = replaceRequired(plugin, previousMotionStatus, requestableMotionStatus);
+  writeFileSync(pluginPath, plugin);
+} else if (!plugin.includes(requestableMotionStatus)) {
+  throw new Error("Android motion permission status changed; review requestable activity recognition authorization");
 }
 
 service = readFileSync(servicePath, "utf8");

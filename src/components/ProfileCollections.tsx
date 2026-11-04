@@ -1,3 +1,4 @@
+import { ContextualGuide } from "./ContextualGuide";
 import { MAP_REWARDS, type MapReward } from "../goalRewards";
 import { useLayoutEffect, useRef, useState } from "react";
 import { mdiCubeOutline, mdiMapMarkerOutline } from "@mdi/js";
@@ -220,6 +221,7 @@ export function AchievementsSheet({
         <section
           className="profile-collection-summary"
           aria-label={t("Achievements summary")}
+          data-testid="guide-achievements"
         >
           <span>
             <strong>{earnedCount}</strong>
@@ -231,6 +233,7 @@ export function AchievementsSheet({
           </span>
         </section>
 
+        {!highlightedAchievementId && <ContextualGuide topic="achievements" />}
         <ul className="achievements-collection-list">
           {achievementEvaluations.map(
             ({ definition, earned, progress, progressText }) => {

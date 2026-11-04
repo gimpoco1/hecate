@@ -604,6 +604,7 @@ export function ExplorationRoutePlanner({
           <button
             className="exploration-route-close"
             type="button"
+            data-testid="route-planner-close"
             onClick={onClose}
             aria-label={t("Close route planner")}
           >

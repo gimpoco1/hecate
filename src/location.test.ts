@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
   platform: "ios",
@@ -24,18 +24,69 @@ vi.mock("@capacitor/core", () => ({
   }),
 }));
 
-import { createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode } from "./location";
-import { readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from "./location";
+import { acquireForegroundLocation, createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode, requestForegroundLocationPermission } from "./location";
+import { hasForegroundLocationPermission, hasBackgroundLocationPermission, readForegroundLocationPermission, readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from "./location";
 
 describe("iOS location authorization", () => {
+  it.each(["denied", "notDetermined"])("does not start location watchers for passive checks with %s access", async status => {
+    native.platform = "ios";
+    native.addWatcher.mockClear();
+    native.getAuthorizationStatus.mockResolvedValue({ status });
+    expect(await hasForegroundLocationPermission()).toBe(false);
+    expect(await hasBackgroundLocationPermission()).toBe(false);
+    expect(native.addWatcher).not.toHaveBeenCalled();
+  });
+  it("allows foreground positioning without escalating to background access", async () => {
+    native.platform = "ios";
+    native.getAuthorizationStatus.mockResolvedValue({ status: "whenInUse" });
+    expect(await hasForegroundLocationPermission()).toBe(true);
+    expect(await hasBackgroundLocationPermission()).toBe(false);
+  });
   it.each(["always", "whenInUse", "denied", "notDetermined"])("reads %s without requesting location", async status => {
     native.getAuthorizationStatus.mockResolvedValue({ status });
     expect(await readLocationAuthorization()).toBe(status);
+    expect(await readForegroundLocationPermission()).toBe(status === "notDetermined" ? null : status !== "denied");
   });
 
   it("rejects an unrecognized native permission value", async () => {
     native.getAuthorizationStatus.mockResolvedValue({ status: "invalid" });
     await expect(readLocationAuthorization()).rejects.toThrow("Unrecognized location");
+  });
+});
+
+describe("browser location permission capabilities", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    native.platform = "ios";
+  });
+
+  it.each(["missing", "unsupported"])("keeps passive checks prompt-free and explicit requests usable with %s permission queries", async capability => {
+    native.platform = "web";
+    native.getAuthorizationStatus.mockClear();
+    const clearWatch = vi.fn();
+    const watchPosition = vi.fn(callback => {
+      callback({ coords: { longitude: 2.17, latitude: 41.4, accuracy: 10, heading: null, speed: null }, timestamp: Date.now() });
+      return 7;
+    });
+    const query = vi.fn().mockRejectedValue(new TypeError("Geolocation permission queries are unsupported"));
+    vi.stubGlobal("navigator", {
+      permissions: capability === "missing" ? undefined : { query },
+      geolocation: { watchPosition, clearWatch },
+    });
+    expect(await readForegroundLocationPermission()).toBeNull();
+    expect(await hasForegroundLocationPermission()).toBe(false);
+    expect(watchPosition).not.toHaveBeenCalled();
+    expect(await requestForegroundLocationPermission()).toBe(true);
+    expect(watchPosition).toHaveBeenCalledOnce();
+    expect(clearWatch).toHaveBeenCalledWith(7);
+    expect(native.getAuthorizationStatus).not.toHaveBeenCalled();
+  });
+
+  it("surfaces permission-query failures unrelated to browser support", async () => {
+    native.platform = "web";
+    const error = new DOMException("Permission queries are disallowed by policy", "SecurityError");
+    vi.stubGlobal("navigator", { permissions: { query: vi.fn().mockRejectedValue(error) } });
+    await expect(readForegroundLocationPermission()).rejects.toBe(error);
   });
 });
 
@@ -270,5 +321,51 @@ describe("native location lifecycle", () => {
     );
     await tracker.stop();
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: "reminder-watcher" });
+  });
+});
+
+describe("foreground location acquisition", () => {
+  beforeEach(() => {
+    native.platform = "ios";
+    vi.clearAllMocks();
+    native.removeAllWatchers.mockResolvedValue(undefined);
+    native.removeWatcher.mockResolvedValue(undefined);
+    native.addWatcher.mockResolvedValue("locate-once");
+  });
+
+  it.each([
+    ["whenInUse", true],
+    ["denied", false],
+  ] as const)("finishes a permission request with %s before GPS supplies a fix", async (status, allowed) => {
+    vi.useFakeTimers();
+    try {
+      native.getAuthorizationStatus.mockResolvedValueOnce({ status: "notDetermined" }).mockResolvedValue({ status });
+      const permission = requestForegroundLocationPermission();
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(permission).resolves.toBe(allowed);
+      expect(native.addWatcher).toHaveBeenCalledOnce();
+      expect(native.removeWatcher).toHaveBeenCalledWith({ id: "locate-once" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns a fresh position, ignores stale fixes, and releases the temporary watcher", async () => {
+    const locating = acquireForegroundLocation();
+    await vi.waitFor(() => expect(native.addWatcher).toHaveBeenCalledOnce());
+    const callback = native.addWatcher.mock.calls[0][1];
+    callback({ longitude: 2.17, latitude: 41.4, time: Date.now() - 120_000, accuracy: 120 }, undefined);
+    const now = Date.now();
+    callback({ longitude: 2.1744, latitude: 41.4036, time: now, accuracy: 100 }, undefined);
+    await expect(locating).resolves.toMatchObject({ lng: 2.1744, lat: 41.4036, recordedAt: now });
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: "locate-once" });
+  });
+
+  it("surfaces a denied acquisition and releases its watcher", async () => {
+    const locating = acquireForegroundLocation();
+    await vi.waitFor(() => expect(native.addWatcher).toHaveBeenCalledOnce());
+    native.addWatcher.mock.calls[0][1](undefined, { code: "NOT_AUTHORIZED", message: "Location access denied" });
+    await expect(locating).rejects.toThrow("Location access denied");
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: "locate-once" });
   });
 });

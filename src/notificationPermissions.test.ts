@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { notificationSettingsWarning, type NotificationSettingsPermissionState, ensureNotificationPermission } from "./notificationPermissions";
+import { hasNotificationPermission, notificationSettingsWarning, type NotificationSettingsPermissionState, ensureNotificationPermission } from "./notificationPermissions";
 
 describe("notification permission onboarding", () => {
+  it("does not prompt during automatic permission checks", async () => {
+    const client = { checkPermissions: vi.fn().mockResolvedValue({ display: "prompt" }), requestPermissions: vi.fn() };
+    await expect(hasNotificationPermission(client)).resolves.toBe(false);
+    expect(client.requestPermissions).not.toHaveBeenCalled();
+  });
   it("requests permission when the first-run status is undecided", async () => {
     const client = {
       checkPermissions: vi.fn().mockResolvedValue({ display: "prompt" }),
