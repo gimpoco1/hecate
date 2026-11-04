@@ -1,3 +1,5 @@
+import { rewardMapColor } from "./mapRewardPalette";
+import type { MapReward } from "./goalRewards";
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import type { ColorTheme } from "./appearance";
 
@@ -35,22 +37,27 @@ export function mapStyleForTheme(style: StyleSpecification, theme: ColorTheme): 
   };
 }
 
-export function applyMapAppearance(map: MapLibreMap, baseStyle: StyleSpecification, theme: ColorTheme): void {
+export function applyMapAppearance(map: MapLibreMap, baseStyle: StyleSpecification, theme: ColorTheme, reward: MapReward): void {
   for (const [index, layer] of mapStyleForTheme(baseStyle, theme).layers.entries()) {
     if (!("paint" in layer) || !layer.paint || !map.getLayer(layer.id)) continue;
     for (const [property, value] of Object.entries(layer.paint)) {
-      if (property.endsWith("color")) map.setPaintProperty(layer.id, property as Parameters<MapLibreMap["setPaintProperty"]>[1], value);
+      if (property.endsWith("color")) map.setPaintProperty(layer.id, property as Parameters<MapLibreMap["setPaintProperty"]>[1], reward !== "standard" ? rewardMapColor(reward, layer.id, property) : value);
     }
     const original = baseStyle.layers[index];
+    map.setLayoutProperty(layer.id, "visibility", reward === "paper" && /building|poi|housenumber|rail|aeroway|contour|hillshade|pattern|landcover/i.test(layer.id) ? "none" : (original.layout?.visibility ?? "visible"));
+
     if (original.type === "fill" && original.paint?.["fill-pattern"] !== undefined) {
-      map.setPaintProperty(layer.id, "fill-pattern", theme === "dark" ? undefined : original.paint["fill-pattern"]);
-      if (theme === "light") map.setPaintProperty(layer.id, "fill-color", original.paint["fill-color"]);
+      map.setPaintProperty(layer.id, "fill-pattern", (theme === "dark" || reward !== "standard") ? undefined : original.paint["fill-pattern"]);
+      if (theme === "light") map.setPaintProperty(layer.id, "fill-color", reward !== "standard" ? rewardMapColor(reward, layer.id, "fill-color") : original.paint["fill-color"]);
+    }
+    if (layer.type === "symbol" && layer.layout?.["icon-image"] !== undefined) {
+      map.setPaintProperty(layer.id, "icon-opacity", reward === "paper" ? 0 : original.type === "symbol" ? original.paint?.["icon-opacity"] : undefined);
     }
     if (layer.type === "line" && "line-pattern" in layer.paint) {
       map.setPaintProperty(layer.id, "line-opacity", theme === "dark" ? 0.3 : layer.paint["line-opacity"]);
     }
     if (layer.type === "raster") {
-      map.setPaintProperty(layer.id, "raster-opacity", theme === "dark" ? 0.18 : layer.paint["raster-opacity"]);
+      map.setPaintProperty(layer.id, "raster-opacity", reward === "paper" ? 0 : theme === "dark" ? 0.18 : layer.paint["raster-opacity"]);
     }
   }
 }

@@ -82,7 +82,7 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
   const mapRef = useRef<MapLibreMap | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   useEffect(() => {
-    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme);
+    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme, "standard");
   }, [theme]);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
         });
         mapRef.current = map;
         baseStyleRef.current = style;
-        map.once("style.load", () => applyMapAppearance(map, style, themeRef.current));
+        map.once("style.load", () => applyMapAppearance(map, style, themeRef.current, "standard"));
         map.addControl(
           new maplibregl.AttributionControl({ compact: true }),
           "bottom-left",
