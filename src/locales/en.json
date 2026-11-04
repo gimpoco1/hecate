@@ -90,6 +90,7 @@
   "Find your current location before starting navigation.": "Find your current location before starting navigation.",
   "Development test tools": "Development test tools",
   "Dev tools": "Dev tools",
+  "Show mock error message": "Show mock error message",
   "Hide development test tools": "Hide development test tools",
   "Notifications": "Notifications",
   "Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.": "Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.",

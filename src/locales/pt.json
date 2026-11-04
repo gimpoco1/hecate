@@ -90,6 +90,7 @@
   "Find your current location before starting navigation.": "Determina a tua localização antes de iniciar a navegação.",
   "Development test tools": "Ferramentas de desenvolvimento",
   "Dev tools": "Desenvolvimento",
+  "Show mock error message": "Mostrar mensagem de erro de exemplo",
   "Hide development test tools": "Ocultar ferramentas de desenvolvimento",
   "Notifications": "Notificações",
   "Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.": "Agenda cada notificação para daqui a 5 segundos com o progresso atual. Os testes funcionam mesmo com a categoria desativada.",

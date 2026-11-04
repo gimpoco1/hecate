@@ -814,6 +814,7 @@ export default function App() {
   const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(
     null,
   );
+  const [locationErrorDismissed, setLocationErrorDismissed] = useState(false);
   const [pendingSpeedStopReport, setPendingSpeedStopReport] =
     useState<JourneySpeedStopReport | null>(null);
   const [mode, setMode] = useState<MapMode>("discover");
@@ -871,6 +872,7 @@ export default function App() {
   }, []);
 
   const [tracking, setTracking] = useState<TrackingState>("idle");
+  useEffect(() => setLocationErrorDismissed(false), [tracking]);
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
     useState(false);
   const [locationSettingsError, setLocationSettingsError] = useState("");
@@ -4747,7 +4749,7 @@ export default function App() {
       if (reducedMotion) {
         setVisualExpanded(expanded);
         setCitiesExpanded(expanded);
-        card.style.transform = targetTransform;
+        card.style.removeProperty("transform");
         return;
       }
 
@@ -4772,7 +4774,7 @@ export default function App() {
         animation.onfinish = () => {
           if (journeyAnimationRef.current !== animation) return;
           journeyAnimationRef.current = null;
-          card.style.transform = targetTransform;
+          card.style.removeProperty("transform");
           animation.cancel();
           setCitiesExpanded(expanded);
         };
@@ -5658,6 +5660,11 @@ export default function App() {
               <XIcon size={14} />
             </button>
           </div>
+          <button
+            type="button"
+            data-testid="preview-error-toast"
+            onClick={() => setJourneyStopMessage(t(JOURNEY_SPEED_STOP_MESSAGE))}
+          >{t("Show mock error message")}</button>
           <strong>{t("Notifications")}</strong>
           <small>{t("Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.")}</small>
           <button
@@ -5851,40 +5858,62 @@ export default function App() {
         </aside>
       )}
 
-      {locationPermissionToastVisible && (
-        <aside className="account-toast location-permission-toast" role="alert">
-          <span className="account-toast__mark" aria-hidden="true">
-            <InfoIcon size={18} strokeWidth={2} />
-          </span>
-          <span className="account-toast__message">
-            {locationSettingsError ||
+      <div className="app-error-stack" data-testid="app-error-stack">
+        {(journeyStopMessage || (tracking === "unavailable" && !locationErrorDismissed)) && (
+          <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-error-toast">
+            <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+            <span className="account-toast__message">{journeyStopMessage || t("Location is temporarily unavailable. Try again, or preview the sample discovery.")}</span>
+            <button type="button" className="app-error-toast__dismiss" aria-label={t("Close")} onClick={() => {
+              setJourneyStopMessage(null);
+              setLocationErrorDismissed(true);
+            }}><XIcon size={18} /></button>
+          </aside>
+        )}
+        {journeySaveError && (
+          <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-save-error-toast">
+            <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+            <div className="account-toast__message">
+              <p>{journeySaveError}</p>
+              <button className="app-error-toast__action" type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={finalizeRecordedWalk}>{t("Retry saving journey")}</button>
+            </div>
+          </aside>
+        )}
+        {locationPermissionToastVisible && (
+          <aside className="account-toast location-permission-toast app-error-toast" role="alert">
+            <span className="account-toast__mark" aria-hidden="true">
+              <InfoIcon size={18} strokeWidth={2} />
+            </span>
+            <span className="account-toast__message">
+              {locationSettingsError ||
               t("Allow location access in Settings to start your journey.")}
-          </span>
-          <div className="location-permission-toast__actions">
-            <button
-              type="button"
-              onClick={() => {
-                void openLocationSettings()
-                  .then(() => setLocationPermissionToastVisible(false))
-                  .catch((error: Error) => {
-                    console.warn("Could not open location settings", { error: errorDiagnostic(error) });
-                    setLocationSettingsError(
-                      t("Could not open Settings. Enable location for Hecate in your device Settings."),
-                    );
-                  });
-              }}
-            >{t("Open device settings")}</button>
-            <button
-              type="button"
-              className="location-permission-toast__dismiss"
-              aria-label={t("Dismiss location permission message")}
-              onClick={() => setLocationPermissionToastVisible(false)}
-            >
-              <XIcon size={16} strokeWidth={2} />
-            </button>
-          </div>
-        </aside>
-      )}
+            </span>
+            <div className="location-permission-toast__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  void openLocationSettings()
+                    .then(() => setLocationPermissionToastVisible(false))
+                    .catch((error: Error) => {
+                      console.warn("Could not open location settings", { error: errorDiagnostic(error) });
+                      setLocationSettingsError(
+                        t("Could not open Settings. Enable location for Hecate in your device Settings."),
+                      );
+                    });
+                }}
+              >{t("Open device settings")}</button>
+              <button
+                type="button"
+                className="location-permission-toast__dismiss"
+                aria-label={t("Dismiss location permission message")}
+                onClick={() => setLocationPermissionToastVisible(false)}
+              >
+                <XIcon size={16} strokeWidth={2} />
+              </button>
+            </div>
+          </aside>
+        )}
+
+      </div>
 
       {tracking !== "tracking" &&
         tracking !== "requesting" &&
@@ -6165,25 +6194,6 @@ export default function App() {
               {nativeApp
                 ? t("Discovering in background")
                 : t("Keep this page open and your screen on")}
-            </div>
-          )}
-          {tracking === "unavailable" && (
-            <p className="location-error">{t("Location is temporarily unavailable. Try again, or preview the sample discovery.")}</p>
-          )}
-          {journeyStopMessage && (
-            <p className="location-error" role="status">
-              {journeyStopMessage}
-            </p>
-          )}
-          {journeySaveError && (
-            <div className="location-error" role="alert">
-              <p>{journeySaveError}</p>
-              <button
-                type="button"
-                data-testid="retry-journey-save"
-                disabled={walkFinalizing}
-                onClick={finalizeRecordedWalk}
-              >{t("Retry saving journey")}</button>
             </div>
           )}
           <JourneyDetails
