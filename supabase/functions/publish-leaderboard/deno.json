@@ -1,4 +1,12 @@
 {
-  "imports": { "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0" },
-  "compilerOptions": { "types": ["npm:@types/geojson@7946.0.16"] }
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0",
+    "../../../src/i18n": "../_shared/i18n.ts",
+    "i18next": "npm:i18next@26.5.11"
+  },
+  "compilerOptions": {
+    "types": [
+      "npm:@types/geojson@7946.0.16"
+    ]
+  }
 }
