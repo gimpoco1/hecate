@@ -1,4 +1,5 @@
 import i18n from "i18next";
+import { Onboarding } from "./components/Onboarding";
 import { t } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
 import { lazy, StrictMode, Suspense } from "react";
@@ -39,7 +40,7 @@ translateDocument();
 i18n.on("languageChanged", translateDocument);
 
 function renderExperience(): void {
-  createRoot(document.getElementById("root")!).render(<StrictMode><Suspense fallback={null}><RootExperience /></Suspense></StrictMode>);
+  createRoot(document.getElementById("root")!).render(<StrictMode><Suspense fallback={null}>{leaderboardRoute ? <RootExperience /> : <Onboarding><RootExperience /></Onboarding>}</Suspense></StrictMode>);
 }
 
 void initializeWebAuth().then(renderExperience).catch((error: Error) => {

@@ -1,3 +1,4 @@
+import { ContextualGuide } from "./ContextualGuide";
 import { t, useAppTranslation } from "../i18n";
 import type { PersonalAchievementDefinition } from "../achievements";
 import { AchievementArtwork } from "./AchievementArtwork";
@@ -27,7 +28,7 @@ export function AchievementCelebration({
           ))}
         </div>
         <div className="achievement-celebration__eyebrow">{t("Achievement unlocked")}</div>
-        <div className="achievement-celebration__artwork">
+        <div className="achievement-celebration__artwork" data-testid="guide-unlock">
           <AchievementArtwork
             image={achievement.image}
             title={achievement.title}
@@ -38,7 +39,8 @@ export function AchievementCelebration({
         <p id="achievement-celebration-description">
           {achievement.description}
         </p>
-        <button type="button" onClick={onDismiss} autoFocus>
+        <ContextualGuide topic="unlock" />
+        <button type="button" data-testid="achievement-celebration-dismiss" onClick={onDismiss} autoFocus>
           {remaining > 0 ? t("Celebrate the next one") : t("Keep exploring")}
         </button>
         {remaining > 0 && (

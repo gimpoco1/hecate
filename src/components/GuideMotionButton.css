@@ -1,0 +1,4 @@
+.guide-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
+.guide-heading button.guide-motion-button { flex: 0 0 44px; display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; margin: -8px -8px -8px 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); box-shadow: none; cursor: pointer; }
+.guide-heading button.guide-motion-button:hover { background: rgba(var(--theme-text-rgb, 24, 60, 47), .08); }
+.guide-heading button.guide-motion-button:focus-visible { outline: 2px solid var(--forest); outline-offset: 1px; }

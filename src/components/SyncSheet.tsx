@@ -58,6 +58,7 @@ type Props = {
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   onFeedbackOpen: () => void;
+  onTourOpen: () => void;
   reminderEnabled: boolean;
   reminderMotionError: string;
   reminderMotionAllowed: boolean | null;
@@ -168,6 +169,7 @@ export function SyncSheet({
   initialAuthIntent = "signin",
   onClose,
   onFeedbackOpen,
+  onTourOpen,
   reminderEnabled,
   reminderMotionError,
   reminderMotionAllowed,
@@ -1552,6 +1554,11 @@ export function SyncSheet({
             <button type="button" className="account-feedback-button" data-testid="profile-feedback" onClick={onFeedbackOpen}>{t("Share feedback")}</button>
           </div>
         </section>}
+        <button type="button" className="account-settings-link" data-testid="profile-tour" onClick={onTourOpen}>
+          <span className="account-settings-link__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+          <span><strong>{t("Show me around")}</strong></span>
+          <ChevronIcon size={16} />
+        </button>
         <nav className="account-legal-links" aria-label={t("Legal and support")}>
           <a href="/privacy-policy.html">{t("Privacy Policy")}</a>
           <span aria-hidden="true">·</span>

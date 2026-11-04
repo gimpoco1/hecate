@@ -47,6 +47,7 @@ type Props = {
   selectedFavoritePlaceId?: string | null;
   onZoomChange: (zoom: number) => void;
   onViewChange?: (center: { lng: number; lat: number }, zoom: number) => void;
+  onReady?: () => void;
   onUserNavigation?: () => void;
   onHeadingChange?: (heading: number) => void;
   onUserCenteredChange?: (centered: boolean) => void;
@@ -177,6 +178,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   selectedFavoritePlaceId = null,
   onZoomChange,
   onViewChange,
+  onReady,
   onUserNavigation,
   onHeadingChange,
   onUserCenteredChange,
@@ -204,6 +206,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const highlightedPointsRef = useRef(highlightedPoints);
   const highlightedNewGroundSegmentsRef = useRef(highlightedNewGroundSegments);
   const onViewChangeRef = useRef(onViewChange);
+  const onReadyRef = useRef(onReady);
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const onUserNavigationRef = useRef(onUserNavigation);
   const onHeadingChangeRef = useRef(onHeadingChange);
   onHeadingChangeRef.current = onHeadingChange;
@@ -476,6 +480,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     });
     map.on("moveend", handleMoveEnd);
     map.on("move", handleViewMove);
+    onReadyRef.current?.();
     return () => {
       canvas.removeEventListener("pointerdown", handlePointerDown, true);
       canvas.removeEventListener("wheel", interruptCamera, true);

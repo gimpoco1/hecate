@@ -1,3 +1,10 @@
+import { OnboardingLocationContext } from "./onboardingLocation";
+import { restartOnboarding } from "./components/Onboarding";
+import { TourCompletion } from "./components/TourCompletion";
+import { ContextualGuide } from "./components/ContextualGuide";
+import { AnimatePresence } from "motion/react";
+import { OnboardingTour } from "./components/OnboardingTour";
+import { useOnboardingTour } from "./onboardingTour";
 import { WeeklyJourneyActivity } from "./components/WeeklyJourneyActivity";
 import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
@@ -28,6 +35,7 @@ import {
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -171,7 +179,7 @@ import {
   setAutomaticUpdatePending,
 } from "./automaticUpdates";
 import { refreshPublishedLeaderboardSnapshot } from "./leaderboard";
-import { ensureNotificationPermission } from "./notificationPermissions";
+import { ensureNotificationPermission, hasNotificationPermission } from "./notificationPermissions";
 import {
   JourneyActivity,
   journeyActivitySnapshot,
@@ -210,6 +218,10 @@ import {
 import {
   createForegroundLocationTracker,
   createLocationTracker,
+  acquireForegroundLocation,
+  hasForegroundLocationPermission,
+  hasBackgroundLocationPermission,
+  requestForegroundLocationPermission,
   createReminderLocationTracker,
   isNativeApp,
   openLocationSettings,
@@ -329,7 +341,7 @@ async function sendAchievementNotification(
   userId: string,
   test = false,
 ) {
-  if (!(await ensureNotificationPermission())) return false;
+  if (!(await hasNotificationPermission(LocalNotifications))) return false;
   const achievement = personalAchievementDefinition(achievementId);
   const notificationIndex = Math.max(
     0,
@@ -819,9 +831,12 @@ export default function App() {
   const [mode, setMode] = useState<MapMode>("discover");
   const [points, setPoints] = useState<Coordinate[]>([]);
   const [cells, setCells] = useState<DiscoveryCell[]>([]);
-  const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>();
+  const initialLocation = useContext(OnboardingLocationContext);
+  const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>(initialLocation);
+  const [mapReadyGeneration, setMapReadyGeneration] = useState(0);
+  const locatingRef = useRef(false);
   const [passiveLocationStatus, setPassiveLocationStatus] =
-    useState<PassiveLocationStatus>("idle");
+    useState<PassiveLocationStatus>(initialLocation ? "located" : "idle");
   const [
     passiveLocationRefreshGeneration,
     setPassiveLocationRefreshGeneration,
@@ -870,6 +885,7 @@ export default function App() {
     return () => window.removeEventListener("hecate:auth-error", onAuthError);
   }, []);
 
+  const tour = useOnboardingTour();
   const [tracking, setTracking] = useState<TrackingState>("idle");
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
     useState(false);
@@ -885,7 +901,7 @@ export default function App() {
   const [iosAppActive, setIosAppActive] = useState(false);
   const trackingStateRef = useRef<TrackingState>(tracking);
   trackingStateRef.current = tracking;
-  const [zoom, setZoom] = useState(1.35);
+  const [zoom, setZoom] = useState(initialLocation ? 14 : 1.35);
   const [syncOpen, setSyncOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   useEffect(() => {
@@ -1720,7 +1736,7 @@ export default function App() {
               generation !== inactivityGenerationRef.current
             )
               return;
-            const notificationAllowed = await ensureNotificationPermission();
+            const notificationAllowed = await hasNotificationPermission(LocalNotifications);
             if (generation !== inactivityGenerationRef.current) return;
             if (!notificationAllowed) {
               inactivityTimerRef.current = window.setTimeout(
@@ -2122,12 +2138,13 @@ export default function App() {
   useEffect(() => {
     if (!nativeApp) return;
     let active = true;
-    void ensureNotificationPermission()
+    void hasNotificationPermission(LocalNotifications)
       .then((allowed) => {
         if (active) setNotificationPermissionReady(allowed);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (active) setNotificationPermissionReady(false);
+        console.error("Could not check notification permission", { error: errorDiagnostic(cause) });
       });
     const refreshPermission = (): void => {
       if (document.visibilityState !== "visible") return;
@@ -2983,12 +3000,12 @@ export default function App() {
       requesting = true;
       void readReminderMotionAuthorization().then(async (status) => {
         if (disposed) return;
-        if (status === "notDetermined" && (!loadReminderPreference(accountUserId).enabled || !discoveryLocationAllowed)) {
+        if (status === "notDetermined") {
           setReminderMotionAllowed(null);
           setReminderMotionError("");
           return;
         }
-        const allowed = status === "notDetermined" ? await requestReminderMotionPermission() : status === "authorized";
+        const allowed = status === "authorized";
         if (disposed) return;
         setReminderMotionAllowed(allowed);
         setReminderMotionError(allowed ? "" : status === "unavailable"
@@ -3049,119 +3066,128 @@ export default function App() {
         backgroundReminder,
       ) : null;
     const start = (mode: "foreground" | "reminder") => {
-      if (disposed || desiredMode() !== mode) return;
-      if (foregroundTrackerRef.current && trackerMode === mode) return;
-      stop();
-      const tracker =
-        mode === "foreground"
-          ? createForegroundLocationTracker()
-          : createReminderLocationTracker();
-      foregroundTrackerRef.current = tracker;
-      trackerMode = mode;
-      if (mode === "foreground") setPassiveLocationStatus("requesting");
-      let receivedPoint = false;
-      void tracker
-        .start(
-          (point) => {
-            if (disposed || foregroundTrackerRef.current !== tracker) return;
-            if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat))
-              return;
-            if (
-              mode === "foreground" &&
+      const permission = mode === "reminder" ? hasBackgroundLocationPermission() : hasForegroundLocationPermission();
+      void permission.then((allowed) => {
+        if (disposed || desiredMode() !== mode) return;
+        if (!allowed) { stop(); setPassiveLocationStatus("idle"); return; }
+        if (foregroundTrackerRef.current && trackerMode === mode) return;
+        stop();
+        const tracker =
+          mode === "foreground"
+            ? createForegroundLocationTracker()
+            : createReminderLocationTracker();
+        foregroundTrackerRef.current = tracker;
+        trackerMode = mode;
+        if (mode === "foreground") setPassiveLocationStatus("requesting");
+        let receivedPoint = false;
+        void tracker
+          .start(
+            (point) => {
+              if (disposed || foregroundTrackerRef.current !== tracker) return;
+              if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat))
+                return;
+              if (
+                mode === "foreground" &&
               Date.now() - point.recordedAt > PASSIVE_LOCATION_MAX_AGE_MS
-            )
-              return;
-            receivedPoint = true;
-            if (acquisitionTimer !== null)
-              window.clearTimeout(acquisitionTimer);
-            acquisitionTimer = null;
-            latestPassivePointRef.current = point;
-            const visible =
-              nativeActive && document.visibilityState === "visible";
-            if (visible) {
-              setCurrentPoint(point);
-              if (!simulationRouteRef.current) animateFollowCamera(point);
-              if (centerOnNextPassivePointRef.current) {
-                centerOnNextPassivePointRef.current = false;
-                centerMapOnPoint(point);
+              )
+                return;
+              receivedPoint = true;
+              if (acquisitionTimer !== null)
+                window.clearTimeout(acquisitionTimer);
+              acquisitionTimer = null;
+              latestPassivePointRef.current = point;
+              const visible =
+                nativeActive && document.visibilityState === "visible";
+              if (visible) {
+                setCurrentPoint(point);
+                if (!simulationRouteRef.current) animateFollowCamera(point);
+                if (centerOnNextPassivePointRef.current) {
+                  centerOnNextPassivePointRef.current = false;
+                  centerMapOnPoint(point);
+                }
+                setPassiveLocationStatus("located");
+                setTracking((current) =>
+                  current === "denied" || current === "unavailable"
+                    ? "idle"
+                    : current,
+                );
               }
-              setPassiveLocationStatus("located");
-              setTracking((current) =>
-                current === "denied" || current === "unavailable"
-                  ? "idle"
-                  : current,
+              if (!reminderEnabled || !accountUserId) return;
+              if (!discoveryHistoryReadyRef.current) {
+                reminderRef.current.reset();
+                return;
+              }
+              const unmapped = isUnmappedArea(point, cellKeysRef.current);
+              const reminder = reminderRef.current;
+              const previousPromptedAt = reminder.promptedAt;
+              const kind = reminder.observe(point, unmapped);
+              if (!kind) return;
+              const promptedAt = reminder.promptedAt;
+              const savePrompt = (): void => {
+                if (accountUserIdRef.current !== accountUserId || reminderRef.current !== reminder || !reminderEnabledRef.current) return;
+                saveReminderPreference(accountUserId, true, promptedAt, reminder.pausedUntil);
+              };
+              if (nativeApp) {
+                void sendReminderNotification(accountUserId, reminder.durationMinutes, kind)
+                  .then(savePrompt, (error) => {
+                    reminder.cancelUndeliveredPrompt(promptedAt, previousPromptedAt);
+                    console.warn("Could not show discovery reminder", { error: errorDiagnostic(error) });
+                  })
+                  .catch((error) => {
+                    console.warn("Could not save discovery reminder cooldown", { error: errorDiagnostic(error) });
+                  });
+              } else if (visible) {
+                setReminderPrompt(kind);
+                savePrompt();
+              }
+            },
+            (error) => {
+              if (disposed || foregroundTrackerRef.current !== tracker) return;
+              stop();
+              setPassiveLocationStatus(
+                error.code === "permission-denied" ? "denied" : "unavailable",
               );
-            }
-            if (!reminderEnabled || !accountUserId) return;
-            if (!discoveryHistoryReadyRef.current) {
-              reminderRef.current.reset();
-              return;
-            }
-            const unmapped = isUnmappedArea(point, cellKeysRef.current);
-            const reminder = reminderRef.current;
-            const previousPromptedAt = reminder.promptedAt;
-            const kind = reminder.observe(point, unmapped);
-            if (!kind) return;
-            const promptedAt = reminder.promptedAt;
-            const savePrompt = (): void => {
-              if (accountUserIdRef.current !== accountUserId || reminderRef.current !== reminder || !reminderEnabledRef.current) return;
-              saveReminderPreference(accountUserId, true, promptedAt, reminder.pausedUntil);
-            };
-            if (nativeApp) {
-              void sendReminderNotification(accountUserId, reminder.durationMinutes, kind)
-                .then(savePrompt, (error) => {
-                  reminder.cancelUndeliveredPrompt(promptedAt, previousPromptedAt);
-                  console.warn("Could not show discovery reminder", { error: errorDiagnostic(error) });
-                })
-                .catch((error) => {
-                  console.warn("Could not save discovery reminder cooldown", { error: errorDiagnostic(error) });
-                });
-            } else if (visible) {
-              setReminderPrompt(kind);
-              savePrompt();
-            }
-          },
-          (error) => {
-            if (disposed || foregroundTrackerRef.current !== tracker) return;
-            stop();
-            setPassiveLocationStatus(
-              error.code === "permission-denied" ? "denied" : "unavailable",
-            );
-            if (error.code !== "permission-denied") {
-              retryTimer = window.setTimeout(
-                () => start(mode),
-                PASSIVE_LOCATION_RETRY_MS,
-              );
-            }
-          },
-        )
-        .then(() => {
-          if (
-            disposed ||
+              if (error.code !== "permission-denied") {
+                retryTimer = window.setTimeout(
+                  () => start(mode),
+                  PASSIVE_LOCATION_RETRY_MS,
+                );
+              }
+            },
+          )
+          .then(() => {
+            if (
+              disposed ||
             mode !== "foreground" ||
             receivedPoint ||
             foregroundTrackerRef.current !== tracker
-          )
-            return;
-          acquisitionTimer = window.setTimeout(() => {
+            )
+              return;
+            acquisitionTimer = window.setTimeout(() => {
+              if (disposed || foregroundTrackerRef.current !== tracker) return;
+              stop();
+              setPassiveLocationStatus("unavailable");
+              retryTimer = window.setTimeout(
+                () => start("foreground"),
+                PASSIVE_LOCATION_RETRY_MS,
+              );
+            }, PASSIVE_LOCATION_ACQUISITION_TIMEOUT_MS);
+          })
+          .catch(() => {
             if (disposed || foregroundTrackerRef.current !== tracker) return;
             stop();
             setPassiveLocationStatus("unavailable");
             retryTimer = window.setTimeout(
-              () => start("foreground"),
+              () => start(mode),
               PASSIVE_LOCATION_RETRY_MS,
             );
-          }, PASSIVE_LOCATION_ACQUISITION_TIMEOUT_MS);
-        })
-        .catch(() => {
-          if (disposed || foregroundTrackerRef.current !== tracker) return;
-          stop();
-          setPassiveLocationStatus("unavailable");
-          retryTimer = window.setTimeout(
-            () => start(mode),
-            PASSIVE_LOCATION_RETRY_MS,
-          );
-        });
+          });
+      }).catch((cause) => {
+        if (disposed) return;
+        stop();
+        console.error("Could not check passive location permission", { mode, error: errorDiagnostic(cause) });
+        setPassiveLocationStatus("unavailable");
+      });
     };
     const updateVisibility = () => {
       const mode = desiredMode();
@@ -3423,20 +3449,21 @@ export default function App() {
 
   useEffect(() => {
     const focusIdentity = accountUserId ?? "__anonymous__";
-    if (initialMapFocusUserRef.current === focusIdentity || !currentPoint || !followCameraEnabledRef.current)
+    const map = mapRef.current;
+    if (!map || initialMapFocusUserRef.current === focusIdentity || !currentPoint || !followCameraEnabledRef.current)
       return;
-    initialMapFocusUserRef.current = focusIdentity;
     const targetZoom = 14;
     setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
     setZoom(targetZoom);
     setViewedCity(null);
-    mapRef.current?.jumpTo({
+    map.jumpTo({
       center: [currentPoint.lng, currentPoint.lat],
       zoom: targetZoom,
       pitch: 0,
       bearing: 0,
     });
-  }, [accountUserId, currentPoint]);
+    initialMapFocusUserRef.current = focusIdentity;
+  }, [accountUserId, currentPoint, mapReadyGeneration]);
 
   const addPoint = (point: Coordinate) => {
     if (
@@ -4668,13 +4695,33 @@ export default function App() {
     }
     if (!currentPoint || passiveLocationStatus !== "located") {
       setPassiveLocationStatus("requesting");
-      setPassiveLocationRefreshGeneration((generation) => generation + 1);
+      if (locatingRef.current) return;
+      locatingRef.current = true;
+      setJourneyStopMessage(null);
+      void requestForegroundLocationPermission().then(async (allowed) => {
+        if (!allowed) {
+          setPassiveLocationStatus("denied");
+          setJourneyStopMessage(t("Allow location in Settings, then tap Locate to try again."));
+          return;
+        }
+        const point = await acquireForegroundLocation();
+        latestPassivePointRef.current = point;
+        setCurrentPoint(point);
+        setPassiveLocationStatus("located");
+        setViewedCity(null);
+        focusOnUserPoint(point);
+        setPassiveLocationRefreshGeneration((generation) => generation + 1);
+      }).catch((cause) => {
+        console.error("Could not request foreground location", { error: errorDiagnostic(cause) });
+        setPassiveLocationStatus("unavailable");
+        setJourneyStopMessage(cause instanceof Error ? cause.message : t("Location is unavailable."));
+      }).finally(() => { locatingRef.current = false; });
     }
   };
 
   const handleLocationControl = (): void => {
     const point = simulationPointRef.current ?? (locationIsCurrent ? currentPoint : null);
-    if (!point || (!followCameraEnabledRef.current && !userCenteredRef.current)) {
+    if (!point || (mapRef.current?.getZoom() ?? zoom) < 6 || !followCameraEnabledRef.current || !userCenteredRef.current) {
       if (simulationPointRef.current) focusOnUserPoint(simulationPointRef.current);
       else locate();
       return;
@@ -4884,7 +4931,8 @@ export default function App() {
     journeyAnimationRef.current?.cancel();
     journeyAnimationRef.current = null;
     card.classList.add("journey-card--dragging");
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = target.closest(".journey-card__handle") ?? event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     journeyDragRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
@@ -5449,6 +5497,19 @@ export default function App() {
     ? mapOrientation === "north-up" ? t("Switch to heading-up") : t("Switch to north-up")
     : (simulationPoint || locationIsCurrent) ? t("Center on my location") : t("Find my location");
 
+  const tourVisible = tour.step !== "done" && authReady && !accountDataLoading &&
+    !syncOpen && !routePlannerOpen && !simulationRoute && !favoriteDraft &&
+    !explorationSummary && !activeAchievementCelebration && !coverageInfoOpen &&
+    !journeyHistoryOpen && !globalMilestonesOpen && !savedPlacesOpen &&
+    !citiesOpen && !achievementsOpen && !feedbackOpen && !keepsake;
+  const tourNeedsAccount = !accountUserId;
+  const tourCityAvailable = Boolean(summaryCity && isCityScale && currentCityMilestone && summaryCityProgress);
+  const tourNeedsCity = Boolean(accountUserId && ((!isCityScale && (tour.step === "start" || tour.step === "stats")) || (tour.step === "city" && !tourCityAvailable)));
+  const tourTarget = tourNeedsAccount ? "account-open" : tourNeedsCity ? "map-location-control" :
+    tour.step === "start" ? "journey-control" : tour.step === "save" ? "save-place-control" :
+      tour.step === "stats" ? "journey-expand" : tour.step === "navigation" ? "route-planner-open" :
+        tour.step === "city" ? "map-city-milestones" : "account-open";
+
   return (
     <main
       className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
@@ -5464,7 +5525,36 @@ export default function App() {
       aria-busy={accountDataLoading}
     >
       <AccountLoadingScreen visible={accountDataLoading} />
+      <AnimatePresence>
+        {tourVisible && tour.step === "finished" && <TourCompletion onClose={tour.dismiss} />}
+        {tourVisible && tour.step !== "done" && tour.step !== "finished" && <OnboardingTour
+          descriptionValues={tourNeedsCity && journeyStopMessage ? { message: journeyStopMessage } : {}}
+          gesture={tourTarget === "journey-expand" ? "swipe" : "tap"}
+          targetId={tourTarget}
+          title={tourNeedsAccount ? "First, make this map yours" : tourNeedsCity ? "Find your starting point" :
+            tour.step === "start" ? "Start here" : tour.step === "save" ? "Keep a place you love" :
+              tour.step === "stats" ? "There is more in your journey drawer" : tour.step === "navigation" ? "Plan a journey" :
+                tour.step === "city" ? "Three stars for each city" : "Your discoveries live here"}
+          description={tourNeedsAccount ? "Tap the profile button to sign in or create an account. Then we will show you the map controls." :
+            tourNeedsCity ? journeyStopMessage ? "{{message}} You can retry Locate or select Next to continue the guide." : passiveLocationStatus === "requesting" ? "Finding your location" : "Zoom into a city to see your journey controls, or tap Locate to find your location." :
+              tour.step === "start" ? tracking === "tracking" ? "Your journey is recording. Tap Stop when you finish to save it and see your recap. You can keep recording while you explore the next tips." : "Tap Play when you are ready to explore. Allow location when asked. Tap the same button to stop and save your journey. You can also continue this tour without recording." :
+                tour.step === "save" ? favoritePlacementActive ? "Tap a place on the map, add its details, then save. Your place will be waiting in your profile." :
+                  "This bookmark saves a place, not your journey. Tap it, choose a spot on the map, and add the details. Try it now or go to the next tip." :
+                  tour.step === "stats" ? "Tap the highlighted handle or drag the journey drawer up to see your activity, journey history, and city progress." :
+                    tour.step === "navigation" ? "Tap the route button to choose a destination and find a route on foot or by bike. Add extra time if you want to explore more new ground." :
+                      tour.step === "city" ? "Tap the stars to see your city milestones and progress towards the next star. Only newly discovered ground counts towards city stars." :
+                        "Tap the profile button to find saved places, journeys, achievements, and settings. You can restart this tour there anytime."}
+          onNext={tourNeedsAccount ? null : () => {
+            if (tour.step === "stats" && citiesExpanded) settleJourneySheet(false);
+            tour.advance(tour.step);
+          }}
+          onDismiss={tour.dismiss}
+        />}
+      </AnimatePresence>
       <DiscoveryMap
+        onReady={() => setMapReadyGeneration(generation => generation + 1)}
+        initialCenter={initialLocation ? [initialLocation.lng, initialLocation.lat] : undefined}
+        initialZoom={initialLocation ? 14 : undefined}
         mode={mode}
         points={points}
         cells={cells}
@@ -5658,6 +5748,17 @@ export default function App() {
               <XIcon size={14} />
             </button>
           </div>
+          <strong>{t("Onboarding")}</strong>
+          <small>{t("Replay the intro and all guide tips from the beginning.")}</small>
+          <button
+            type="button"
+            data-testid="restart-onboarding"
+            disabled={tracking === "tracking" || tracking === "requesting" || walkFinalizing || Boolean(journeySaveError)}
+            onClick={() => {
+              setDevToolsOpen(false);
+              restartOnboarding();
+            }}
+          >{t("Restart onboarding")}</button>
           <strong>{t("Notifications")}</strong>
           <small>{t("Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.")}</small>
           <button
@@ -5699,6 +5800,7 @@ export default function App() {
           <small>{t("Opens the real celebration and, in the native app, schedules the same local notification. Each press cycles to another badge.")}</small>
           <button
             type="button"
+            data-testid="preview-achievement"
             onClick={() => void simulateAchievementUnlock()}
           >{t("Test achievement unlock")}</button>
           {achievementTestMessage && (
@@ -5709,6 +5811,7 @@ export default function App() {
       {devToolsEnabled && !devToolsVisible && (
         <button
           className="dev-tools__restore"
+          data-testid="dev-tools-open"
           type="button"
           onClick={() => setDevToolsOpen(true)}
         >{t("Dev tools")}</button>
@@ -5729,6 +5832,7 @@ export default function App() {
           {accountUserId && summaryCity && isCityScale && currentCityMilestone && summaryCityProgress && (
             <button
               className="map-milestone"
+              data-testid="map-city-milestones"
               type="button"
               onClick={openJourneyAtCityMilestones}
               aria-label={
@@ -5919,12 +6023,15 @@ export default function App() {
         <button
           type="button"
           className={routePlannerOpen ? "active" : ""}
+          data-testid="route-planner-open"
           aria-label={t("Plan a discovery route")}
           aria-pressed={routePlannerOpen}
           onClick={() => {
             if (simulationRouteRef.current) clearRouteDestination();
             if (routePlannerOpen) clearPlannedRoute();
-            else setRoutePlannerOpen(true);
+            else {
+              setRoutePlannerOpen(true);
+            }
             setFavoritePlacementActive(false);
             setFavoriteDraft(null);
             setHighlightedRoutePoints([]);
@@ -5952,6 +6059,7 @@ export default function App() {
                 : t("Save a place")
             }
             aria-pressed={favoritePlacementActive}
+            data-testid="save-place-control"
             title={t("Save a place")}
           >
             <SaveIcon size={21} />
@@ -6054,9 +6162,16 @@ export default function App() {
             />
           )}
           <div className="journey-card__header">
-            <div className="journey-card__handle" aria-hidden="true">
+            <button
+              type="button"
+              className="journey-card__handle"
+              data-testid="journey-expand"
+              aria-label={citiesExpanded ? t("Collapse journey stats") : t("Expand journey stats")}
+              aria-expanded={citiesExpanded}
+              onClick={() => settleJourneySheet(!journeyExpandedRef.current)}
+            >
               <span />
-            </div>
+            </button>
             <div
               className={`journey-card__summary${showActiveJourneyMetrics ? " journey-card__summary--tracking" : ""}`}
             >
@@ -6119,6 +6234,7 @@ export default function App() {
               </div>
             </div>
             <button
+              data-testid="journey-control"
               className={`discovery-control discovery-control--${tracking}`}
               onClick={toggleTracking}
               onPointerDown={(event) => event.stopPropagation()}
@@ -6266,6 +6382,11 @@ export default function App() {
           initialAuthIntent={syncInitialIntent}
           onClose={closeProfileDialog}
           onFeedbackOpen={() => setFeedbackOpen(true)}
+          onTourOpen={() => {
+            setSyncOpen(false);
+            settleJourneySheet(false);
+            tour.restart();
+          }}
           reminderEnabled={reminderEnabled}
           reminderMotionError={reminderMotionError}
           reminderMotionAllowed={reminderMotionAllowed}
@@ -6395,12 +6516,13 @@ export default function App() {
                 ]}
               />
             </div>
-            <div className="exploration-recap__headline">
+            <div className="exploration-recap__headline" data-testid="guide-recap">
               {Math.round(explorationSummary.newGroundKm * 1000) > 0
                 ? <Trans i18nKey="app.newGroundRecap" values={{ distance: formatDistance(explorationSummary.newGroundKm) }}
                   components={{ distance: <strong />, caption: <span /> }} />
                 : <><strong>{formatDistance(explorationSummary.travelledKm)}</strong><span>{t("No new ground on this journey.")}</span></>}
             </div>
+            <ContextualGuide topic="recap" />
             <div className="exploration-recap__insights">
               {Math.round(explorationSummary.newGroundKm * 1000) > 0 && explorationSummary.travelledKm > 0 && (
                 <span>{t("{{value0}} % of this walk was new ground", { value0: Math.round(
@@ -6422,7 +6544,7 @@ export default function App() {
               ), value1: " ", value2: formatDistance(explorationSummary.travelledKm) })}</span>
             </div>
             <div className="exploration-recap__actions">
-              <button type="button" onClick={() => setExplorationSummary(null)}>{t("Done")}</button>
+              <button type="button" data-testid="recap-close" onClick={() => setExplorationSummary(null)}>{t("Done")}</button>
               <button
                 className="exploration-recap__view"
                 type="button"

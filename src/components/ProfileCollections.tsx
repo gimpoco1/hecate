@@ -1,3 +1,4 @@
+import { ContextualGuide } from "./ContextualGuide";
 import { mdiCubeOutline, mdiMapMarkerOutline } from "@mdi/js";
 import { formatDiscoveryPercentage } from "../cityProgressFormat";
 import { formatNumber, t, useAppTranslation } from "../i18n";
@@ -189,6 +190,7 @@ export function AchievementsSheet({
         <section
           className="profile-collection-summary"
           aria-label={t("Achievements summary")}
+          data-testid="guide-achievements"
         >
           <span>
             <strong>{earnedCount}</strong>
@@ -200,6 +202,7 @@ export function AchievementsSheet({
           </span>
         </section>
 
+        <ContextualGuide topic="achievements" />
         <ul className="achievements-collection-list">
           {achievementEvaluations.map(
             ({ definition, earned, progress, progressText }) => (

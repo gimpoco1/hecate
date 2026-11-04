@@ -331,3 +331,80 @@ export async function openLocationSettings() {
   if (!isNativeApp()) return;
   await BackgroundGeolocation.openSettings();
 }
+
+/** Checks foreground access without starting a watcher or prompting. */
+export async function hasForegroundLocationPermission(): Promise<boolean> {
+  if (isNativeApp()) {
+    const status = await readLocationAuthorization();
+    return status === "always" || status === "whenInUse";
+  }
+  const permission = await navigator.permissions.query({ name: "geolocation" });
+  return permission.state === "granted";
+}
+
+export async function hasBackgroundLocationPermission(): Promise<boolean> {
+  return isNativeApp() ? await readLocationAuthorization() === "always" : hasForegroundLocationPermission();
+}
+
+/** Requests foreground access after a user gesture, then releases its temporary watcher. */
+export async function requestForegroundLocationPermission(): Promise<boolean> {
+  const native = isNativeApp();
+  if (native) {
+    const status = await readLocationAuthorization();
+    if (status !== "notDetermined") return status === "always" || status === "whenInUse";
+  }
+  const webPermission = native ? null : await navigator.permissions.query({ name: "geolocation" });
+  if (webPermission && webPermission.state !== "prompt") return webPermission.state === "granted";
+  const tracker = createForegroundLocationTracker();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let interval: ReturnType<typeof setInterval> | null = null;
+  let permissionChanged: (() => void) | null = null;
+  try {
+    return await new Promise<boolean>((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error(t("Location permission request timed out. Please try again."))), 30_000);
+      if (webPermission) {
+        permissionChanged = (): void => {
+          if (webPermission.state !== "prompt") resolve(webPermission.state === "granted");
+        };
+        webPermission.addEventListener("change", permissionChanged);
+      } else {
+        let checking = false;
+        interval = setInterval(() => {
+          if (checking) return;
+          checking = true;
+          void readLocationAuthorization().then(status => {
+            if (status !== "notDetermined") resolve(status === "always" || status === "whenInUse");
+          }).catch(reject).finally(() => { checking = false; });
+        }, 250);
+      }
+      void tracker.start(
+        () => resolve(true),
+        error => error.code === "permission-denied" ? resolve(false) : reject(new Error(error.message)),
+      ).catch(reject);
+    });
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
+    if (interval !== null) clearInterval(interval);
+    if (webPermission && permissionChanged) webPermission.removeEventListener("change", permissionChanged);
+    await tracker.stop();
+  }
+}
+
+/** Obtains a fresh usable position and releases the acquisition watcher before returning it. */
+export async function acquireForegroundLocation(): Promise<Coordinate> {
+  const tracker = createForegroundLocationTracker();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await new Promise<Coordinate>((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error(t("Could not find your location. Check location access and try again outside."))), 20_000);
+      void tracker.start(point => {
+        if (!Number.isFinite(point.lng) || !Number.isFinite(point.lat) || Math.abs(point.lat) > 90 || Math.abs(point.lng) > 180 || !Number.isFinite(point.recordedAt)) return;
+        if (Date.now() - point.recordedAt > 60_000) return;
+        resolve(point);
+      }, error => reject(new DOMException(error.message, error.code === "permission-denied" ? "NotAllowedError" : "PositionUnavailableError"))).catch(reject);
+    });
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
+    await tracker.stop();
+  }
+}
