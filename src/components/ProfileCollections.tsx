@@ -1,8 +1,10 @@
 import { ContextualGuide } from "./ContextualGuide";
+import { MAP_REWARDS, type MapReward } from "../goalRewards";
+import { useLayoutEffect, useRef, useState } from "react";
 import { mdiCubeOutline, mdiMapMarkerOutline } from "@mdi/js";
 import { formatDiscoveryPercentage } from "../cityProgressFormat";
 import { formatNumber, t, useAppTranslation } from "../i18n";
-import { personalAchievementDefinition, type AchievementEvaluation } from "../achievements";
+import { personalAchievementDefinition, type AchievementEvaluation, type PersonalAchievementId } from "../achievements";
 import {
   CITY_MILESTONE_TIERS,
   cityMilestoneProgress,
@@ -30,6 +32,10 @@ type CitiesSheetProps = {
 };
 
 type AchievementsSheetProps = {
+  onMapAppearanceOpen: (reward: MapReward) => void;
+  unlockedMapRewards: readonly MapReward[];
+  highlightedAchievementId: PersonalAchievementId | null;
+  backLabel: string;
   open: boolean;
   achievementEvaluations: AchievementEvaluation[];
   onBack: () => void;
@@ -147,11 +153,32 @@ export function CitiesSheet({
 }
 
 export function AchievementsSheet({
+  onMapAppearanceOpen,
+  unlockedMapRewards,
+  highlightedAchievementId,
+  backLabel,
   open,
   achievementEvaluations,
   onBack,
   onClose,
 }: AchievementsSheetProps) {
+  const highlightedRef = useRef<HTMLLIElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
+  const [highlightVisible, setHighlightVisible] = useState(false);
+  const targetAvailable = achievementEvaluations.some(item => item.definition.id === highlightedAchievementId);
+  useLayoutEffect(() => {
+    if (!open || !targetAvailable) return;
+    const sheet = sheetRef.current;
+    const target = highlightedRef.current;
+    if (!sheet || !target) return;
+    const targetBounds = target.getBoundingClientRect();
+    const sheetBounds = sheet.getBoundingClientRect();
+    sheet.scrollTo({ top: sheet.scrollTop + targetBounds.top - sheetBounds.top - (sheet.clientHeight - targetBounds.height) / 2, behavior: "auto" });
+    target.focus({ preventScroll: true });
+    setHighlightVisible(true);
+    const timeout = window.setTimeout(() => setHighlightVisible(false), 3_000);
+    return () => window.clearTimeout(timeout);
+  }, [open, highlightedAchievementId, targetAvailable]);
   useAppTranslation();
   if (!open) return null;
   const earnedCount = achievementEvaluations.filter(
@@ -159,19 +186,22 @@ export function AchievementsSheet({
   ).length;
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop achievements-backdrop" data-testid="achievements-backdrop" onClick={onClose}>
       <section
+        ref={sheetRef}
         className="sheet profile-collection-sheet"
         onClick={(event) => event.stopPropagation()}
         aria-modal="true"
         role="dialog"
         aria-labelledby="achievements-sheet-title"
+        data-testid="achievements-panel"
       >
         <button
           className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
-          aria-label={t("Back to profile")}
+          aria-label={backLabel}
+          data-testid="achievements-back"
         >
           <ArrowLeftIcon />
         </button>
@@ -180,6 +210,7 @@ export function AchievementsSheet({
           type="button"
           onClick={onClose}
           aria-label={t("Close achievements")}
+          data-testid="achievements-close"
         >
           <XIcon />
         </button>
@@ -202,20 +233,32 @@ export function AchievementsSheet({
           </span>
         </section>
 
-        <ContextualGuide topic="achievements" />
+        {!highlightedAchievementId && <ContextualGuide topic="achievements" />}
         <ul className="achievements-collection-list">
           {achievementEvaluations.map(
-            ({ definition, earned, progress, progressText }) => (
-              <li key={definition.id}>
-                <AchievementCard
-                  achievement={personalAchievementDefinition(definition.id)}
-                  earned={earned}
-                  progress={progress}
-                  progressLabel={t(progressText.key, progressText.values)}
-                  compact
-                />
-              </li>
-            ),
+            ({ definition, earned, progress, progressText }) => {
+              const reward = MAP_REWARDS.find(item => item.goal === definition.id);
+              return (
+                <li key={definition.id}
+                  ref={highlightedAchievementId === definition.id ? highlightedRef : undefined}
+                  className={highlightedAchievementId === definition.id ? `achievement-target${highlightVisible ? " achievement-required" : ""}` : undefined}
+                  tabIndex={highlightedAchievementId === definition.id ? -1 : undefined}
+                  data-testid={`achievement-${definition.id}`}
+                  aria-label={definition.title}
+                >
+                  <AchievementCard
+                    achievement={personalAchievementDefinition(definition.id)}
+                    mapReward={reward ? { id: reward.id, title: t(reward.title), unlocked: unlockedMapRewards.includes(reward.id), onOpen: onMapAppearanceOpen } : undefined}
+                    initialFace={highlightedAchievementId === definition.id ? "details" : "artwork"}
+                    earned={earned}
+                    progress={progress}
+                    progressLabel={t(progressText.key, progressText.values)}
+                    compact
+                  />
+
+                </li>
+              );
+            },
           )}
         </ul>
       </section>

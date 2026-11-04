@@ -5,6 +5,7 @@ import { ContextualGuide } from "./components/ContextualGuide";
 import { AnimatePresence } from "motion/react";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { useOnboardingTour } from "./onboardingTour";
+import { loadMapRewards, saveMapRewards, unlockMapRewards, type RewardState, type MapReward } from "./goalRewards";
 import { WeeklyJourneyActivity } from "./components/WeeklyJourneyActivity";
 import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
@@ -826,6 +827,7 @@ export default function App() {
   const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(
     null,
   );
+  const [locationErrorDismissed, setLocationErrorDismissed] = useState(false);
   const [pendingSpeedStopReport, setPendingSpeedStopReport] =
     useState<JourneySpeedStopReport | null>(null);
   const [mode, setMode] = useState<MapMode>("discover");
@@ -887,6 +889,7 @@ export default function App() {
 
   const tour = useOnboardingTour();
   const [tracking, setTracking] = useState<TrackingState>("idle");
+  useEffect(() => setLocationErrorDismissed(false), [tracking]);
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
     useState(false);
   const [locationSettingsError, setLocationSettingsError] = useState("");
@@ -914,6 +917,8 @@ export default function App() {
   const [citiesOpen, setCitiesOpen] = useState(false);
   const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [highlightedMapReward, setHighlightedMapReward] = useState<MapReward | null>(null);
+  const [highlightedAchievementId, setHighlightedAchievementId] = useState<PersonalAchievementId | null>(null);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
   >("signin");
@@ -1992,6 +1997,31 @@ export default function App() {
         : null,
     [activeCity, activeCityProgress],
   );
+  const [mapRewards, setMapRewards] = useState<RewardState>({ selected: "standard", unlocked: ["standard"] });
+  useEffect(() => {
+    setMapRewards(accountUserId ? loadMapRewards(accountUserId) : { selected: "standard", unlocked: ["standard"] });
+  }, [accountUserId]);
+  useEffect(() => {
+    if (!accountUserId || citiesLoadedUserId !== accountUserId || achievementEvaluationGeneration !== discoveryMetricsGenerationRef.current || !discoveryHistoryReadyRef.current) return;
+    const next = unlockMapRewards(loadMapRewards(accountUserId), achievementEvaluations.filter(item => item.earned).map(item => item.definition.id));
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }, [accountUserId, achievementEvaluations, citiesLoadedUserId, achievementEvaluationGeneration]);
+  function selectMapReward(selected: MapReward): void {
+    if (!accountUserId) throw new Error("Sign in to select a map appearance.");
+    const next = { ...loadMapRewards(accountUserId), selected };
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }
+
+  function viewMapReward(reward: MapReward): void {
+    if (!accountUserId) throw new Error("Sign in to view a map reward.");
+    const current = loadMapRewards(accountUserId);
+    const next = { ...current, viewed: [...new Set([...(current.viewed ?? []), reward])] };
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }
+
   const earnedAchievementIds = useMemo(
     () =>
       achievementEvaluations
@@ -4794,7 +4824,7 @@ export default function App() {
       if (reducedMotion) {
         setVisualExpanded(expanded);
         setCitiesExpanded(expanded);
-        card.style.transform = targetTransform;
+        card.style.removeProperty("transform");
         return;
       }
 
@@ -4819,7 +4849,7 @@ export default function App() {
         animation.onfinish = () => {
           if (journeyAnimationRef.current !== animation) return;
           journeyAnimationRef.current = null;
-          card.style.transform = targetTransform;
+          card.style.removeProperty("transform");
           animation.cancel();
           setCitiesExpanded(expanded);
         };
@@ -5555,6 +5585,7 @@ export default function App() {
         onReady={() => setMapReadyGeneration(generation => generation + 1)}
         initialCenter={initialLocation ? [initialLocation.lng, initialLocation.lat] : undefined}
         initialZoom={initialLocation ? 14 : undefined}
+        reward={mapRewards.selected}
         mode={mode}
         points={points}
         cells={cells}
@@ -5611,6 +5642,7 @@ export default function App() {
       />
       {(routePlannerOpen || routeDestination !== null) && (
         <ExplorationRoutePlanner
+          reward={mapRewards.selected}
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
           keyboardInset={keyboardInset}
@@ -5759,6 +5791,11 @@ export default function App() {
               restartOnboarding();
             }}
           >{t("Restart onboarding")}</button>
+          <button
+            type="button"
+            data-testid="preview-error-toast"
+            onClick={() => setJourneyStopMessage(t(JOURNEY_SPEED_STOP_MESSAGE))}
+          >{t("Show mock error message")}</button>
           <strong>{t("Notifications")}</strong>
           <small>{t("Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.")}</small>
           <button
@@ -5930,40 +5967,62 @@ export default function App() {
         </aside>
       )}
 
-      {locationPermissionToastVisible && (
-        <aside className="account-toast location-permission-toast" role="alert">
-          <span className="account-toast__mark" aria-hidden="true">
-            <InfoIcon size={18} strokeWidth={2} />
-          </span>
-          <span className="account-toast__message">
-            {locationSettingsError ||
+      <div className="app-error-stack" data-testid="app-error-stack">
+        {(journeyStopMessage || (tracking === "unavailable" && !locationErrorDismissed)) && (
+          <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-error-toast">
+            <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+            <span className="account-toast__message">{journeyStopMessage || t("Location is temporarily unavailable. Try again, or preview the sample discovery.")}</span>
+            <button type="button" className="app-error-toast__dismiss" aria-label={t("Close")} onClick={() => {
+              setJourneyStopMessage(null);
+              setLocationErrorDismissed(true);
+            }}><XIcon size={18} /></button>
+          </aside>
+        )}
+        {journeySaveError && (
+          <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-save-error-toast">
+            <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+            <div className="account-toast__message">
+              <p>{journeySaveError}</p>
+              <button className="app-error-toast__action" type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={finalizeRecordedWalk}>{t("Retry saving journey")}</button>
+            </div>
+          </aside>
+        )}
+        {locationPermissionToastVisible && (
+          <aside className="account-toast location-permission-toast app-error-toast" role="alert">
+            <span className="account-toast__mark" aria-hidden="true">
+              <InfoIcon size={18} strokeWidth={2} />
+            </span>
+            <span className="account-toast__message">
+              {locationSettingsError ||
               t("Allow location access in Settings to start your journey.")}
-          </span>
-          <div className="location-permission-toast__actions">
-            <button
-              type="button"
-              onClick={() => {
-                void openLocationSettings()
-                  .then(() => setLocationPermissionToastVisible(false))
-                  .catch((error: Error) => {
-                    console.warn("Could not open location settings", { error: errorDiagnostic(error) });
-                    setLocationSettingsError(
-                      t("Could not open Settings. Enable location for Hecate in your device Settings."),
-                    );
-                  });
-              }}
-            >{t("Open device settings")}</button>
-            <button
-              type="button"
-              className="location-permission-toast__dismiss"
-              aria-label={t("Dismiss location permission message")}
-              onClick={() => setLocationPermissionToastVisible(false)}
-            >
-              <XIcon size={16} strokeWidth={2} />
-            </button>
-          </div>
-        </aside>
-      )}
+            </span>
+            <div className="location-permission-toast__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  void openLocationSettings()
+                    .then(() => setLocationPermissionToastVisible(false))
+                    .catch((error: Error) => {
+                      console.warn("Could not open location settings", { error: errorDiagnostic(error) });
+                      setLocationSettingsError(
+                        t("Could not open Settings. Enable location for Hecate in your device Settings."),
+                      );
+                    });
+                }}
+              >{t("Open device settings")}</button>
+              <button
+                type="button"
+                className="location-permission-toast__dismiss"
+                aria-label={t("Dismiss location permission message")}
+                onClick={() => setLocationPermissionToastVisible(false)}
+              >
+                <XIcon size={16} strokeWidth={2} />
+              </button>
+            </div>
+          </aside>
+        )}
+
+      </div>
 
       {tracking !== "tracking" &&
         tracking !== "requesting" &&
@@ -6258,25 +6317,6 @@ export default function App() {
                 : t("Keep this page open and your screen on")}
             </div>
           )}
-          {tracking === "unavailable" && (
-            <p className="location-error">{t("Location is temporarily unavailable. Try again, or preview the sample discovery.")}</p>
-          )}
-          {journeyStopMessage && (
-            <p className="location-error" role="status">
-              {journeyStopMessage}
-            </p>
-          )}
-          {journeySaveError && (
-            <div className="location-error" role="alert">
-              <p>{journeySaveError}</p>
-              <button
-                type="button"
-                data-testid="retry-journey-save"
-                disabled={walkFinalizing}
-                onClick={finalizeRecordedWalk}
-              >{t("Retry saving journey")}</button>
-            </div>
-          )}
           <JourneyDetails
             journeys={journeyHistory}
             onJourneyDayOpen={day => {
@@ -6352,6 +6392,15 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          mapRewards={mapRewards}
+          highlightedMapReward={highlightedMapReward}
+          onRequiredAchievementOpen={id => {
+            setHighlightedMapReward(null);
+            setHighlightedAchievementId(id);
+            setAchievementsOpen(true);
+          }}
+          onSelectMapReward={selectMapReward}
+          onViewMapReward={viewMapReward}
           returnHighlight={profileReturnHighlight}
           onReturnHighlightEnd={() => setProfileReturnHighlight(null)}
           initialAuthIntent={syncInitialIntent}
@@ -6404,6 +6453,8 @@ export default function App() {
             setCitiesOpen(true);
           }}
           onAchievementsOpen={() => {
+            setHighlightedMapReward(null);
+            setHighlightedAchievementId(null);
             setAchievementsOpen(true);
           }}
           onSavedPlacesOpen={() => {
@@ -6452,6 +6503,15 @@ export default function App() {
       {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm} percentage={keepsake.percentage}
         onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
+        unlockedMapRewards={mapRewards.unlocked}
+        onMapAppearanceOpen={reward => {
+          if (mapRewards.unlocked.includes(reward)) viewMapReward(reward);
+          setHighlightedMapReward(reward);
+          setSyncOpen(true);
+          setAchievementsOpen(false);
+        }}
+        highlightedAchievementId={highlightedAchievementId}
+        backLabel={highlightedAchievementId ? t("Appearance") : t("Back to profile")}
         open={Boolean(accountUserId && achievementsOpen)}
         achievementEvaluations={achievementEvaluations}
         onBack={() => setAchievementsOpen(false)}
@@ -6544,6 +6604,9 @@ export default function App() {
       )}
       {activeAchievementCelebration && !explorationSummary && (
         <AchievementCelebration
+          key={activeAchievementCelebration.id}
+          onSelectMapReward={selectMapReward}
+          onViewMapReward={viewMapReward}
           achievement={activeAchievementCelebration}
           remaining={Math.max(0, achievementCelebrations.length - 1)}
           onDismiss={() => {

@@ -1,3 +1,5 @@
+import { navigationRoutePaint, navigationRouteHalo } from "../mapRewardPalette";
+import type { MapReward } from "../goalRewards";
 import { Trans } from "react-i18next";
 import { formatNumber, t, useAppTranslation } from "../i18n";
 import { errorDiagnostic } from "../diagnostics";
@@ -46,6 +48,7 @@ import {
 export type RouteDestination = RoutePoint & { name?: string };
 
 type Props = {
+  reward: MapReward;
   open: boolean;
   keyboardInset: number;
   previewEnabled: boolean;
@@ -78,6 +81,7 @@ const LAYERS = [
 ];
 
 export function ExplorationRoutePlanner({
+  reward,
   open,
   keyboardInset,
   previewEnabled,
@@ -185,6 +189,16 @@ export function ExplorationRoutePlanner({
   const selected = (open ? null : activeRoute) ??
     routes.find(({ id }) => id === selectedId) ?? routes[1] ?? routes[0];
   const completedRef = useRef<{ route: PlannedRoute; geometry: RouteGeometry; progress: RouteProgress } | null>(null);
+  const rewardRef = useRef(reward);
+  rewardRef.current = reward;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.getLayer(LAYERS[2])) return;
+    const paint = navigationRoutePaint(reward, completedRef.current?.progress.fraction ?? 0);
+    map.setPaintProperty(LAYERS[2], "line-color", paint["line-color"]);
+    map.setPaintProperty(LAYERS[2], "line-gradient", paint["line-gradient"]);
+    map.setPaintProperty(LAYERS[1], "line-color", navigationRouteHalo(reward));
+  }, [reward, mapRef]);
   useEffect(() => {
     if (!selected || !navigationPoint) {
       completedRef.current = null;
@@ -197,8 +211,8 @@ export function ExplorationRoutePlanner({
     const progress = advanceRouteProgress(geometry, navigationPoint, previous);
     completedRef.current = { route: selected, geometry, progress };
     const map = mapRef.current;
-    if (progress.fraction !== previous.fraction && map?.getLayer(LAYERS[2])) map.setPaintProperty(LAYERS[2], "line-gradient", ["step", ["line-progress"], "#b6c49b", progress.fraction, "#738f28"]);
-  }, [selected, navigationPoint, mapRef]);
+    if (progress.fraction !== previous.fraction && map?.getLayer(LAYERS[2])) map.setPaintProperty(LAYERS[2], "line-gradient", navigationRoutePaint(reward, progress.fraction)["line-gradient"]);
+  }, [selected, navigationPoint, mapRef, reward]);
   const destinationLabel =
     destination?.name ??
     (namedDestination &&
@@ -389,7 +403,7 @@ export function ExplorationRoutePlanner({
           type: "line",
           source: SOURCE,
           filter: ["==", "kind", "selected"],
-          paint: { "line-color": "#f7f4ed", "line-width": 9 },
+          paint: { "line-color": navigationRouteHalo(rewardRef.current), "line-width": 10 },
           layout: { "line-cap": "round", "line-join": "round" },
         });
         map.addLayer({
@@ -397,8 +411,7 @@ export function ExplorationRoutePlanner({
           type: "line",
           source: SOURCE,
           filter: ["==", "kind", "selected"],
-          paint: { "line-color": "#738f28", "line-width": 5,
-            "line-gradient": ["step", ["line-progress"], "#b6c49b", completedRef.current !== null && completedRef.current.route === selected ? completedRef.current.progress.fraction : 0, "#738f28"] },
+          paint: navigationRoutePaint(rewardRef.current, completedRef.current !== null && completedRef.current.route === selected ? completedRef.current.progress.fraction : 0),
           layout: { "line-cap": "round", "line-join": "round" },
         });
         map.addLayer({
