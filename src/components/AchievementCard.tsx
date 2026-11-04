@@ -1,6 +1,9 @@
+import { mdiRotate360 } from "@mdi/js";
+import { MAP_REWARDS, type MapReward } from "../goalRewards";
 import { t, useAppTranslation } from "../i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { PersonalAchievementDefinition } from "../achievements";
+import { MapRewardArtwork } from "./MapRewardCard";
 import { AchievementArtwork } from "./AchievementArtwork";
 
 const categoryLabels: Record<PersonalAchievementDefinition["category"], "One-walk challenge" | "Consistency challenge" | "Places challenge"> = {
@@ -8,6 +11,8 @@ const categoryLabels: Record<PersonalAchievementDefinition["category"], "One-wal
   consistency: "Consistency challenge",
   places: "Places challenge",
 };
+
+type MapAchievementReward = { id: MapReward; title: string; unlocked: boolean; onOpen: (reward: MapReward) => void };
 
 const frontTransform =
   "translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1)";
@@ -32,19 +37,23 @@ function animateAchievementFlip(
 
 export function AchievementCard({
   achievement,
+  initialFace,
+  mapReward,
   earned = true,
   progress = 1,
   progressLabel = t("Achievement unlocked"),
   compact = false,
 }: {
   achievement: PersonalAchievementDefinition;
+  initialFace?: "artwork" | "details";
+  mapReward?: MapAchievementReward;
   earned?: boolean;
   progress?: number;
   progressLabel?: string;
   compact?: boolean;
 }) {
   useAppTranslation();
-  const [flipped, setFlipped] = useState(false);
+  const [flipped, setFlipped] = useState(initialFace === "details");
   const innerRef = useRef<HTMLSpanElement>(null);
   const mountedRef = useRef(false);
   const status = earned ? t("achievement.earned") : progressLabel;
@@ -61,17 +70,16 @@ export function AchievementCard({
   }, [flipped]);
 
   return (
-    <button
-      className={`achievement-card${earned ? " achievement-card--earned" : " achievement-card--locked"}${compact ? " achievement-card--compact" : ""}`}
-      type="button"
+    <div
+      className={`achievement-card${earned ? " achievement-card--earned" : " achievement-card--locked"}${compact ? " achievement-card--compact" : ""}${mapReward ? " achievement-card--map-reward" : ""}`}
+      role="group"
       data-category={achievement.category}
       data-achievement={achievement.id}
-      aria-pressed={flipped}
+      data-flipped={flipped}
       aria-label={t("achievement.cardLabel", { title: achievement.title, description: achievement.description, status, action: t(flipped ? "achievement.showArtwork" : "achievement.readDetails") })}
-      onClick={() => setFlipped((current) => !current)}
     >
-      <span ref={innerRef} className="achievement-card__inner" aria-hidden="true">
-        <span className="achievement-card__face achievement-card__front">
+      <span ref={innerRef} className="achievement-card__inner">
+        <span className="achievement-card__face achievement-card__front" aria-hidden={flipped} inert={flipped}>
           <span className="achievement-card__artwork">
             <AchievementArtwork
               image={achievement.image}
@@ -81,8 +89,9 @@ export function AchievementCard({
           </span>
           <strong>{achievement.title}</strong>
           <small>{status}</small>
+          <button type="button" className="achievement-card__flip" data-testid={`achievement-flip-${achievement.id}-artwork`} aria-pressed={flipped} aria-label={t("achievement.cardLabel", { title: achievement.title, description: achievement.description, status, action: t(flipped ? "achievement.showArtwork" : "achievement.readDetails") })} onClick={() => setFlipped(current => !current)}><AchievementRotateIcon /></button>
         </span>
-        <span className="achievement-card__face achievement-card__back">
+        <span className="achievement-card__face achievement-card__back" aria-hidden={!flipped} inert={!flipped}>
           <span className="achievement-card__category">
             {t(categoryLabels[achievement.category])}
           </span>
@@ -96,8 +105,25 @@ export function AchievementCard({
               <span style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%` }} />
             </span>
           )}
+          <button type="button" className="achievement-card__flip" data-testid={`achievement-flip-${achievement.id}-details`} aria-pressed={flipped} aria-label={t("achievement.cardLabel", { title: achievement.title, description: achievement.description, status, action: t(flipped ? "achievement.showArtwork" : "achievement.readDetails") })} onClick={() => setFlipped(current => !current)}><AchievementRotateIcon /></button>
+          {mapReward && <AchievementRewardAction reward={mapReward} face="details" />}
         </span>
       </span>
-    </button>
+    </div>
   );
+}
+
+function AchievementRewardAction({ reward, face }: { reward: MapAchievementReward; face: "artwork" | "details" }) {
+  const definition = MAP_REWARDS.find(item => item.id === reward.id);
+  return <button type="button" className="achievement-card__map-reward" data-unlocked={reward.unlocked} data-testid={`achievement-reward-${reward.id}-${face}`} onClick={() => reward.onOpen(reward.id)}>
+    {definition && <span className="achievement-card__reward-thumbnail"><MapRewardArtwork reward={definition} /></span>}
+    <span>{t(reward.unlocked ? "{{value0}} unlocked!" : "Unlocks {{value0}}", { value0: reward.title })}</span>
+    <span aria-hidden="true">›</span>
+  </button>;
+}
+
+function AchievementRotateIcon() {
+  return <svg className="achievement-card__rotate-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d={mdiRotate360} />
+  </svg>;
 }

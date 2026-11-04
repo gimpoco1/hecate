@@ -33,6 +33,8 @@ type CompositeProgram = {
   mask: WebGLUniformLocation | null;
   fogOpacity: WebGLUniformLocation | null;
   darkMode: WebGLUniformLocation | null;
+  monochrome: WebGLUniformLocation | null;
+  celestial: WebGLUniformLocation | null;
 };
 
 const FOG_LAYER_ID = "hecate-discovery-fog";
@@ -379,6 +381,8 @@ precision highp float;
 uniform sampler2D u_mask;
 uniform float u_fog_opacity;
 uniform float u_dark_mode;
+uniform float u_monochrome;
+uniform float u_celestial;
 in vec2 v_uv;
 out vec4 fragColor;
 
@@ -386,7 +390,7 @@ void main() {
   float proximity = texture(u_mask, v_uv).r;
   float distanceInRadii = (1.0 - proximity) * 3.0;
   float revealed = 1.0 - smoothstep(1.0, 1.87, distanceInRadii);
-  float fogAlpha = 0.9 * u_fog_opacity * (1.0 - revealed);
+  float fogAlpha = mix(0.9, 0.96, u_monochrome) * u_fog_opacity * (1.0 - revealed);
 
   float contourRange = step(1.08, distanceInRadii) * step(distanceInRadii, 2.99);
   float contourPhase = fract((distanceInRadii - 1.08) / 0.16);
@@ -411,6 +415,18 @@ void main() {
   vec3 edgeHazeColor = mix(vec3(0.490, 0.541, 0.510), vec3(0.58, 0.72, 0.43), u_dark_mode);
   vec3 contourColor = mix(vec3(0.259, 0.318, 0.290), vec3(0.35, 0.46, 0.60), u_dark_mode);
   vec3 glowColor = mix(vec3(0.745, 0.878, 0.290), vec3(0.74, 0.89, 0.49), u_dark_mode);
+  if (u_monochrome > 0.5) {
+    fogColor = vec3(0.66);
+    edgeHazeColor = vec3(0.30);
+    contourColor = vec3(0.22);
+    glowColor = vec3(0.48);
+  }
+  if (u_celestial > 0.5) {
+    fogColor = vec3(0.055, 0.040, 0.115);
+    edgeHazeColor = vec3(0.42, 0.30, 0.62);
+    contourColor = vec3(0.51, 0.40, 0.68);
+    glowColor = vec3(1.0, 0.65, 0.24);
+  }
   vec3 color = fogColor * fogAlpha;
   float alpha = fogAlpha;
   color = edgeHazeColor * edgeHazeAlpha + color * (1.0 - edgeHazeAlpha);
@@ -419,6 +435,19 @@ void main() {
   alpha = contourAlpha + alpha * (1.0 - contourAlpha);
   color = glowColor * glowAlpha + color * (1.0 - glowAlpha);
   alpha = glowAlpha + alpha * (1.0 - glowAlpha);
+  if (u_monochrome > 0.5) color = vec3(dot(color, vec3(0.2126, 0.7152, 0.0722)));
+  if (u_celestial > 0.5) {
+    vec2 cell = floor(gl_FragCoord.xy / 72.0);
+    float seed = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+    vec2 center = vec2(0.2 + seed * 0.6, 0.2 + fract(seed * 17.3) * 0.6);
+    vec2 starOffset = (fract(gl_FragCoord.xy / 72.0) - center) * 72.0;
+    float point = 1.0 - smoothstep(0.35, 2.0, length(starOffset));
+    vec2 starAxis = abs(starOffset);
+    float rays = (1.0 - smoothstep(0.25, 0.7, min(starAxis.x, starAxis.y))) *
+      (1.0 - smoothstep(0.8, 3.8, max(starAxis.x, starAxis.y))) * step(0.94, seed);
+    float star = max(point, rays) * step(0.72, seed);
+    color += vec3(0.95, 0.85, 0.65) * star * fogAlpha * 0.8;
+  }
   fragColor = vec4(color, alpha);
 }`;
   const program = linkProgram(
@@ -432,6 +461,8 @@ void main() {
     mask: gl.getUniformLocation(program, "u_mask"),
     fogOpacity: gl.getUniformLocation(program, "u_fog_opacity"),
     darkMode: gl.getUniformLocation(program, "u_dark_mode"),
+    monochrome: gl.getUniformLocation(program, "u_monochrome"),
+    celestial: gl.getUniformLocation(program, "u_celestial"),
   };
 }
 
@@ -442,6 +473,8 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
 
   private map: MapLibreMap | null = null;
   private darkMode = false;
+  private monochrome = false;
+  private celestial = false;
   private gl: WebGL2RenderingContext | null = null;
   private geometry: FogGeometry;
   private revealBuckets = new Map<string, FogBucket>();
@@ -526,8 +559,10 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.map?.triggerRepaint();
   }
 
-  setTheme(theme: "light" | "dark"): void {
-    this.darkMode = theme === "dark";
+  setTheme(theme: "light" | "dark" | "monochrome" | "celestial"): void {
+    this.darkMode = theme === "dark" || theme === "celestial";
+    this.monochrome = theme === "monochrome";
+    this.celestial = theme === "celestial";
     this.map?.triggerRepaint();
   }
 
@@ -657,6 +692,8 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.uniform1i(this.compositeProgram.mask, 0);
     gl.uniform1f(this.compositeProgram.fogOpacity, fogOpacity);
     gl.uniform1f(this.compositeProgram.darkMode, this.darkMode ? 1 : 0);
+    gl.uniform1f(this.compositeProgram.monochrome, this.monochrome ? 1 : 0);
+    gl.uniform1f(this.compositeProgram.celestial, this.celestial ? 1 : 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);

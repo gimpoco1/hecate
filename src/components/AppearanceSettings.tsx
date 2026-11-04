@@ -1,3 +1,6 @@
+import type { PersonalAchievementId } from "../achievements";
+import type { RewardState, MapReward } from "../goalRewards";
+import { MapAppearanceSettings } from "./MapAppearanceSettings";
 import { t, useAppTranslation } from "../i18n";
 import { errorDiagnostic } from "../diagnostics";
 import { useState } from "react";
@@ -11,7 +14,7 @@ const choices: { value: AppearancePreference; label: string; icon: string }[] = 
   { value: "dark", get label() { return t("Dark"); }, icon: mdiWeatherNight },
 ];
 
-export function AppearanceSettings() {
+export function AppearanceSettings({ mapRewards, onSelectMapReward, onViewMapReward, onRequiredAchievementOpen, highlightedMapReward }: { highlightedMapReward: MapReward | null; onRequiredAchievementOpen: (id: PersonalAchievementId) => void; mapRewards: RewardState; onSelectMapReward: (reward: MapReward) => void; onViewMapReward: (reward: MapReward) => void }) {
   useAppTranslation();
   const { preference } = useAppearance();
   const [error, setError] = useState("");
@@ -31,6 +34,7 @@ export function AppearanceSettings() {
       </label>)}
     </fieldset>
     {error && <p role="alert">{error}</p>}
+    <MapAppearanceSettings highlightedMapReward={highlightedMapReward} onRequiredAchievementOpen={onRequiredAchievementOpen} rewards={mapRewards} onView={onViewMapReward} onSelect={onSelectMapReward} />
     <AppIconSettings />
   </section>;
 }

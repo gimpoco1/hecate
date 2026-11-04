@@ -1,3 +1,4 @@
+import { loadMapRewards, saveMapRewards, unlockMapRewards, type RewardState, type MapReward } from "./goalRewards";
 import { WeeklyJourneyActivity } from "./components/WeeklyJourneyActivity";
 import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap";
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
@@ -900,6 +901,8 @@ export default function App() {
   const [citiesOpen, setCitiesOpen] = useState(false);
   const [keepsake, setKeepsake] = useState<{ city: CityBoundary; cells: DiscoveryCell[]; map: MapLibreMap; discoveredKm: number; percentage: number } | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [highlightedMapReward, setHighlightedMapReward] = useState<MapReward | null>(null);
+  const [highlightedAchievementId, setHighlightedAchievementId] = useState<PersonalAchievementId | null>(null);
   const [syncInitialIntent, setSyncInitialIntent] = useState<
     "signin" | "signup"
   >("signin");
@@ -1978,6 +1981,31 @@ export default function App() {
         : null,
     [activeCity, activeCityProgress],
   );
+  const [mapRewards, setMapRewards] = useState<RewardState>({ selected: "standard", unlocked: ["standard"] });
+  useEffect(() => {
+    setMapRewards(accountUserId ? loadMapRewards(accountUserId) : { selected: "standard", unlocked: ["standard"] });
+  }, [accountUserId]);
+  useEffect(() => {
+    if (!accountUserId || citiesLoadedUserId !== accountUserId || achievementEvaluationGeneration !== discoveryMetricsGenerationRef.current || !discoveryHistoryReadyRef.current) return;
+    const next = unlockMapRewards(loadMapRewards(accountUserId), achievementEvaluations.filter(item => item.earned).map(item => item.definition.id));
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }, [accountUserId, achievementEvaluations, citiesLoadedUserId, achievementEvaluationGeneration]);
+  function selectMapReward(selected: MapReward): void {
+    if (!accountUserId) throw new Error("Sign in to select a map appearance.");
+    const next = { ...loadMapRewards(accountUserId), selected };
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }
+
+  function viewMapReward(reward: MapReward): void {
+    if (!accountUserId) throw new Error("Sign in to view a map reward.");
+    const current = loadMapRewards(accountUserId);
+    const next = { ...current, viewed: [...new Set([...(current.viewed ?? []), reward])] };
+    saveMapRewards(accountUserId, next);
+    setMapRewards(next);
+  }
+
   const earnedAchievementIds = useMemo(
     () =>
       achievementEvaluations
@@ -5467,6 +5495,7 @@ export default function App() {
     >
       <AccountLoadingScreen visible={accountDataLoading} />
       <DiscoveryMap
+        reward={mapRewards.selected}
         mode={mode}
         points={points}
         cells={cells}
@@ -5523,6 +5552,7 @@ export default function App() {
       />
       {(routePlannerOpen || routeDestination !== null) && (
         <ExplorationRoutePlanner
+          reward={mapRewards.selected}
           key={accountUserId ?? "guest"}
           open={routePlannerOpen}
           keyboardInset={keyboardInset}
@@ -6271,6 +6301,15 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          mapRewards={mapRewards}
+          highlightedMapReward={highlightedMapReward}
+          onRequiredAchievementOpen={id => {
+            setHighlightedMapReward(null);
+            setHighlightedAchievementId(id);
+            setAchievementsOpen(true);
+          }}
+          onSelectMapReward={selectMapReward}
+          onViewMapReward={viewMapReward}
           returnHighlight={profileReturnHighlight}
           onReturnHighlightEnd={() => setProfileReturnHighlight(null)}
           initialAuthIntent={syncInitialIntent}
@@ -6318,6 +6357,8 @@ export default function App() {
             setCitiesOpen(true);
           }}
           onAchievementsOpen={() => {
+            setHighlightedMapReward(null);
+            setHighlightedAchievementId(null);
             setAchievementsOpen(true);
           }}
           onSavedPlacesOpen={() => {
@@ -6366,6 +6407,15 @@ export default function App() {
       {keepsake && <CityKeepsake city={keepsake.city} cells={keepsake.cells} map={keepsake.map} discoveredKm={keepsake.discoveredKm} percentage={keepsake.percentage}
         onClose={() => setKeepsake(null)} />}
       <AchievementsSheet
+        unlockedMapRewards={mapRewards.unlocked}
+        onMapAppearanceOpen={reward => {
+          if (mapRewards.unlocked.includes(reward)) viewMapReward(reward);
+          setHighlightedMapReward(reward);
+          setSyncOpen(true);
+          setAchievementsOpen(false);
+        }}
+        highlightedAchievementId={highlightedAchievementId}
+        backLabel={highlightedAchievementId ? t("Appearance") : t("Back to profile")}
         open={Boolean(accountUserId && achievementsOpen)}
         achievementEvaluations={achievementEvaluations}
         onBack={() => setAchievementsOpen(false)}
@@ -6457,6 +6507,9 @@ export default function App() {
       )}
       {activeAchievementCelebration && !explorationSummary && (
         <AchievementCelebration
+          key={activeAchievementCelebration.id}
+          onSelectMapReward={selectMapReward}
+          onViewMapReward={viewMapReward}
           achievement={activeAchievementCelebration}
           remaining={Math.max(0, achievementCelebrations.length - 1)}
           onDismiss={() => {
