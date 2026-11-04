@@ -1,3 +1,5 @@
+import type { PersonalAchievementId } from "../achievements";
+import type { RewardState, MapReward } from "../goalRewards";
 import { ImportedRouteCard } from "./ImportedRouteCard";
 import { Trans } from "react-i18next";
 import { t, useAppTranslation } from "../i18n";
@@ -52,6 +54,11 @@ import type {
 } from "../activityNotifications";
 
 type Props = {
+  mapRewards: RewardState;
+  highlightedMapReward: MapReward | null;
+  onRequiredAchievementOpen: (id: PersonalAchievementId) => void;
+  onSelectMapReward: (reward: MapReward) => void;
+  onViewMapReward: (reward: MapReward) => void;
   open: boolean;
   returnHighlight: "history" | "stats" | null;
   onReturnHighlightEnd: () => void;
@@ -162,6 +169,11 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 }
 
 export function SyncSheet({
+  mapRewards,
+  highlightedMapReward,
+  onRequiredAchievementOpen,
+  onSelectMapReward,
+  onViewMapReward,
   open,
   returnHighlight,
   onReturnHighlightEnd,
@@ -215,6 +227,9 @@ export function SyncSheet({
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
   const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
+  useEffect(() => {
+    if (highlightedMapReward !== null) setAppearanceSheetOpen(true);
+  }, [highlightedMapReward]);
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const { preference: appearancePreference } = useAppearance();
   const [notificationSettingsSheetOpen, setNotificationSettingsSheetOpen] =
@@ -955,7 +970,7 @@ export function SyncSheet({
                     }}><XIcon /></button>
                   <div className="eyebrow">{t("Preferences")}</div>
                   <h2 id="appearance-settings-title">{t("Appearance")}</h2>
-                  <AppearanceSettings />
+                  <AppearanceSettings highlightedMapReward={highlightedMapReward} onRequiredAchievementOpen={onRequiredAchievementOpen} mapRewards={mapRewards} onSelectMapReward={onSelectMapReward} onViewMapReward={onViewMapReward} />
                 </section>
               </div>
             )}

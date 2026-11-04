@@ -1,3 +1,5 @@
+import { mapRewardTheme, journeyHighlightColor, discoveryHighlightColor, navigationRouteHalo } from "../mapRewardPalette";
+import type { MapReward } from "../goalRewards";
 import { t, useAppTranslation } from "../i18n";
 import { errorDiagnostic } from "../diagnostics";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -18,13 +20,14 @@ import {
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
-import { useAppearance, type ColorTheme } from "../appearance";
+import { useAppearance } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
 
 type Props = {
+  reward?: MapReward;
   mode: MapMode;
   points: Coordinate[];
   cells: DiscoveryCell[];
@@ -159,6 +162,7 @@ function suggestedPlaceName(map: MapLibreMap, point: maplibregl.PointLike) {
 }
 
 export const DiscoveryMap = memo(function DiscoveryMap({
+  reward,
   mode,
   points,
   cells,
@@ -213,14 +217,17 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const [mapStyle, setMapStyle] = useState<
     Awaited<ReturnType<typeof loadMapStyle>> | string | null
   >(null);
-  const { theme } = useAppearance();
+  const { theme: appTheme } = useAppearance();
+  const theme = mapRewardTheme(reward ?? "standard", appTheme);
+  const rewardRef = useRef(reward);
+  rewardRef.current = reward;
   const themeRef = useRef(theme);
   themeRef.current = theme;
   const baseStyleRef = useRef<maplibregl.StyleSpecification | null>(null);
   useEffect(() => {
-    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme);
-    fogLayerRef.current?.setTheme(theme);
-  }, [theme, mapRef]);
+    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme, reward ?? "standard");
+    fogLayerRef.current?.setTheme(reward === "paper" ? "monochrome" : reward === "midnight" ? "celestial" : theme);
+  }, [theme, reward, mapRef]);
   const geometry = useMemo<FogGeometry>(
     () => ({
       routeSegments: splitRoute(points),
@@ -255,15 +262,15 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const map = mapRef.current;
     const fogLayer = fogLayerRef.current;
     if (map && fogLayer)
-      syncHighlightedRoute(map, highlightedPoints, fogLayer.id);
-  }, [highlightedPoints, mapRef]);
+      syncHighlightedRoute(map, highlightedPoints, fogLayer.id, reward ?? "standard");
+  }, [highlightedPoints, mapRef, reward]);
   useEffect(() => {
     highlightedNewGroundSegmentsRef.current = highlightedNewGroundSegments;
     const map = mapRef.current;
     const fogLayer = fogLayerRef.current;
     if (map && fogLayer)
-      syncHighlightedDiscoveries(map, highlightedNewGroundSegments, fogLayer.id, theme);
-  }, [highlightedNewGroundSegments, highlightedPoints, mapRef, theme]);
+      syncHighlightedDiscoveries(map, highlightedNewGroundSegments, fogLayer.id, reward ?? "standard");
+  }, [highlightedNewGroundSegments, highlightedPoints, mapRef, theme, reward]);
   useEffect(() => {
     onViewChangeRef.current = onViewChange;
   }, [onViewChange]);
@@ -364,23 +371,24 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     );
     map.on("style.load", () => {
       baseStyleRef.current = map.getStyle();
-      applyMapAppearance(map, baseStyleRef.current, themeRef.current);
+      applyMapAppearance(map, baseStyleRef.current, themeRef.current, rewardRef.current ?? "standard");
       map.setProjection({ type: "globe" });
       const fogLayer = new DiscoveryFogLayer(
         stateRef.current.geometry,
         stateRef.current.mode,
       );
-      fogLayer.setTheme(themeRef.current);
+      fogLayer.setTheme(rewardRef.current === "paper" ? "monochrome" : rewardRef.current === "midnight" ? "celestial" : themeRef.current);
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
       if (highlightedNewGroundSegmentsRef.current.length > 0)
-        syncHighlightedDiscoveries(map, highlightedNewGroundSegmentsRef.current, fogLayer.id, themeRef.current);
+        syncHighlightedDiscoveries(map, highlightedNewGroundSegmentsRef.current, fogLayer.id, rewardRef.current ?? "standard");
       if (highlightedPointsRef.current.length > 0) {
         syncHighlightedRoute(
           map,
           highlightedPointsRef.current,
           fogLayer.id,
+          rewardRef.current ?? "standard",
         );
       }
       const point = currentPointRef.current;
@@ -580,7 +588,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   return (
     <div
       data-testid="discovery-map"
-      className={`map-stage${favoritePlacementActive ? " map-stage--placing-favorite" : ""}`}
+      className={`map-stage${reward === "paper" ? " map-stage--monochrome" : ""}${favoritePlacementActive ? " map-stage--placing-favorite" : ""}`}
     >
       <div
         ref={containerRef}
@@ -589,8 +597,8 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       />
       {(highlightedPoints.length > 0 || highlightedNewGroundSegments.length > 0) && (
         <aside className="map-highlight-legend" data-testid="map-highlight-legend" aria-label={t("Map legend")}>
-          {highlightedPoints.length > 0 && <span><i className="map-highlight-legend__journey" aria-hidden="true" />{t("Travelled")}</span>}
-          {highlightedNewGroundSegments.length > 0 && <span><i className="map-highlight-legend__new" aria-hidden="true" />{t("New ground")}</span>}
+          {highlightedPoints.length > 0 && <span><i className="map-highlight-legend__journey" style={{ background: journeyHighlightColor(reward ?? "standard") }} aria-hidden="true" />{t("Travelled")}</span>}
+          {highlightedNewGroundSegments.length > 0 && <span><i className="map-highlight-legend__new" style={{ background: reward === "paper" ? "transparent" : discoveryHighlightColor(reward ?? "standard"), borderTop: reward === "paper" ? `2px dashed ${discoveryHighlightColor("paper")}` : undefined }} aria-hidden="true" />{t("New ground")}</span>}
         </aside>
       )}
     </div>
@@ -611,7 +619,7 @@ function syncHighlightedDiscoveries(
   map: MapLibreMap,
   segments: Coordinate[][],
   beforeLayerId: string,
-  theme: ColorTheme,
+  reward: MapReward,
 ): void {
   const sourceId = "hecate-highlighted-discoveries";
   const layerId = "hecate-highlighted-discoveries-streets";
@@ -631,21 +639,23 @@ function syncHighlightedDiscoveries(
   if (source) source.setData(data);
   else map.addSource(sourceId, { type: "geojson", data });
   if (map.getLayer(shadowLayerId)) {
-    map.setPaintProperty(shadowLayerId, "line-opacity", theme === "light" ? 0.35 : 0);
+    map.setPaintProperty(shadowLayerId, "line-color", navigationRouteHalo(reward));
   } else map.addLayer({
     id: shadowLayerId,
     type: "line",
     source: sourceId,
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#34402a", "line-width": 6, "line-blur": 3, "line-opacity": theme === "light" ? 0.35 : 0 },
+    paint: { "line-color": navigationRouteHalo(reward), "line-width": 9, "line-opacity": 1 },
   }, beforeLayerId);
   if (!map.getLayer(layerId)) map.addLayer({
     id: layerId,
     type: "line",
     source: sourceId,
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": "#d9f26a", "line-width": 3, "line-opacity": 1 },
+    paint: { "line-color": discoveryHighlightColor(reward), "line-width": 5, "line-opacity": 1 },
   }, beforeLayerId);
+  map.setPaintProperty(layerId, "line-color", discoveryHighlightColor(reward));
+  map.setPaintProperty(layerId, "line-dasharray", reward === "paper" ? [2, 1.5] : undefined);
   orderJourneyHighlights(map, beforeLayerId);
 }
 
@@ -666,6 +676,7 @@ function syncHighlightedRoute(
   map: MapLibreMap,
   points: Coordinate[],
   beforeLayerId: string,
+  reward: MapReward,
 ): void {
   const sourceId = "hecate-highlighted-route";
   const haloLayerId = "hecate-highlighted-route-halo";
@@ -692,8 +703,8 @@ function syncHighlightedRoute(
       type: "line",
       source: sourceId,
       paint: {
-        "line-color": "rgba(255, 255, 255, 0.94)",
-        "line-width": 6.5,
+        "line-color": reward === "standard" ? "rgba(255, 255, 255, 0.94)" : navigationRouteHalo(reward),
+        "line-width": 10,
         "line-opacity": 0.9,
       },
       layout: { "line-cap": "round", "line-join": "round" },
@@ -706,13 +717,16 @@ function syncHighlightedRoute(
       type: "line",
       source: sourceId,
       paint: {
-        "line-color": "#88939e",
-        "line-width": 3,
-        "line-opacity": 0.85,
+        "line-color": journeyHighlightColor(reward),
+        "line-width": 6,
+        "line-opacity": reward === "standard" ? 0.85 : 1,
       },
       layout: { "line-cap": "round", "line-join": "round" },
     },
     beforeLayerId,
   );
+  map.setPaintProperty(haloLayerId, "line-color", reward === "standard" ? "rgba(255, 255, 255, 0.94)" : navigationRouteHalo(reward));
+  map.setPaintProperty(lineLayerId, "line-color", journeyHighlightColor(reward));
+  map.setPaintProperty(lineLayerId, "line-opacity", reward === "standard" ? 0.85 : 1);
   orderJourneyHighlights(map, beforeLayerId);
 }
