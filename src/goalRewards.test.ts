@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { unlockMapRewards, type RewardState } from "./goalRewards";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { loadMapRewards, saveMapRewards, unlockMapRewards, type RewardState } from "./goalRewards";
 
 describe("map reward progression", () => {
   it("unlocks the matching goals without selecting a reward or modifying inputs", () => {
@@ -41,4 +41,46 @@ it("preserves viewed rewards while newly earned appearances remain unseen", () =
 it("unlocks Aurora and Frontier for their exploration challenges without applying them", () => {
   const state: RewardState = { selected: "standard", unlocked: ["standard"] };
   expect(unlockMapRewards(state, ["against-the-familiar", "mostly-uncharted"])).toEqual({ selected: "standard", unlocked: ["standard", "aurora", "frontier"] });
+});
+
+describe("saved map rewards", () => {
+  beforeEach(() => {
+    const entries = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => { entries.set(key, value); },
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each(["{bad json", "null", "[]", "42", '\"invalid\"'])("keeps the standard map available for corrupt storage: %s", raw => {
+    localStorage.setItem("hecate:map-rewards:v1:account", raw);
+    expect(loadMapRewards("account")).toEqual({ selected: "standard", unlocked: ["standard"] });
+  });
+
+  it("restores standard alongside valid rewards and permits selecting it", () => {
+    localStorage.setItem("hecate:map-rewards:v1:account", JSON.stringify({ selected: "midnight", unlocked: ["midnight"] }));
+    const loaded = loadMapRewards("account");
+    expect(loaded.selected).toBe("midnight");
+    expect(loaded.unlocked).toEqual(["standard", "midnight"]);
+    saveMapRewards("account", { ...loaded, selected: "standard" });
+    expect(loadMapRewards("account").selected).toBe("standard");
+  });
+
+  it("preserves valid progress while discarding invalid and duplicate entries", () => {
+    localStorage.setItem("hecate:map-rewards:v1:account", JSON.stringify({ selected: "paper", unlocked: ["paper", "removed-style", null, "paper"], viewed: ["paper", "paper", "removed-style", "midnight"] }));
+    expect(loadMapRewards("account")).toEqual({ selected: "paper", unlocked: ["standard", "paper"], viewed: ["paper"] });
+    expect(loadMapRewards("other-account")).toEqual({ selected: "standard", unlocked: ["standard"] });
+  });
+
+  it.each([
+    { selected: "removed-style", unlocked: ["paper"] },
+    { selected: "midnight", unlocked: ["paper"] },
+    { selected: "paper", unlocked: "paper", viewed: {} },
+    {},
+  ])("resets an invalid or locked selection to standard: %j", state => {
+    localStorage.setItem("hecate:map-rewards:v1:account", JSON.stringify(state));
+    expect(loadMapRewards("account").selected).toBe("standard");
+    expect(loadMapRewards("account").unlocked).toContain("standard");
+  });
 });
