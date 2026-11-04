@@ -10,7 +10,7 @@ import { HecateMark } from "./Icons";
 import { IntroArtwork, type IntroArtworkKind } from "./IntroArtwork";
 import { OnboardingLocationContext } from "../onboardingLocation";
 import type { Coordinate } from "../types";
-import { acquireForegroundLocation, requestForegroundLocationPermission, requestReminderMotionPermission, readReminderMotionAuthorization, reminderMotionPermissionLabel, hasBackgroundLocationPermission, hasForegroundLocationPermission, openLocationSettings } from "../location";
+import { acquireForegroundLocation, requestForegroundLocationPermission, requestReminderMotionPermission, readReminderMotionAuthorization, reminderMotionPermissionLabel, hasBackgroundLocationPermission, readForegroundLocationPermission, openLocationSettings } from "../location";
 import { canRequestOnboardingNotifications, requestOnboardingNotifications, readOnboardingNotificationPermission } from "../onboardingPermissions";
 import { errorDiagnostic } from "../diagnostics";
 import "./Onboarding.css";
@@ -81,8 +81,8 @@ export function Onboarding({ children }: { children: ReactNode }) {
     setPermissionError("");
     try {
       const allowed = await requestForegroundLocationPermission();
-      if (allowed) setInitialLocation(await acquireForegroundLocation());
       setLocationResult(allowed);
+      if (allowed) setInitialLocation(await acquireForegroundLocation());
     }
     catch (cause) {
       console.error("Could not enable location during onboarding", { error: errorDiagnostic(cause) });
@@ -129,8 +129,8 @@ export function Onboarding({ children }: { children: ReactNode }) {
     const refresh = async (): Promise<void> => {
       setCheckingPermission(true);
       try {
-        if (kind === "location" && locationResult !== null) {
-          const allowed = await hasForegroundLocationPermission();
+        if (kind === "location") {
+          const allowed = await readForegroundLocationPermission();
           if (active) setLocationResult(allowed);
         }
         if (kind === "notifications") {
@@ -165,12 +165,28 @@ export function Onboarding({ children }: { children: ReactNode }) {
         });
     }
     return () => { active = false; document.removeEventListener("visibilitychange", onVisible); if (listener) void listener.remove(); };
-  }, [nativeApp, complete, step, requesting, locationResult]);
+  }, [nativeApp, complete, step, requesting]);
 
-  function next(): void {
+  function advancePage(): void {
     setPermissionError("");
     if (step === pages.length - 1) finish();
     else setStep(step + 1);
+  }
+
+  async function next(): Promise<void> {
+    if (pages[step].kind !== "location" || locationResult !== true || initialLocation) {
+      advancePage();
+      return;
+    }
+    setRequesting(true);
+    setPermissionError("");
+    try {
+      setInitialLocation(await acquireForegroundLocation());
+      advancePage();
+    } catch (cause) {
+      console.error("Could not locate user during onboarding", { error: errorDiagnostic(cause) });
+      setPermissionError(cause instanceof Error ? cause.message : t("Location is unavailable."));
+    } finally { setRequesting(false); }
   }
 
   if (complete) return <OnboardingLocationContext.Provider value={initialLocation}>{children}</OnboardingLocationContext.Provider>;
@@ -211,11 +227,11 @@ export function Onboarding({ children }: { children: ReactNode }) {
               onClick={() => void (page.kind === "location" ? enableLocation() : page.kind === "motion" ? enableMotion() : enableNotifications())}>
               {checkingPermission ? t("Checking permission…") : requesting ? t("Requesting permission…") : page.kind === "location" ? t("Enable location") : page.kind === "motion" ? t("Enable {{permission}}", { permission: reminderMotionPermissionLabel() }) : t("Enable notifications")}
             </button> : needsSettings ? <button type="button" className="onboarding-next" data-testid="onboarding-settings" disabled={busy} onClick={() => void openPermissionSettings()}>{t("Open Settings")}</button>
-              : <button type="button" className="onboarding-next" data-testid="onboarding-next" disabled={busy} onClick={next}>
-                {step === pages.length - 1 ? t("Explore with Hecate") : t("Continue")}
+              : <button type="button" className="onboarding-next" data-testid="onboarding-next" disabled={busy} onClick={() => void next()}>
+                {requesting ? t("Finding your location") : step === pages.length - 1 ? t("Explore with Hecate") : t("Continue")}
               </button>}
           </div>
-          {(showPermissionButton || needsSettings) && <button type="button" className="onboarding-later" data-testid="onboarding-later" disabled={busy} onClick={next}>{t("Not now")}</button>}
+          {(showPermissionButton || needsSettings || (page.kind === "location" && locationResult === true && !initialLocation)) && <button type="button" className="onboarding-later" data-testid="onboarding-later" disabled={busy} onClick={advancePage}>{t("Not now")}</button>}
         </footer>
       </div>
     </main>

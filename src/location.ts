@@ -332,14 +332,33 @@ export async function openLocationSettings() {
   await BackgroundGeolocation.openSettings();
 }
 
-/** Checks foreground access without starting a watcher or prompting. */
-export async function hasForegroundLocationPermission(): Promise<boolean> {
+/** A missing permission-query capability means unknown; explicit geolocation still works. */
+async function readWebLocationPermission(): Promise<PermissionStatus | null> {
+  if (!navigator.permissions || typeof navigator.permissions.query !== "function") return null;
+  try {
+    return await navigator.permissions.query({ name: "geolocation" });
+  } catch (cause) {
+    if (!(cause instanceof TypeError) && !(cause instanceof DOMException && cause.name === "NotSupportedError")) throw cause;
+    console.warn("Browser cannot query geolocation permission", { error: errorDiagnostic(cause) });
+    return null;
+  }
+}
+
+/** Reads enabled, blocked, or unknown/requestable access without opening a system prompt. */
+export async function readForegroundLocationPermission(): Promise<boolean | null> {
   if (isNativeApp()) {
     const status = await readLocationAuthorization();
+    if (status === "notDetermined") return null;
     return status === "always" || status === "whenInUse";
   }
-  const permission = await navigator.permissions.query({ name: "geolocation" });
+  const permission = await readWebLocationPermission();
+  if (!permission || permission.state === "prompt") return null;
   return permission.state === "granted";
+}
+
+/** Passive positioning starts only when access is known to be granted. */
+export async function hasForegroundLocationPermission(): Promise<boolean> {
+  return await readForegroundLocationPermission() === true;
 }
 
 export async function hasBackgroundLocationPermission(): Promise<boolean> {
@@ -353,7 +372,7 @@ export async function requestForegroundLocationPermission(): Promise<boolean> {
     const status = await readLocationAuthorization();
     if (status !== "notDetermined") return status === "always" || status === "whenInUse";
   }
-  const webPermission = native ? null : await navigator.permissions.query({ name: "geolocation" });
+  const webPermission = native ? null : await readWebLocationPermission();
   if (webPermission && webPermission.state !== "prompt") return webPermission.state === "granted";
   const tracker = createForegroundLocationTracker();
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -367,7 +386,7 @@ export async function requestForegroundLocationPermission(): Promise<boolean> {
           if (webPermission.state !== "prompt") resolve(webPermission.state === "granted");
         };
         webPermission.addEventListener("change", permissionChanged);
-      } else {
+      } else if (native) {
         let checking = false;
         interval = setInterval(() => {
           if (checking) return;

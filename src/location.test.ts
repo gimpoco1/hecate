@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const native = vi.hoisted(() => ({
   platform: "ios",
@@ -25,7 +25,7 @@ vi.mock("@capacitor/core", () => ({
 }));
 
 import { acquireForegroundLocation, createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode, requestForegroundLocationPermission } from "./location";
-import { hasForegroundLocationPermission, hasBackgroundLocationPermission, readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from "./location";
+import { hasForegroundLocationPermission, hasBackgroundLocationPermission, readForegroundLocationPermission, readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from "./location";
 
 describe("iOS location authorization", () => {
   it.each(["denied", "notDetermined"])("does not start location watchers for passive checks with %s access", async status => {
@@ -45,11 +45,48 @@ describe("iOS location authorization", () => {
   it.each(["always", "whenInUse", "denied", "notDetermined"])("reads %s without requesting location", async status => {
     native.getAuthorizationStatus.mockResolvedValue({ status });
     expect(await readLocationAuthorization()).toBe(status);
+    expect(await readForegroundLocationPermission()).toBe(status === "notDetermined" ? null : status !== "denied");
   });
 
   it("rejects an unrecognized native permission value", async () => {
     native.getAuthorizationStatus.mockResolvedValue({ status: "invalid" });
     await expect(readLocationAuthorization()).rejects.toThrow("Unrecognized location");
+  });
+});
+
+describe("browser location permission capabilities", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    native.platform = "ios";
+  });
+
+  it.each(["missing", "unsupported"])("keeps passive checks prompt-free and explicit requests usable with %s permission queries", async capability => {
+    native.platform = "web";
+    native.getAuthorizationStatus.mockClear();
+    const clearWatch = vi.fn();
+    const watchPosition = vi.fn(callback => {
+      callback({ coords: { longitude: 2.17, latitude: 41.4, accuracy: 10, heading: null, speed: null }, timestamp: Date.now() });
+      return 7;
+    });
+    const query = vi.fn().mockRejectedValue(new TypeError("Geolocation permission queries are unsupported"));
+    vi.stubGlobal("navigator", {
+      permissions: capability === "missing" ? undefined : { query },
+      geolocation: { watchPosition, clearWatch },
+    });
+    expect(await readForegroundLocationPermission()).toBeNull();
+    expect(await hasForegroundLocationPermission()).toBe(false);
+    expect(watchPosition).not.toHaveBeenCalled();
+    expect(await requestForegroundLocationPermission()).toBe(true);
+    expect(watchPosition).toHaveBeenCalledOnce();
+    expect(clearWatch).toHaveBeenCalledWith(7);
+    expect(native.getAuthorizationStatus).not.toHaveBeenCalled();
+  });
+
+  it("surfaces permission-query failures unrelated to browser support", async () => {
+    native.platform = "web";
+    const error = new DOMException("Permission queries are disallowed by policy", "SecurityError");
+    vi.stubGlobal("navigator", { permissions: { query: vi.fn().mockRejectedValue(error) } });
+    await expect(readForegroundLocationPermission()).rejects.toBe(error);
   });
 });
 
