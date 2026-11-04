@@ -270,60 +270,6 @@ button {
   font-weight: 700;
   color: var(--theme-text-accent, #78903b);
 }
-.guest-intro {
-  position: absolute;
-  z-index: 3;
-  left: clamp(22px, 5vw, 72px);
-  bottom: max(38px, env(safe-area-inset-bottom));
-  width: min(370px, calc(100% - 44px));
-  padding: 24px;
-  border: 1px solid rgba(var(--theme-border-rgb, 255, 255, 255), 0.7);
-  border-radius: 25px;
-  background: rgba(var(--theme-surface-warm-rgb, 250, 249, 244), 0.94);
-  box-shadow: 0 22px 60px rgba(22, 47, 38, 0.16);
-  backdrop-filter: blur(20px) saturate(1.08);
-  -webkit-backdrop-filter: blur(20px) saturate(1.08);
-}
-.guest-intro h1 {
-  max-width: 310px;
-  margin: 13px 0 10px;
-  color: var(--forest);
-  font:
-    650 35px/1.02 "Manrope",
-    sans-serif;
-  letter-spacing: -1.6px;
-}
-.guest-intro p {
-  margin: 0;
-  color: var(--theme-text-muted, #68776f);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.guest-intro__actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(94px, 0.8fr);
-  gap: 10px;
-  margin-top: 19px;
-}
-.guest-intro button {
-  width: 100%;
-  margin: 0;
-  border: 0;
-  border-radius: 14px;
-  padding: 13px 16px;
-  background: var(--forest);
-  color: var(--theme-on-accent, white);
-  font-size: 13px;
-  font-weight: 750;
-  cursor: pointer;
-  box-shadow: 0 10px 24px rgba(24, 60, 47, 0.18);
-}
-.guest-intro button.guest-intro__sign-in {
-  border: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), 0.18);
-  background: rgba(var(--theme-surface-rgb, 255, 255, 255), 0.58);
-  box-shadow: none;
-  color: var(--forest);
-}
 .zoom-hint {
   position: absolute;
   z-index: 3;
@@ -4608,19 +4554,6 @@ button {
   .avatar-button {
     width: 40px;
     height: 40px;
-  }
-  .guest-intro {
-    top: max(86px, calc(env(safe-area-inset-top) + 68px));
-    right: 14px;
-    bottom: auto;
-    left: 14px;
-    width: auto;
-    padding: 20px;
-    border-radius: 22px;
-  }
-  .guest-intro h1 {
-    max-width: 290px;
-    font-size: 31px;
   }
   .map-actions {
     right: 14px;

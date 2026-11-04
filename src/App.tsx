@@ -5875,36 +5875,11 @@ export default function App() {
         </div>
       </header>
 
-      {!accountUserId &&
-      !isCityScale &&
-      !accountDataLoading &&
-      !routePlannerOpen ? (
-          <section className="guest-intro" aria-labelledby="guest-intro-title">
-            <div className="eyebrow">{t("Discover your world")}</div>
-            <h1 id="guest-intro-title">{t("Turn every walk into your map.")}</h1>
-            <p>{t("Hecate reveals new ground as you explore. Your routes and exact locations stay private.")}</p>
-            <div className="guest-intro__actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setSyncInitialIntent("signup");
-                  setSyncOpen(true);
-                }}
-              >{t("Create free account")}</button>
-              <button
-                className="guest-intro__sign-in"
-                type="button"
-                onClick={() => {
-                  setSyncInitialIntent("signin");
-                  setSyncOpen(true);
-                }}
-              >{t("Sign in")}</button>
-            </div>
-          </section>
-        ) : !isCityScale && !accountDataLoading ? (
-          <div className="zoom-hint">
-            <span />  {t("Zoom closer to reveal discoveries")} </div>
-        ) : null}
+      {accountUserId && !isCityScale && !accountDataLoading && (
+        <div className="zoom-hint">
+          <span />  {t("Zoom closer to reveal discoveries")}
+        </div>
+      )}
 
       {favoritePlacementActive && (
         <div className="favorite-placement-hint" role="status">
