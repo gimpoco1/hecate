@@ -90,6 +90,7 @@
   "Find your current location before starting navigation.": "Prije pokretanja navigacije odredi svoju lokaciju.",
   "Development test tools": "Razvojni alati",
   "Dev tools": "Razvoj",
+  "Show mock error message": "Prikaži probnu poruku o pogrešci",
   "Hide development test tools": "Sakrij razvojne alate",
   "Notifications": "Obavijesti",
   "Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.": "Zakazuje svaku obavijest za 5 sekundi uz trenutačni napredak. Testovi rade i kada je kategorija isključena.",
