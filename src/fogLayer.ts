@@ -569,6 +569,11 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   onAdd(map: MapLibreMap, gl: WebGL2RenderingContext): void {
     this.map = map;
     this.gl = gl;
+    // GPU resources are new even when the geometry and viewport are unchanged.
+    this.maskWidth = 0;
+    this.maskHeight = 0;
+    this.maskPrograms.clear();
+    this.visibleCentersDirty = true;
     this.cornerBuffer = gl.createBuffer();
     this.centerBuffer = gl.createBuffer();
     this.maskTexture = gl.createTexture();
