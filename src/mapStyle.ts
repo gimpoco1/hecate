@@ -36,10 +36,42 @@ export function patchMapStyle(style: StyleSpecification): StyleSpecification {
   };
 }
 
-export async function loadMapStyle(signal?: AbortSignal) {
-  const response = await fetch(MAP_STYLE_URL, { signal });
-  if (!response.ok) {
-    throw new Error(t("Map style request failed with {{value0}}", { value0: response.status }));
+let sharedMapStyle: Promise<StyleSpecification> | null = null;
+
+function requestMapStyle(): Promise<StyleSpecification> {
+  return fetch(MAP_STYLE_URL).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(t("Map style request failed with {{value0}}", { value0: response.status }));
+    }
+    return patchMapStyle(await response.json() as StyleSpecification);
+  });
+}
+
+/** Start the style request as early as possible and share it with every map consumer. */
+export function preloadMapStyle(): Promise<StyleSpecification> {
+  if (!sharedMapStyle) {
+    sharedMapStyle = requestMapStyle().catch((error) => {
+      // Allow a later retry after a transient network failure.
+      sharedMapStyle = null;
+      throw error;
+    });
   }
-  return patchMapStyle(await response.json() as StyleSpecification);
+  return sharedMapStyle;
+}
+
+export function loadMapStyle(signal?: AbortSignal): Promise<StyleSpecification> {
+  const style = preloadMapStyle();
+  if (!signal) return style;
+  if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise((resolve, reject) => {
+    const abort = (): void => {
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    style.then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
 }

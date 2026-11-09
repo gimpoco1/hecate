@@ -375,7 +375,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     );
     map.on("style.load", () => {
       baseStyleRef.current = map.getStyle();
-      applyMapAppearance(map, baseStyleRef.current, themeRef.current, rewardRef.current ?? "standard");
+      const initialReward = rewardRef.current ?? "standard";
+      // The downloaded style already has its light, standard colors. Applying
+      // every paint property here is a no-op but blocks the first frame.
+      if (themeRef.current === "dark" || initialReward !== "standard")
+        applyMapAppearance(map, baseStyleRef.current, themeRef.current, initialReward);
       map.setProjection({ type: "globe" });
       const fogLayer = new DiscoveryFogLayer(
         stateRef.current.geometry,
