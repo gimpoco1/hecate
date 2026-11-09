@@ -21,7 +21,7 @@ import { useNavigationScreen } from "./navigationScreen";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
-import { hasReachedRouteDestination, navigationCue, type NavigationCue } from "./navigationGuidance";
+import { hasReachedRouteDestination, navigationCue, navigationRemaining, type NavigationCue, type NavigationRemaining } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
 import { calculateNavigationRoute, type PlannedRoute, type TransportMode } from "./explorationRouting";
@@ -943,14 +943,15 @@ export default function App() {
   const simulationPointRef = useRef<Coordinate | null>(null);
   const [simulationPlayback, setSimulationPlayback] = useState<NavigationPlayback | null>(null);
   const [navigationTestMessage, setNavigationTestMessage] = useState("");
-  const simulationPanelRef = useRef<HTMLElement>(null);
   const guidanceRef = useRef<{
     route: PlannedRoute;
     geometry: RouteGeometry;
     progress: RouteProgress;
     cue: NavigationCue | null;
+    remaining: NavigationRemaining;
   } | null>(null);
   const [turnCue, setTurnCue] = useState<NavigationCue | null>(null);
+  const [navigationRemainingTravel, setNavigationRemainingTravel] = useState<{ route: PlannedRoute; travel: NavigationRemaining } | null>(null);
   const arrivalRef = useRef<{ route: PlannedRoute; deadline: number } | null>(
     null,
   );
@@ -981,7 +982,10 @@ export default function App() {
       const cue = hasReachedRouteDestination(route, point)
         ? { instruction: t("You have arrived at your destination."), symbol: "arrive" as const, distanceMeters: 0 }
         : navigationCue(route, progress);
-      guidanceRef.current = { route, geometry, progress, cue };
+      const remaining = navigationRemaining(route, progress);
+      guidanceRef.current = { route, geometry, progress, cue, remaining };
+      if (document.visibilityState === "visible")
+        setNavigationRemainingTravel({ route, travel: remaining });
       if (
         cue?.symbol === "arrive" &&
         cue.distanceMeters <= 10 &&
@@ -1686,6 +1690,7 @@ export default function App() {
       await JourneyActivity.start({
         ...snapshot,
         navigation: guidanceRef.current?.cue ?? null,
+        navigationRemaining: guidanceRef.current?.remaining ?? null,
         ownerId: accountUserId,
       });
     });
@@ -2975,6 +2980,9 @@ export default function App() {
       }
       const point = latestPassivePointRef.current ?? lastPointRef.current;
       if (!point) return;
+      const route = simulationRouteRef.current ?? plannedJourneyRouteRef.current;
+      const navigationPoint = simulationRouteRef.current ? simulationPointRef.current : point;
+      if (route && navigationPoint) updateNavigationCue(route, navigationPoint);
       setCurrentPoint(point);
       centerMapOnPoint(point);
     };
@@ -2984,7 +2992,7 @@ export default function App() {
         "visibilitychange",
         flushBackgroundLocations,
       );
-  }, [centerMapOnPoint, flushDiscoveryUiRefresh]);
+  }, [centerMapOnPoint, flushDiscoveryUiRefresh, updateNavigationCue]);
 
   useEffect(() => {
     if (!nativeApp) return;
@@ -3463,7 +3471,7 @@ export default function App() {
     mapRef.current?.flyTo(
       {
         center: [point.lng, point.lat],
-        zoom: route ? 17 : 15,
+        zoom: route ? 16.5 : 15,
         bearing: mapCameraBearing(mapOrientationRef.current, point, simulationRouteRef.current ? null : compassHeadingRef.current) ?? mapRef.current?.getBearing(),
         ...(route
           ? {
@@ -3596,6 +3604,7 @@ export default function App() {
         JourneyActivity.update({
           ...snapshot,
           navigation: guidanceRef.current?.cue ?? null,
+          navigationRemaining: guidanceRef.current?.remaining ?? null,
         }),
       );
     }
@@ -3624,6 +3633,7 @@ export default function App() {
     const snapshot = {
       ...journeyActivitySnapshot(liveWalk, liveStart.discoveryDistance, pointsRef.current),
       navigation: cue,
+      navigationRemaining: guidanceRef.current?.remaining ?? null,
     };
     enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
   }, [enqueueJourneyActivity]);
@@ -3637,19 +3647,23 @@ export default function App() {
       rerouteControllerRef.current = null;
       setNavigationRequestPending(false);
       setNavigationMessage("");
+      nextRerouteAtRef.current = 0;
       return;
     }
     if (rerouteControllerRef.current || Date.now() < nextRerouteAtRef.current) return;
     const controller = new AbortController();
     rerouteControllerRef.current = controller;
     setNavigationRequestPending(true);
-    nextRerouteAtRef.current = Date.now() + 30_000;
+    nextRerouteAtRef.current = Date.now() + 5_000;
     setNavigationMessage(t("Recalculating route…"));
     const destination = route.points[route.points.length - 1];
     void calculateNavigationRoute(point, destination, cellsRef.current, mode, controller.signal)
       .then((plan) => {
         if (controller.signal.aborted || (simulationRouteRef.current ?? plannedJourneyRouteRef.current) !== route || arrivalRef.current) return;
         const replacement = plan.routes[0];
+        // Keep the cooldown after a replacement too: the new route can still
+        // be snapped more than the off-route threshold away from this fix.
+        nextRerouteAtRef.current = Date.now() + 5_000;
         const simulated = simulationRouteRef.current === route;
         if (simulated) {
           simulationRouteRef.current = replacement;
@@ -3663,6 +3677,7 @@ export default function App() {
       })
       .catch((cause) => {
         if (controller.signal.aborted) return;
+        nextRerouteAtRef.current = Date.now() + 5_000;
         console.error("Could not recalculate navigation route", { mode, cause: errorDiagnostic(cause) });
         setNavigationMessage(cause instanceof Error ? cause.message : t("Could not recalculate the route. Check your connection."));
       })
@@ -3843,6 +3858,7 @@ export default function App() {
           pointsRef.current,
         ),
         navigation: null,
+        navigationRemaining: null,
       };
       enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
     }
@@ -5523,6 +5539,13 @@ export default function App() {
   );
 
   const locationControlCentered = Boolean(simulationPoint || locationIsCurrent) && (followingUser || userCentered);
+  const navigationGuidance = activeNavigationRoute && (
+    <NavigationTurn
+      cue={turnCue}
+      message={navigationMessage}
+      remaining={navigationRemainingTravel?.route === activeNavigationRoute ? navigationRemainingTravel.travel : { distanceKm: activeNavigationRoute.distanceKm, durationSeconds: activeNavigationRoute.durationSeconds }}
+    />
+  );
   const locationControlLabel = locationControlCentered
     ? mapOrientation === "north-up" ? t("Switch to heading-up") : t("Switch to north-up")
     : (simulationPoint || locationIsCurrent) ? t("Center on my location") : t("Find my location");
@@ -5542,7 +5565,7 @@ export default function App() {
 
   return (
     <main
-      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
+      className={`app-shell${routePlannerOpen ? " app-shell--route-planner" : ""}${simulationRoute ? " app-shell--navigation-preview" : ""}${activeNavigationRoute ? " app-shell--navigating" : ""}${keepsake ? " app-shell--keepsake" : ""}`}
       style={
         routePlannerOpen
           ? ({
@@ -5721,19 +5744,7 @@ export default function App() {
             recalculateNavigation(route, point);
             if (trackingStateRef.current === "tracking") {
               focusOnUserPoint(point);
-              const walk = activeWalkRef.current;
-              const started = explorationStartRef.current;
-              if (Capacitor.isNativePlatform() && walk && started) {
-                const snapshot = {
-                  ...journeyActivitySnapshot(
-                    walk,
-                    started.discoveryDistance,
-                    pointsRef.current,
-                  ),
-                  navigation: cue,
-                };
-                enqueueJourneyActivity(() => JourneyActivity.update(snapshot));
-              }
+              updateJourneyNavigation(cue);
             } else {
               void toggleTracking();
             }
@@ -5742,7 +5753,6 @@ export default function App() {
       )}
       {simulationRoute && simulationPlayback && (
         <NavigationSimulation
-          panelRef={simulationPanelRef}
           route={simulationPlayback}
           waitingForRoute={navigationRequestPending}
           onFix={previewNavigationFix}
@@ -5755,17 +5765,9 @@ export default function App() {
             clearPlannedRoute();
             if (currentPoint) focusOnUserPoint(currentPoint);
           }}
-        />
-      )}
-      {(turnCue || navigationMessage) &&
-        !routePlannerOpen &&
-        !citiesExpanded &&
-        (simulationRoute || tracking === "tracking") && (
-        <NavigationTurn
-          cue={turnCue}
-          message={navigationMessage}
-          anchor={simulationRoute ? simulationPanelRef : journeyCardRef}
-        />
+        >
+          {navigationGuidance}
+        </NavigationSimulation>
       )}
       {devToolsEnabled && devToolsVisible && (
         <aside className="dev-tools" aria-label={t("Development test tools")}>
@@ -6177,10 +6179,10 @@ export default function App() {
         />
       )}
 
-      {isCityScale && !routePlannerOpen && !simulationRoute && (
+      {(isCityScale || activeNavigationRoute) && !routePlannerOpen && !simulationRoute && (
         <section
           ref={journeyCardRef}
-          className="journey-card"
+          className={`journey-card${activeNavigationRoute ? " journey-card--navigating" : ""}`}
           data-testid="journey-drawer"
           onPointerDown={beginJourneyDrag}
           onPointerMove={moveJourneyDrag}
@@ -6309,6 +6311,7 @@ export default function App() {
               )}
             </button>
           </div>
+          {navigationGuidance}
           {tracking === "tracking" && (
             <div className="tracking-notice">
               <span />

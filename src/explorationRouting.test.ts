@@ -76,7 +76,7 @@ describe("exploration route planning", () => {
       expect(plan.routes[0].points).toEqual([start, finish]);
       expect(plan.routes[0].maneuvers.at(-1)?.symbol).toBe("arrive");
       const request = new URL(String(fetch.mock.calls[0][0]));
-      expect(JSON.parse(request.searchParams.get("json")!)).toMatchObject({ costing: "bicycle", locations: [
+      expect(JSON.parse(request.searchParams.get("json")!)).toMatchObject({ costing: "bicycle", alternates: 0, locations: [
         { lat: start.lat, lon: start.lng }, { lat: finish.lat, lon: finish.lng },
       ] });
       expect(fetch).toHaveBeenCalledTimes(1);

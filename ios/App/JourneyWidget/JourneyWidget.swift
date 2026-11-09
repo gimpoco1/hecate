@@ -27,8 +27,6 @@ struct JourneyWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: JourneyActivityAttributes.self) { context in
             JourneyPanel(context: context)
-                // The panel draws its own opaque paper background; a system tint can show through during dismissal.
-                .activityBackgroundTint(.clear)
                 .widgetURL(journeyURL(context.attributes.walkId, action: "open"))
         } dynamicIsland: { context in
             DynamicIsland {
@@ -47,7 +45,14 @@ struct JourneyWidget: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let turn = activeNavigation(context) { JourneyTurnRow(turn: turn, language: context.state.language) }
+                        if activeNavigation(context) != nil || activeNavigationRemaining(context) != nil {
+                            JourneyNavigationStatus(
+                                turn: activeNavigation(context),
+                                remaining: activeNavigationRemaining(context),
+                                updatedAt: context.state.updatedAt,
+                                language: context.state.language
+                            )
+                        }
                         JourneyMetrics(context: context)
                     }
                         .foregroundStyle(.white)
@@ -58,7 +63,7 @@ struct JourneyWidget: Widget {
                     Image(systemName: turn.symbol.systemImage).foregroundStyle(JourneyPalette.lime)
                 } else { JourneyIslandMark() }
             } compactTrailing: {
-                Text(activeNavigation(context).map { distanceLabel($0.distanceMeters / 1000) } ?? distanceLabel(context.state.distanceKm))
+                Text(activeNavigationRemaining(context).map { navigationMinutesLabel($0, language: context.state.language) } ?? activeNavigation(context).map { distanceLabel($0.distanceMeters / 1000) } ?? distanceLabel(context.state.distanceKm))
                     .monospacedDigit()
                     .foregroundStyle(JourneyPalette.lime)
             } minimal: {
@@ -122,8 +127,44 @@ private func activeNavigation(_ context: ActivityViewContext<JourneyActivityAttr
     context.state.finishedAt == nil && !context.isStale ? context.state.navigation : nil
 }
 
+private func activeNavigationRemaining(_ context: ActivityViewContext<JourneyActivityAttributes>) -> JourneyNavigationRemaining? {
+    context.state.finishedAt == nil && !context.isStale ? context.state.navigationRemaining : nil
+}
+
+private func navigationMinutesLabel(_ remaining: JourneyNavigationRemaining, language: String?) -> String {
+    let minutes = remaining.durationSeconds == 0 ? 0 : max(1, ceil(remaining.durationSeconds / 60))
+    return JourneyLocalization.text("{{value0}} min", language: language)
+        .replacingOccurrences(of: "{{value0}}", with: String(format: "%.0f", minutes))
+}
+
+private struct JourneyETABlock: View {
+    let remaining: JourneyNavigationRemaining
+    let updatedAt: Date
+    let language: String?
+
+    var body: some View {
+        let arrival = updatedAt.addingTimeInterval(remaining.durationSeconds)
+        let time = arrival.formatted(Date.FormatStyle(date: .omitted, time: .shortened)
+            .locale(Locale(identifier: language ?? JourneyLocalization.deviceLanguage)))
+        let arrive = JourneyLocalization.text("Arrive {{value0}}", language: language)
+            .replacingOccurrences(of: "{{value0}}", with: time)
+        VStack(alignment: .trailing, spacing: 2) {
+            Text("\(navigationMinutesLabel(remaining, language: language)) · \(distanceLabel(remaining.distanceKm))")
+            Text(arrive).opacity(0.8)
+        }
+        .font(.caption2)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .multilineTextAlignment(.trailing)
+        .opacity(0.7)
+        .monospacedDigit()
+    }
+}
+
 private struct JourneyTurnRow: View {
     let turn: JourneyNavigation
+    let remaining: JourneyNavigationRemaining?
+    let updatedAt: Date
     let language: String?
     var body: some View {
         HStack(spacing: 10) {
@@ -133,8 +174,29 @@ private struct JourneyTurnRow: View {
                     .font(.headline).monospacedDigit()
                 Text(turn.instruction).font(.caption).lineLimit(2)
             }
+            if let remaining {
+                Spacer(minLength: 6)
+                JourneyETABlock(remaining: remaining, updatedAt: updatedAt, language: language)
+            }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Keeps the ETA visible while the app is recalculating and has no turn cue yet.
+private struct JourneyNavigationStatus: View {
+    let turn: JourneyNavigation?
+    let remaining: JourneyNavigationRemaining?
+    let updatedAt: Date
+    let language: String?
+
+    var body: some View {
+        if let turn {
+            JourneyTurnRow(turn: turn, remaining: remaining, updatedAt: updatedAt, language: language)
+        } else if let remaining {
+            JourneyETABlock(remaining: remaining, updatedAt: updatedAt, language: language)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
     }
 }
 
@@ -155,8 +217,14 @@ private struct JourneyPanel: View {
                         .font(.caption.bold())
                         .foregroundStyle(JourneyPalette.foreground(scheme))
                 }
-                if let turn = activeNavigation(context) {
-                    JourneyTurnRow(turn: turn, language: context.state.language).foregroundStyle(JourneyPalette.foreground(scheme))
+                if activeNavigation(context) != nil || activeNavigationRemaining(context) != nil {
+                    JourneyNavigationStatus(
+                        turn: activeNavigation(context),
+                        remaining: activeNavigationRemaining(context),
+                        updatedAt: context.state.updatedAt,
+                        language: context.state.language
+                    )
+                    .foregroundStyle(JourneyPalette.foreground(scheme))
                 }
                 JourneyMetrics(context: context)
                     .foregroundStyle(JourneyPalette.foreground(scheme))
@@ -184,6 +252,8 @@ private struct JourneyPanel: View {
                 .accessibilityHidden(true)
                 .allowsHitTesting(false)
         }
+        // Fill the Live Activity's system content margins so the Lock Screen does not show through at the top and bottom.
+        .activityBackgroundTint(JourneyPalette.background(scheme))
         .environment(\.colorScheme, scheme)
         .activitySystemActionForegroundColor(JourneyPalette.foreground(scheme))
     }

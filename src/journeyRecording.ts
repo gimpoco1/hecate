@@ -8,15 +8,25 @@ import { JOURNEY_SPEED_STOP_MESSAGE } from "./journeyNotifications";
 
 // A generous ceiling for walking/running; GPS uncertainty is deducted below.
 const MAX_JOURNEY_SPEED_MPS = 15;
+const REPORTED_SPEED_CONFIRMATION_RATIO = 0.5;
 
 export function isJourneyTooFast(previous: Coordinate | undefined, point: Coordinate): boolean {
-  if (point.speed !== undefined && Number.isFinite(point.speed) && point.speed > MAX_JOURNEY_SPEED_MPS) return true;
+  // A first fix has no baseline. Its reported speed can still be stale from a
+  // previous drive or a one-off Core Location estimate, so never end a journey
+  // on that fix alone.
   if (!previous) return false;
   const seconds = (point.recordedAt - previous.recordedAt) / 1_000;
   if (seconds <= 0) return false;
   const minimumDistance = Math.max(0,
     distanceKm(previous, point) * 1_000 - (previous.accuracy ?? 0) - (point.accuracy ?? 0));
-  return minimumDistance / seconds > MAX_JOURNEY_SPEED_MPS;
+  const measuredSpeed = minimumDistance / seconds;
+  if (measuredSpeed > MAX_JOURNEY_SPEED_MPS) return true;
+  // Reported speed is useful when GPS accuracy hides some of the displacement,
+  // but only when the coordinates independently show meaningful movement.
+  return point.speed !== undefined && Number.isFinite(point.speed) &&
+    point.speed > MAX_JOURNEY_SPEED_MPS &&
+    (point.accuracy ?? Number.POSITIVE_INFINITY) <= 20 &&
+    measuredSpeed > MAX_JOURNEY_SPEED_MPS * REPORTED_SPEED_CONFIRMATION_RATIO;
 }
 
 async function verifyJourneyCity(point: Coordinate, signal: AbortSignal): Promise<CityBoundary> {

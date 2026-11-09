@@ -98,6 +98,7 @@
   "Test weekly summary": "Prova riepilogo settimanale",
   "Test streak reminder": "Prova promemoria della serie",
   "Navigation": "Navigazione",
+  "Arrive {{value0}}": "Arrivo {{value0}}",
   "Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.": "Simula una svolta errata, ricalcola il percorso e lo segue fino alla destinazione. Usa il servizio di percorsi senza salvare progressi.",
   "Test route recalculation": "Prova ricalcolo del percorso",
   "Journey recap": "Riepilogo del tragitto",

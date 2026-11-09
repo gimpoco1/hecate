@@ -2,7 +2,7 @@ import type { LanguagePreference } from "./i18n";
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { discoveredDistanceKm, routeDistanceKm } from "./geo";
 import type { Coordinate } from "./types";
-import type { NavigationCue } from "./navigationGuidance";
+import type { NavigationCue, NavigationRemaining } from "./navigationGuidance";
 import type { JourneyControlRequest } from "./journeyControl";
 import type { AppearancePreference, ColorTheme } from "./appearance";
 
@@ -12,6 +12,7 @@ export type JourneyActivitySnapshot = {
   distanceKm: number;
   newGroundMeters: number;
   navigation?: NavigationCue | null;
+  navigationRemaining?: NavigationRemaining | null;
 };
 
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };

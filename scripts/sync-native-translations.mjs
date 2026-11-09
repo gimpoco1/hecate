@@ -5,7 +5,7 @@ const catalogs = locales.map(locale => JSON.parse(readFileSync(`src/locales/${lo
 const nativeKeys = [
   "Hecate journey", "Open Hecate to start or stop a journey.", "Open Hecate to refresh",
   "Exploring", "Exploring…", "Journey complete", "Stop journey", "Open Hecate to stop journey",
-  "this walk", "walked", "new area", "time", "Arrived", "Now", "In {{value0}}",
+  "this walk", "walked", "new area", "time", "Arrived", "Now", "In {{value0}}", "{{value0}} min", "Arrive {{value0}}",
 ];
 const androidKeys = {
   journey_channel: "Walking journeys",

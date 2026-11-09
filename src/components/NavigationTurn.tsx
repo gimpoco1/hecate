@@ -1,6 +1,6 @@
-import { formatNumber, t, useAppTranslation } from "../i18n";
-import { useLayoutEffect, useState, type RefObject } from "react";
-import type { NavigationCue, TurnSymbol } from "../navigationGuidance";
+import { currentLanguage, formatNumber, t, useAppTranslation } from "../i18n";
+import { useEffect, useState } from "react";
+import type { NavigationCue, NavigationRemaining, TurnSymbol } from "../navigationGuidance";
 import { mdiFlagCheckered } from "@mdi/js";
 
 function TurnArrow({ symbol }: { symbol: TurnSymbol }) {
@@ -16,25 +16,33 @@ function TurnArrow({ symbol }: { symbol: TurnSymbol }) {
   return <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[symbol]} /></svg>;
 }
 
-export function NavigationTurn({ cue, message, anchor }: { cue: NavigationCue | null; message: string; anchor: RefObject<HTMLElement | null> }) {
+export function NavigationTurn({ cue, message, remaining }: { cue: NavigationCue | null; message: string; remaining: NavigationRemaining | null }) {
   useAppTranslation();
-  const [bottom, setBottom] = useState(120);
-  useLayoutEffect(() => {
-    const panel = anchor.current;
-    if (!panel) return;
-    const measure = (): void => setBottom(Math.max(12, window.innerHeight - panel.getBoundingClientRect().top + 10));
-    measure();
-    const resize = new ResizeObserver(measure);
-    const mutation = new MutationObserver(measure);
-    resize.observe(panel);
-    mutation.observe(panel, { attributes: true, attributeFilter: ["style", "class"] });
-    window.addEventListener("resize", measure);
-    return () => { resize.disconnect(); mutation.disconnect(); window.removeEventListener("resize", measure); };
-  }, [anchor]);
-  if (message) return <aside className="navigation-turn" style={{ bottom }} role="status"><div><strong>{t("Navigation")}</strong><span>{message}</span></div></aside>;
-  if (!cue) return null;
-  const distance = cue.distanceMeters <= 10 ? (cue.symbol === "arrive" ? t("Arrived") : t("Now")) : cue.distanceMeters < 1000 ? `${cue.distanceMeters} m` : `${formatNumber((cue.distanceMeters / 1000), 1)} km`;
-  return <aside className="navigation-turn" style={{ bottom }} aria-label={t("Next navigation turn")}>
-    <TurnArrow symbol={cue.symbol} /><div><strong>{cue.distanceMeters > 10 ? t("In {{value0}}", { value0: distance }) : distance}</strong><span>{cue.instruction}</span></div>
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const update = (): void => { if (document.visibilityState === "visible") setNow(Date.now()); };
+    const timer = window.setInterval(update, 15_000);
+    document.addEventListener("visibilitychange", update);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", update); };
+  }, []);
+  const distance = cue ? cue.distanceMeters <= 10 ? (cue.symbol === "arrive" ? t("Arrived") : t("Now")) : cue.distanceMeters < 1000 ? `${cue.distanceMeters} m` : `${formatNumber((cue.distanceMeters / 1000), 1)} km` : "";
+  const arrivalTime = remaining ? new Intl.DateTimeFormat(currentLanguage(), { hour: "numeric", minute: "2-digit" }).format(now + remaining.durationSeconds * 1000) : "";
+  const remainingDistance = remaining ? remaining.distanceKm < 1 ? `${Math.round(remaining.distanceKm * 1000 / 10) * 10} m` : `${formatNumber(remaining.distanceKm, 1)} km` : "";
+  const remainingMinutes = remaining ? remaining.durationSeconds === 0 ? 0 : Math.max(1, Math.ceil(remaining.durationSeconds / 60)) : 0;
+  const hasGuidance = Boolean(cue || message);
+  const eta = remaining && (
+    <div className="navigation-turn__eta" data-testid="navigation-eta">
+      <span>{t("{{value0}} min", { value0: remainingMinutes })} · {remainingDistance}</span>
+      <span>{t("Arrive {{value0}}", { value0: arrivalTime })}</span>
+    </div>
+  );
+  if (!hasGuidance && !eta) return null;
+  return <aside className="navigation-turn" data-testid="navigation-guidance" aria-label={t("Navigation")}>
+    {hasGuidance && <div className="navigation-turn__maneuver">
+      {!message && cue && <TurnArrow symbol={cue.symbol} />}
+      <div className="navigation-turn__instruction"><strong>{message || !cue ? t("Navigation") : cue.distanceMeters > 10 ? t("In {{value0}}", { value0: distance }) : distance}</strong><span role={message ? "status" : undefined}>{message || cue?.instruction}</span></div>
+      {eta}
+    </div>}
+    {!hasGuidance && eta}
   </aside>;
 }
