@@ -125,7 +125,11 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
 }
 
 export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
-  if (!supabase || !await hasExpectedSession(expectedUserId)) return { points: [], cells: [] };
+  if (!supabase) throw new Error("Cannot load discovery history: Supabase is not configured.");
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (session?.user.id !== expectedUserId)
+    throw new Error("Cannot load discovery history: the signed-in session does not match the requested account.");
   const [walkPoints, cells] = await Promise.all([
     loadStoredWalkPoints(supabase),
     loadStoredCells(supabase),

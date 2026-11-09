@@ -44,7 +44,20 @@ describe("journey recording validation", () => {
     await tracker.stop();
   });
 
-  it("stops before aircraft fixes can enter the route and ignores subsequent fixes", async () => {
+  it("does not stop when the first fix reports a stale high speed", async () => {
+    const input = source();
+    const tracker = createJourneyRecordingTracker(input.tracker, [await barcelona()]);
+    const points = vi.fn();
+    const errors = vi.fn();
+    await tracker.start(points, errors);
+    input.emit({ ...start, speed: 230 });
+    input.emit({ ...start, lng: 2.1702, recordedAt: 20_000 });
+    await vi.waitFor(() => expect(points).toHaveBeenCalledTimes(2));
+    expect(errors).not.toHaveBeenCalled();
+    await tracker.stop();
+  });
+
+  it("stops before a confirmed high-speed fix can enter the route and ignores subsequent fixes", async () => {
     const input = source();
     const tracker = createJourneyRecordingTracker(input.tracker, [await barcelona()]);
     const points = vi.fn();
@@ -52,7 +65,7 @@ describe("journey recording validation", () => {
     await tracker.start(points, errors);
     input.emit(start);
     await vi.waitFor(() => expect(points).toHaveBeenCalledOnce());
-    input.emit({ ...start, lng: 2.18, recordedAt: 2_000 });
+    input.emit({ ...start, lng: 2.18, recordedAt: 2_000, speed: 40 });
     input.emit({ ...start, recordedAt: 20_000 });
     await vi.waitFor(() => expect(errors).toHaveBeenCalledOnce());
     expect(errors.mock.calls[0][0].code).toBe("speed-exceeded");
@@ -105,12 +118,14 @@ describe("journey recording validation", () => {
     await tracker.stop();
   });
 
-  it("rejects a first fix with aircraft speed and allows ordinary walking and GPS uncertainty", () => {
+  it("ignores first-fix speed and only stops when movement confirms high speed", () => {
     expect(isJourneyTooFast(undefined, { ...start, speed: 15 })).toBe(false);
-    expect(isJourneyTooFast(undefined, { ...start, speed: 15.1 })).toBe(true);
-    expect(isJourneyTooFast(undefined, { ...start, speed: 230 })).toBe(true);
+    expect(isJourneyTooFast(undefined, { ...start, speed: 230 })).toBe(false);
     expect(isJourneyTooFast(start, { ...start, lng: 2.1702, recordedAt: 20_000 })).toBe(false);
     expect(isJourneyTooFast(start, { ...start, lng: 2.1702, recordedAt: 2_000, accuracy: 20 })).toBe(false);
+    expect(isJourneyTooFast(start, { ...start, lng: 2.1712, recordedAt: 6_000 })).toBe(true);
+    expect(isJourneyTooFast(start, { ...start, lng: 2.1708, recordedAt: 6_000, speed: 40 })).toBe(true);
+    expect(isJourneyTooFast(start, { ...start, lng: 2.1701, recordedAt: 4_000, speed: 40 })).toBe(false);
   });
 
   it("does not record outside a city when lookup confirms no municipal boundary", async () => {

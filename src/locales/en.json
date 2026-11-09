@@ -98,6 +98,7 @@
   "Test weekly summary": "Test weekly summary",
   "Test streak reminder": "Test streak reminder",
   "Navigation": "Navigation",
+  "Arrive {{value0}}": "Arrive {{value0}}",
   "Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.": "Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.",
   "Test route recalculation": "Test route recalculation",
   "Journey recap": "Journey recap",

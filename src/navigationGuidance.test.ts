@@ -1,6 +1,6 @@
 import { prepareRouteGeometry } from "./routeGeometry";
 import { describe, expect, it } from "vitest";
-import { hasReachedRouteDestination, navigationCue, routeContinuesStraight } from "./navigationGuidance";
+import { hasReachedRouteDestination, navigationCue, navigationRemaining, routeContinuesStraight } from "./navigationGuidance";
 import type { PlannedRoute } from "./explorationRouting";
 import { distanceKm } from "./geo";
 
@@ -40,6 +40,15 @@ describe("turn guidance", () => {
       { instruction: "Turn left onto High Street.", symbol: "left", fraction: 0.4, roadName: "High Street" },
       { instruction: "Arrive at your destination.", symbol: "arrive", fraction: 1, roadName: "High Street" }] };
   const progress = { distanceKm: 0.3, fraction: 0.3, position: route.points[0], acceptedPosition: route.points[0], distanceFromRouteM: 0 };
+  it("updates remaining travel from progress using the provider pace", () => {
+    expect(navigationRemaining(route, progress)).toEqual({ distanceKm: 0.7, durationSeconds: 420 });
+    expect(navigationRemaining(route, { ...progress, fraction: 0.5 })).toEqual({ distanceKm: 0.5, durationSeconds: 300 });
+  });
+  it("keeps an estimate off route and does not show zero before physical arrival", () => {
+    expect(navigationRemaining(route, { ...progress, distanceFromRouteM: 80 }).durationSeconds).toBe(420);
+    expect(navigationRemaining(route, { ...progress, fraction: 1 }).durationSeconds).toBeGreaterThan(0);
+    expect(navigationRemaining(route, { ...progress, position: route.points[1] })).toEqual({ distanceKm: 0, durationSeconds: 0 });
+  });
   it("shows distance along the route to the next turn and advances after it", () => {
     expect(navigationCue(route, { ...progress, fraction: 0.38 })).toEqual({ instruction: "Turn left onto High Street.", symbol: "left", distanceMeters: 20 });
     expect(navigationCue(route, { ...progress, fraction: 0.41 })?.symbol).toBe("arrive");

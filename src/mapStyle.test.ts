@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StyleSpecification } from "maplibre-gl";
 import { patchMapStyle } from "./mapStyle";
+
+const emptyStyle = { version: 8, sources: {}, layers: [] } as StyleSpecification;
+
+function styleResponse(): Response {
+  return { ok: true, json: async () => emptyStyle } as Response;
+}
 
 describe("map style compatibility", () => {
   it("gives nullable road shield lengths a numeric fallback", () => {
@@ -40,5 +46,37 @@ describe("map style compatibility", () => {
     } as unknown as StyleSpecification;
 
     expect(patchMapStyle(style)).toEqual(style);
+  });
+});
+
+describe("map style loading", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  it("shares one request between concurrent map consumers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(styleResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const { preloadMapStyle } = await import("./mapStyle");
+
+    const first = preloadMapStyle();
+    const second = preloadMapStyle();
+
+    expect(second).toBe(first);
+    await expect(first).resolves.toEqual(emptyStyle);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a retry after a failed style request", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(styleResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const { preloadMapStyle } = await import("./mapStyle");
+
+    await expect(preloadMapStyle()).rejects.toThrow("offline");
+    await expect(preloadMapStyle()).resolves.toEqual(emptyStyle);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

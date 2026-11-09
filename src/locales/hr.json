@@ -98,6 +98,7 @@
   "Test weekly summary": "Testiraj tjedni sažetak",
   "Test streak reminder": "Testiraj podsjetnik za niz",
   "Navigation": "Navigacija",
+  "Arrive {{value0}}": "Dolazak {{value0}}",
   "Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.": "Simulira pogrešno skretanje, ponovno računa rutu i prati je do odredišta. Koristi uslugu rutiranja; ne sprema napredak.",
   "Test route recalculation": "Testiraj ponovni izračun rute",
   "Journey recap": "Sažetak rute",

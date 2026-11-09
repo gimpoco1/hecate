@@ -159,7 +159,7 @@ async function requestRoutes(locations: readonly RoutePoint[], mode: TransportMo
     locations: locations.map(({ lat, lng }, index) => ({
       lat, lon: lng, radius: 50, type: index === 0 || index === locations.length - 1 ? "break" : "through",
     })),
-    costing: mode, format: "osrm", shape_format: "geojson", directions_type: "instructions", language: currentLanguage(), alternates: locations.length === 2 ? 2 : 0,
+    costing: mode, format: "osrm", shape_format: "geojson", directions_type: "instructions", language: currentLanguage(), alternates: 0,
     costing_options: mode === "pedestrian"
       ? { pedestrian: { walking_speed: 5.1 } }
       : { bicycle: { bicycle_type: "hybrid" } },

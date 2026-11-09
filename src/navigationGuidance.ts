@@ -7,6 +7,21 @@ import { routePositionAtDistance, type RouteGeometry } from "./routeGeometry";
 export type TurnSymbol = "straight" | "left" | "right" | "slight-left" | "slight-right" | "sharp-left" | "sharp-right" | "uturn" | "roundabout" | "arrive";
 export type RouteManeuver = { instruction: string; symbol: TurnSymbol; fraction: number; roadName: string; endFraction?: number };
 export type NavigationCue = { instruction: string; symbol: TurnSymbol; distanceMeters: number };
+export type NavigationRemaining = { distanceKm: number; durationSeconds: number };
+
+/** Estimates remaining travel using route progress and the provider's average pace. */
+export function navigationRemaining(route: PlannedRoute, progress: RouteProgress): NavigationRemaining {
+  if (hasReachedRouteDestination(route, progress.position)) return { distanceKm: 0, durationSeconds: 0 };
+  const endpoint = route.points[route.points.length - 1];
+  const endpointDistanceKm = distanceKm({ ...progress.position, recordedAt: 0 }, { ...endpoint, recordedAt: 0 });
+  const totalDistanceKm = Number.isFinite(route.distanceKm) && route.distanceKm > 0 ? route.distanceKm : 0;
+  const fraction = Number.isFinite(progress.fraction) ? Math.min(1, Math.max(0, progress.fraction)) : 0;
+  const remainingKm = Math.max(totalDistanceKm * (1 - fraction), endpointDistanceKm);
+  return {
+    distanceKm: remainingKm,
+    durationSeconds: totalDistanceKm > 0 ? route.durationSeconds * remainingKm / totalDistanceKm : 0,
+  };
+}
 
 /** Measures street direction on either side of a junction, rather than following tiny connector edges. */
 export function routeContinuesStraight(geometry: RouteGeometry, fraction: number): boolean {

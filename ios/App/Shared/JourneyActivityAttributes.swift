@@ -27,6 +27,11 @@ struct JourneyNavigation: Codable, Hashable {
     let distanceMeters: Double
 }
 
+struct JourneyNavigationRemaining: Codable, Hashable {
+    let distanceKm: Double
+    let durationSeconds: Double
+}
+
 enum JourneyAppearance: String, Codable, Hashable {
     case system, light, dark
 }
@@ -43,6 +48,7 @@ struct JourneyActivityAttributes: ActivityAttributes {
         let updatedAt: Date
         let finishedAt: Date?
         var navigation: JourneyNavigation? = nil
+        var navigationRemaining: JourneyNavigationRemaining? = nil
         var appearance: JourneyAppearance? = nil
         var colorTheme: JourneyColorTheme? = nil
         var language: String? = nil
@@ -151,7 +157,9 @@ enum JourneyLocalization {
             "time": "time",
             "Arrived": "Arrived",
             "Now": "Now",
-            "In {{value0}}": "In {{value0}}"
+            "In {{value0}}": "In {{value0}}",
+            "{{value0}} min": "{{value0}} min",
+            "Arrive {{value0}}": "Arrive {{value0}}"
         ],
         "es": [
             "Hecate journey": "Recorrido con Hecate",
@@ -168,7 +176,9 @@ enum JourneyLocalization {
             "time": "tiempo",
             "Arrived": "Destino alcanzado",
             "Now": "Ahora",
-            "In {{value0}}": "En {{value0}}"
+            "In {{value0}}": "En {{value0}}",
+            "{{value0}} min": "{{value0}} min",
+            "Arrive {{value0}}": "Llegada {{value0}}"
         ],
         "it": [
             "Hecate journey": "Tragitto con Hecate",
@@ -185,7 +195,9 @@ enum JourneyLocalization {
             "time": "tempo",
             "Arrived": "Destinazione raggiunta",
             "Now": "Ora",
-            "In {{value0}}": "Tra {{value0}}"
+            "In {{value0}}": "Tra {{value0}}",
+            "{{value0}} min": "{{value0}} min",
+            "Arrive {{value0}}": "Arrivo {{value0}}"
         ],
         "hr": [
             "Hecate journey": "Ruta uz Hecate",
@@ -202,7 +214,9 @@ enum JourneyLocalization {
             "time": "vrijeme",
             "Arrived": "Na odredištu",
             "Now": "Sada",
-            "In {{value0}}": "Za {{value0}}"
+            "In {{value0}}": "Za {{value0}}",
+            "{{value0}} min": "{{value0}} min",
+            "Arrive {{value0}}": "Dolazak {{value0}}"
         ],
         "pt": [
             "Hecate journey": "Percurso com o Hecate",
@@ -219,7 +233,9 @@ enum JourneyLocalization {
             "time": "tempo",
             "Arrived": "Chegaste ao destino",
             "Now": "Agora",
-            "In {{value0}}": "Daqui a {{value0}}"
+            "In {{value0}}": "Daqui a {{value0}}",
+            "{{value0}} min": "{{value0}} min",
+            "Arrive {{value0}}": "Chegada {{value0}}"
         ]
     ]
     static var deviceLanguage: String { Locale.preferredLanguages.compactMap { value in languages.first { $0 == value.lowercased().split(separator: "-").first.map(String.init) } }.first ?? "en" }

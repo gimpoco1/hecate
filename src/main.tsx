@@ -9,6 +9,7 @@ import { initializeNativeAuthLinks, initializeWebAuth, isSignInCancellation } fr
 import { isLeaderboardPath, shouldRedirectBrowserToLeaderboard } from "./routes";
 import "./styles.css";
 import { initializeAppearance } from "./appearance";
+import { preloadMapStyle } from "./mapStyle";
 
 initializeAppearance();
 
@@ -29,6 +30,8 @@ const leaderboardRoute = !nativePlatform && (
 const RootExperience = leaderboardRoute
   ? lazy(() => import("./components/WebLeaderboard").then(module => ({ default: module.WebLeaderboard })))
   : lazy(() => import("./App"));
+
+if (!leaderboardRoute) void preloadMapStyle().catch(() => undefined);
 
 function translateDocument(): void {
   document.title = leaderboardRoute ? t("Hecate — Discovery leaderboard") : t("Hecate — Discover your world");

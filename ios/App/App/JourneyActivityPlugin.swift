@@ -300,12 +300,22 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                   let distance = value["distanceMeters"] as? Double, distance.isFinite, distance >= 0 else { return nil }
             navigation = JourneyNavigation(instruction: instruction, symbol: symbol, distanceMeters: distance)
         }
+        var navigationRemaining: JourneyNavigationRemaining?
+        if let value = call.getObject("navigationRemaining") {
+            // ETA data is secondary: ignore a malformed estimate instead of
+            // rejecting the turn instruction and journey metrics with it.
+            if let distance = value["distanceKm"] as? Double, distance.isFinite, distance >= 0,
+               let duration = value["durationSeconds"] as? Double, duration.isFinite, duration >= 0 {
+                navigationRemaining = JourneyNavigationRemaining(distanceKm: distance, durationSeconds: duration)
+            }
+        }
         return JourneyActivityAttributes.ContentState(
             distanceKm: distance,
             newGroundMeters: meters,
             updatedAt: Date(),
             finishedAt: finishedAt,
             navigation: finishedAt == nil ? navigation : nil,
+            navigationRemaining: finishedAt == nil ? navigationRemaining : nil,
             appearance: appearance,
             colorTheme: colorTheme,
             language: language
