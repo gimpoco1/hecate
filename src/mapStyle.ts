@@ -60,9 +60,9 @@ export function preloadMapStyle(): Promise<StyleSpecification> {
 }
 
 export function loadMapStyle(signal?: AbortSignal): Promise<StyleSpecification> {
+  if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
   const style = preloadMapStyle();
   if (!signal) return style;
-  if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
   return new Promise((resolve, reject) => {
     const abort = (): void => {
       signal.removeEventListener("abort", abort);
