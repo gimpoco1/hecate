@@ -389,6 +389,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      // Keep place names readable while streets and POIs remain hidden by discovery fog.
+      for (const layer of baseStyleRef.current.layers) {
+        if (layer.type === "symbol" && layer["source-layer"] === "place") map.moveLayer(layer.id);
+      }
       if (highlightedNewGroundSegmentsRef.current.length > 0)
         syncHighlightedDiscoveries(map, highlightedNewGroundSegmentsRef.current, fogLayer.id, rewardRef.current ?? "standard");
       if (highlightedPointsRef.current.length > 0) {

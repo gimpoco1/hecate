@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { LANGUAGES, LANGUAGE_NAMES, currentLanguage, languagePreference, setLanguagePreference, t, useAppTranslation, type LanguagePreference } from "../i18n";
 import { mdiTranslate } from "@mdi/js";
 import { ArrowLeftIcon, ChevronIcon, XIcon } from "./Icons";
+import { errorHaptic, selectionHaptic } from "../haptics";
 
 type Props = { onBack: () => void; onClose: () => void };
 
@@ -34,7 +35,9 @@ export function LanguageSettings({ onBack, onClose }: Props) {
     try {
       await setLanguagePreference(value);
       setError("");
+      selectionHaptic();
     } catch (error) {
+      errorHaptic();
       console.error("Could not save language", { preference: value, error });
       setError(t("Could not save your language. Check that device storage is available and try again."));
     }

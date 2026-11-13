@@ -3,9 +3,13 @@ import type {
   CustomLayerInterface,
   CustomLayerProjectionData,
   CustomRenderMethodInput,
+  FilterSpecification,
+  MapSourceDataEvent,
   Map as MapLibreMap,
 } from "maplibre-gl";
 import { MercatorCoordinate } from "maplibre-gl";
+import { Mat4 } from "ogl";
+import { fogWaterMeshes, FOG_WATER_ZOOM } from "./fogWater";
 import { DISCOVERY_RADIUS_M, distanceKm, metersToPixels } from "./geo";
 import type { Coordinate, MapMode } from "./types";
 
@@ -14,13 +18,16 @@ export type FogGeometry = {
   cellCenters: [number, number][];
 };
 
-type MaskProgram = {
+type ProjectionProgram = {
   program: WebGLProgram;
   fallbackMatrix: WebGLUniformLocation | null;
   projectionMatrix: WebGLUniformLocation | null;
   tileMercatorCoordinates: WebGLUniformLocation | null;
   clippingPlane: WebGLUniformLocation | null;
   projectionTransition: WebGLUniformLocation | null;
+};
+
+type MaskProgram = ProjectionProgram & {
   viewport: WebGLUniformLocation | null;
   radiusPixels: WebGLUniformLocation | null;
   liquidHead: WebGLUniformLocation | null;
@@ -35,6 +42,9 @@ type CompositeProgram = {
   darkMode: WebGLUniformLocation | null;
   monochrome: WebGLUniformLocation | null;
   celestial: WebGLUniformLocation | null;
+  groundMatrix: WebGLUniformLocation | null;
+  zoom: WebGLUniformLocation | null;
+  patternOrigin: WebGLUniformLocation | null;
 };
 
 const FOG_LAYER_ID = "hecate-discovery-fog";
@@ -265,7 +275,7 @@ function linkProgram(
 
 function applyProjectionUniforms(
   gl: WebGL2RenderingContext,
-  program: MaskProgram,
+  program: ProjectionProgram,
   projection: CustomLayerProjectionData,
 ): void {
   gl.uniformMatrix4fv(program.fallbackMatrix, false, projection.fallbackMatrix);
@@ -285,6 +295,31 @@ function applyProjectionUniforms(
     projection.clippingPlane[3],
   );
   gl.uniform1f(program.projectionTransition, projection.projectionTransition);
+}
+
+function projectionUniforms(gl: WebGL2RenderingContext, program: WebGLProgram): ProjectionProgram {
+  return {
+    program,
+    fallbackMatrix: gl.getUniformLocation(program, "u_projection_fallback_matrix"),
+    projectionMatrix: gl.getUniformLocation(program, "u_projection_matrix"),
+    tileMercatorCoordinates: gl.getUniformLocation(program, "u_projection_tile_mercator_coords"),
+    clippingPlane: gl.getUniformLocation(program, "u_projection_clipping_plane"),
+    projectionTransition: gl.getUniformLocation(program, "u_projection_transition"),
+  };
+}
+
+function waterProgramForProjection(gl: WebGL2RenderingContext, input: CustomRenderMethodInput): ProjectionProgram {
+  const program = linkProgram(gl, `#version 300 es
+${input.shaderData.vertexShaderPrelude}
+${input.shaderData.define}
+layout(location = 0) in vec2 a_position;
+void main() { gl_Position = projectTile(a_position); }
+`, `#version 300 es
+precision highp float;
+out vec4 fragColor;
+void main() { fragColor = vec4(0.0, 1.0, 0.0, 1.0); }
+`, "fog water mask");
+  return projectionUniforms(gl, program);
 }
 
 function maskProgramForProjection(
@@ -342,24 +377,7 @@ void main() {
 }`;
   const program = linkProgram(gl, vertexSource, fragmentSource, "fog mask");
   return {
-    program,
-    fallbackMatrix: gl.getUniformLocation(
-      program,
-      "u_projection_fallback_matrix",
-    ),
-    projectionMatrix: gl.getUniformLocation(program, "u_projection_matrix"),
-    tileMercatorCoordinates: gl.getUniformLocation(
-      program,
-      "u_projection_tile_mercator_coords",
-    ),
-    clippingPlane: gl.getUniformLocation(
-      program,
-      "u_projection_clipping_plane",
-    ),
-    projectionTransition: gl.getUniformLocation(
-      program,
-      "u_projection_transition",
-    ),
+    ...projectionUniforms(gl, program),
     viewport: gl.getUniformLocation(program, "u_viewport"),
     radiusPixels: gl.getUniformLocation(program, "u_radius_pixels"),
     liquidHead: gl.getUniformLocation(program, "u_liquid_head"),
@@ -383,29 +401,46 @@ uniform float u_fog_opacity;
 uniform float u_dark_mode;
 uniform float u_monochrome;
 uniform float u_celestial;
+uniform mat3 u_ground_matrix;
+uniform float u_zoom;
+uniform vec2 u_pattern_origin;
 in vec2 v_uv;
 out vec4 fragColor;
 
-void main() {
-  float proximity = texture(u_mask, v_uv).r;
-  float distanceInRadii = (1.0 - proximity) * 3.0;
-  float revealed = 1.0 - smoothstep(1.0, 1.87, distanceInRadii);
-  float fogAlpha = mix(0.9, 0.96, u_monochrome) * u_fog_opacity * (1.0 - revealed);
+float hash(vec2 p) {
+  vec3 value = fract(vec3(p.xyx) * 0.1031);
+  value += dot(value, value.yzx + 33.33);
+  return fract((value.x + value.y) * value.z);
+}
 
-  float contourRange = step(1.08, distanceInRadii) * step(distanceInRadii, 2.99);
-  float contourPhase = fract((distanceInRadii - 1.08) / 0.16);
-  float contourDistance = min(contourPhase, 1.0 - contourPhase);
-  float contourWidth = max(fwidth(contourPhase) * 1.35, 0.04);
-  float contourLine = 1.0 - smoothstep(0.0, contourWidth, contourDistance);
-  float contourStrength = mix(
-    0.14,
-    0.07,
-    smoothstep(1.08, 2.99, distanceInRadii)
-  );
-  float contourAlpha =
-    contourLine * contourRange * contourStrength * u_fog_opacity;
+float noise(vec2 p, vec2 origin) {
+  vec2 local = p + fract(origin);
+  vec2 cell = floor(local) + floor(origin);
+  vec2 f = fract(local);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(cell), hash(cell + vec2(1.0, 0.0)), f.x),
+    mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+void main() {
+  vec2 mask = texture(u_mask, v_uv).rg;
+  float proximity = mask.r;
+  float distanceInRadii = (1.0 - proximity) * 3.0;
+  float revealed = 1.0 - smoothstep(1.0, 1.18, distanceInRadii);
+  float fogAlpha = mix(0.97, 0.98, u_monochrome) * u_fog_opacity * (1.0 - revealed);
+
+  // Separate, antialiased bands avoid the wrapped derivatives of repeating contour lines.
+  float edgeWidth = max(fwidth(distanceInRadii), 3.0 / 255.0);
+  float edgeContours = 0.0;
+  for (int ring = 0; ring < 5; ring++) {
+    float index = float(ring);
+    float radius = 1.12 + index * 0.13;
+    float band = 1.0 - smoothstep(0.006, 0.006 + edgeWidth, abs(distanceInRadii - radius));
+    edgeContours = max(edgeContours, band * mix(0.24, 0.08, index / 4.0));
+  }
+  float contourAlpha = edgeContours * u_fog_opacity * smoothstep(11.0, 13.0, u_zoom);
   float edgeHazeAlpha =
-    (1.0 - smoothstep(0.0, 0.62, abs(distanceInRadii - 1.28))) *
+    (1.0 - smoothstep(0.0, 0.20, abs(distanceInRadii - 1.10))) *
     mix(0.08, 0.14, u_dark_mode) * u_fog_opacity;
   float glowAlpha =
     (1.0 - smoothstep(0.0, 0.24, abs(distanceInRadii - 0.98))) *
@@ -427,6 +462,21 @@ void main() {
     contourColor = vec3(0.51, 0.40, 0.68);
     glowColor = vec3(1.0, 0.65, 0.24);
   }
+  // A homogeneous plane transform avoids subtracting distant camera-ray endpoints.
+  vec3 groundPoint = u_ground_matrix * vec3(v_uv * 2.0 - 1.0, 1.0);
+  vec2 ground = groundPoint.xy / groundPoint.z;
+  float patternScale = exp2(min(u_zoom - 13.0, 0.0));
+  vec2 p = ground * (8.0 / 4096.0) * patternScale;
+  vec2 origin = u_pattern_origin * patternScale;
+  vec2 warp = vec2(noise(p * 0.5, origin * 0.5), noise(p * 0.5 + vec2(19.1, 7.3), origin * 0.5));
+  float elevation = noise(p + warp * 1.4, origin) * 0.76 + noise(p * 2.0, origin * 2.0) * 0.24;
+  float levels = elevation * mix(4.0, 7.0, smoothstep(11.0, 14.0, u_zoom));
+  float lineDistance = abs(fract(levels + 0.5) - 0.5);
+  float lineWidth = max(fwidth(levels), 0.006);
+  float patternVisibility = mix(0.45, 1.0, smoothstep(11.0, 14.0, u_zoom)) * (1.0 - smoothstep(16.5, 18.0, u_zoom));
+  float terrainLine = 1.0 - smoothstep(lineWidth, lineWidth * 3.0, lineDistance);
+  fogColor = mix(fogColor, contourColor, terrainLine * patternVisibility * 0.07);
+  fogColor += (elevation - 0.5) * 0.035 * smoothstep(10.0, 13.0, u_zoom);
   vec3 color = fogColor * fogAlpha;
   float alpha = fogAlpha;
   color = edgeHazeColor * edgeHazeAlpha + color * (1.0 - edgeHazeAlpha);
@@ -448,7 +498,7 @@ void main() {
     float star = max(point, rays) * step(0.72, seed);
     color += vec3(0.95, 0.85, 0.65) * star * fogAlpha * 0.8;
   }
-  fragColor = vec4(color, alpha);
+  fragColor = vec4(color, alpha) * (1.0 - mask.g);
 }`;
   const program = linkProgram(
     gl,
@@ -463,6 +513,9 @@ void main() {
     darkMode: gl.getUniformLocation(program, "u_dark_mode"),
     monochrome: gl.getUniformLocation(program, "u_monochrome"),
     celestial: gl.getUniformLocation(program, "u_celestial"),
+    groundMatrix: gl.getUniformLocation(program, "u_ground_matrix"),
+    zoom: gl.getUniformLocation(program, "u_zoom"),
+    patternOrigin: gl.getUniformLocation(program, "u_pattern_origin"),
   };
 }
 
@@ -490,6 +543,15 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   private maskHeight = 0;
   private maskPrograms = new Map<string, MaskProgram>();
   private compositeProgram: CompositeProgram | null = null;
+  private waterBuffer: WebGLBuffer | null = null;
+  private waterPrograms = new Map<string, ProjectionProgram>();
+  private waterBuckets: VisibleFogBucket[] = [];
+  private waterDirty = true;
+  private waterSource: { id: string; layer: string; filter: FilterSpecification | undefined } | null = null;
+  private readonly invalidateWater = (): void => { this.waterDirty = true; };
+  private readonly onWaterSourceData = (event: MapSourceDataEvent): void => {
+    if (event.sourceId === this.waterSource?.id) this.invalidateWater();
+  };
   private modeOpacity: number;
   private transitionFrom: number;
   private transitionTo: number;
@@ -573,14 +635,23 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     this.maskWidth = 0;
     this.maskHeight = 0;
     this.maskPrograms.clear();
+    this.waterPrograms.clear();
+    this.waterDirty = true;
+    const waterLayer = map.getStyle().layers.find((layer) => layer.type === "fill" && layer["source-layer"] === "water");
+    if (!waterLayer || waterLayer.type !== "fill") throw new Error("Discovery fog requires the map's water polygon layer.");
+    this.waterSource = { id: waterLayer.source, layer: "water", filter: waterLayer.filter };
+    map.on("sourcedata", this.onWaterSourceData);
+    map.on("moveend", this.invalidateWater);
     this.visibleCentersDirty = true;
     this.cornerBuffer = gl.createBuffer();
     this.centerBuffer = gl.createBuffer();
+    this.waterBuffer = gl.createBuffer();
     this.maskTexture = gl.createTexture();
     this.maskFramebuffer = gl.createFramebuffer();
     if (
       !this.cornerBuffer ||
       !this.centerBuffer ||
+      !this.waterBuffer ||
       !this.maskTexture ||
       !this.maskFramebuffer
     ) {
@@ -626,6 +697,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.disable(gl.SCISSOR_TEST);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    this.drawWaterMask(gl, input);
     this.refreshVisibleRevealCenters();
     if (this.visibleBuckets.length === 0) return;
 
@@ -678,14 +750,14 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.vertexAttribDivisor(1, 0);
   }
 
-  render(gl: WebGL2RenderingContext): void {
+  render(gl: WebGL2RenderingContext, input: CustomRenderMethodInput): void {
     const now = performance.now();
     const fogOpacity = this.currentFogOpacity(now);
     if (fogOpacity <= 0) {
       if (this.transitionFrom !== this.transitionTo) this.map?.triggerRepaint();
       return;
     }
-    if (!this.compositeProgram || !this.maskTexture || !this.cornerBuffer)
+    if (!this.compositeProgram || !this.maskTexture || !this.cornerBuffer || !this.map)
       throw new Error(t("Discovery fog composite resources are unavailable."));
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.disable(gl.DEPTH_TEST);
@@ -699,6 +771,25 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.uniform1f(this.compositeProgram.darkMode, this.darkMode ? 1 : 0);
     gl.uniform1f(this.compositeProgram.monochrome, this.monochrome ? 1 : 0);
     gl.uniform1f(this.compositeProgram.celestial, this.celestial ? 1 : 0);
+    const inverseGroundMatrix = new Mat4();
+    const center = MercatorCoordinate.fromLngLat(this.map.getCenter());
+    const x = Math.max(0, Math.min(FOG_BUCKET_COUNT - 1, Math.floor(center.x * FOG_BUCKET_COUNT)));
+    const y = Math.max(0, Math.min(FOG_BUCKET_COUNT - 1, Math.floor(center.y * FOG_BUCKET_COUNT)));
+    input.getProjectionData({ tileID: { canonical: { x, y, z: FOG_BUCKET_ZOOM } }, applyGlobeMatrix: false })
+      .fallbackMatrix.forEach((value, index) => { inverseGroundMatrix[index] = value; });
+    inverseGroundMatrix.inverse();
+    // Solve world Z = 0 in double precision before uploading the screen-to-ground transform.
+    const groundMatrix = [0, 4, 12].flatMap((column) => {
+      const depth = inverseGroundMatrix[column + 2] / inverseGroundMatrix[10];
+      return [
+        inverseGroundMatrix[column] - inverseGroundMatrix[8] * depth,
+        inverseGroundMatrix[column + 1] - inverseGroundMatrix[9] * depth,
+        inverseGroundMatrix[column + 3] - inverseGroundMatrix[11] * depth,
+      ];
+    });
+    gl.uniformMatrix3fv(this.compositeProgram.groundMatrix, false, groundMatrix);
+    gl.uniform1f(this.compositeProgram.zoom, this.map.getZoom());
+    gl.uniform2f(this.compositeProgram.patternOrigin, x * 16, y * 16);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
@@ -714,15 +805,60 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     }
   }
 
-  onRemove(_map: MapLibreMap, gl: WebGL2RenderingContext): void {
+  onRemove(map: MapLibreMap, gl: WebGL2RenderingContext): void {
+    map.off("sourcedata", this.onWaterSourceData);
+    map.off("moveend", this.invalidateWater);
     if (this.cornerBuffer) gl.deleteBuffer(this.cornerBuffer);
     if (this.centerBuffer) gl.deleteBuffer(this.centerBuffer);
+    if (this.waterBuffer) gl.deleteBuffer(this.waterBuffer);
     if (this.maskTexture) gl.deleteTexture(this.maskTexture);
     if (this.maskFramebuffer) gl.deleteFramebuffer(this.maskFramebuffer);
     this.maskPrograms.forEach(({ program }) => gl.deleteProgram(program));
+    this.waterPrograms.forEach(({ program }) => gl.deleteProgram(program));
     if (this.compositeProgram) gl.deleteProgram(this.compositeProgram.program);
     this.map = null;
     this.gl = null;
+  }
+
+  private drawWaterMask(gl: WebGL2RenderingContext, input: CustomRenderMethodInput): void {
+    if (!this.map || !this.waterBuffer || !this.waterSource) throw new Error("Discovery fog water mask is not initialized.");
+    if (this.waterDirty) {
+      const features = this.map.querySourceFeatures(this.waterSource.id, {
+        sourceLayer: this.waterSource.layer, filter: this.waterSource.filter,
+      });
+      const meshes = fogWaterMeshes(features.map((feature) => feature.geometry));
+      const vertices = new Float32Array(meshes.reduce((sum, mesh) => sum + mesh.vertices.length, 0));
+      let offset = 0;
+      this.waterBuckets = meshes.map((mesh) => {
+        vertices.set(mesh.vertices, offset);
+        const bucket = { x: mesh.x, y: mesh.y, offset: offset * Float32Array.BYTES_PER_ELEMENT, count: mesh.vertices.length / 2 };
+        offset += mesh.vertices.length;
+        return bucket;
+      });
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+      this.waterDirty = false;
+    }
+    if (!this.waterBuckets.length) return;
+    let program = this.waterPrograms.get(input.shaderData.variantName);
+    if (!program) {
+      program = waterProgramForProjection(gl, input);
+      this.waterPrograms.set(input.shaderData.variantName, program);
+    }
+    gl.useProgram(program.program);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribDivisor(0, 0);
+    gl.enable(gl.BLEND);
+    gl.blendEquation(gl.MAX);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    for (const bucket of this.waterBuckets) {
+      applyProjectionUniforms(gl, program, input.getProjectionData({
+        tileID: { canonical: { x: bucket.x, y: bucket.y, z: FOG_WATER_ZOOM } }, applyGlobeMatrix: true,
+      }));
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, bucket.offset);
+      gl.drawArrays(gl.TRIANGLES, 0, bucket.count);
+    }
   }
 
   private rebuildRevealCenters(geometry: FogGeometry): void {
@@ -849,11 +985,11 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
-      gl.R8,
+      gl.RG8,
       width,
       height,
       0,
-      gl.RED,
+      gl.RG,
       gl.UNSIGNED_BYTE,
       null,
     );
