@@ -5,6 +5,7 @@ import type { CityRelief } from "../cityRelief";
 import type { CityReliefRequest, CityReliefResponse } from "../cityRelief.worker";
 import { createReliefScene, type ReliefScene } from "../reliefScene";
 import { reliefBuildingSource } from "../reliefBuildings";
+import { loadMapStyle } from "../mapStyle";
 import { createReliefBackground, frameReliefMap } from "../reliefBackground";
 import { saveReliefImage } from "../reliefExport";
 import type { DiscoveryCell } from "../types";
@@ -83,8 +84,10 @@ export function CityKeepsake({ city, cells, map, discoveredKm, percentage, onClo
         failed);
       if (completeRelief) scene.current.revealBuildings(completeRelief);
     };
-    const build = (): void => {
+    const build = async (): Promise<void> => {
       try {
+        const artworkStyle = await loadMapStyle(controller.signal);
+        if (!active) return;
         worker = new Worker(new URL("../cityRelief.worker.ts", import.meta.url), { type: "module" });
         worker.addEventListener("error", event => failed(new Error(`City artwork worker failed: ${event.message}; ${event.filename}:${event.lineno}:${event.colno}`)));
         worker.addEventListener("message", (event: MessageEvent<CityReliefResponse>): void => {
@@ -109,13 +112,13 @@ export function CityKeepsake({ city, cells, map, discoveredKm, percentage, onClo
             failed(failure instanceof Error ? failure : new Error(String(failure)));
           }
         });
-        const request: CityReliefRequest = { cells, city, sourceUrl: reliefBuildingSource(map.getStyle()), language: currentLanguage() };
+        const request: CityReliefRequest = { cells, city, sourceUrl: reliefBuildingSource(artworkStyle), language: currentLanguage() };
         worker.postMessage(request);
       } catch (failure) {
         failed(failure instanceof Error ? failure : new Error(String(failure)));
       }
     };
-    const frame = requestAnimationFrame(build);
+    const frame = requestAnimationFrame(() => { void build(); });
     return () => {
       active = false;
       controller.abort();

@@ -1,5 +1,6 @@
 import { canvasRGB } from "stackblur-canvas";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import { Map as MapLibreMap } from "maplibre-gl";
+import { loadMapStyle } from "./mapStyle";
 import { t } from "./i18n";
 
 export type ReliefBackground = {
@@ -14,8 +15,31 @@ export type ReliefBackground = {
   fov: number;
 };
 
-/** Captures and blurs map pixels once; preview and export never depend on WebKit canvas/CSS filters. */
+/** Artwork uses its own open vector basemap so Apple tiles are never copied into an exported image. */
 export async function createReliefBackground(map: MapLibreMap, signal: AbortSignal): Promise<ReliefBackground> {
+  signal.throwIfAborted();
+  const style = await loadMapStyle(signal);
+  signal.throwIfAborted();
+  const container = document.createElement("div");
+  const { clientWidth: width, clientHeight: height } = map.getContainer();
+  Object.assign(container.style, { position: "fixed", left: "-100000px", top: "0", width: `${width}px`, height: `${height}px` });
+  document.body.appendChild(container);
+  const artwork = new MapLibreMap({
+    container, style, center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: 0,
+    interactive: false, attributionControl: false, renderWorldCopies: false, fadeDuration: 0,
+    canvasContextAttributes: { preserveDrawingBuffer: true },
+  });
+  artwork.setPadding(map.getPadding());
+  try {
+    return await captureReliefBackground(artwork, signal);
+  } finally {
+    artwork.remove();
+    container.remove();
+  }
+}
+
+/** Captures and blurs map pixels once; preview and export never depend on WebKit canvas/CSS filters. */
+async function captureReliefBackground(map: MapLibreMap, signal: AbortSignal): Promise<ReliefBackground> {
   return new Promise<ReliefBackground>((resolve, reject) => {
     if (signal.aborted) {
       reject(new DOMException("Map snapshot was cancelled.", "AbortError"));
@@ -27,7 +51,7 @@ export async function createReliefBackground(map: MapLibreMap, signal: AbortSign
       reject(new DOMException("Map snapshot was cancelled.", "AbortError"));
     };
     const capture = (): void => {
-      if (!map.areTilesLoaded()) {
+      if (!map.isStyleLoaded() || !map.areTilesLoaded()) {
         map.once("render", capture);
         return;
       }

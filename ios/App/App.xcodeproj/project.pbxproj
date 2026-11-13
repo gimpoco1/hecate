@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		CE2600290000000000000011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000012 /* PrivacyInfo.xcprivacy */; };
 		CE2600290000000000000003 /* GoogleAuthCallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000004 /* GoogleAuthCallback.swift */; };
+		CE2611110000000000000001 /* NativeMapPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2611110000000000000002 /* NativeMapPlugin.swift */; };
 		CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600290000000000000002 /* GoogleSignInPlugin.swift */; };
 		CE2600280000000000000001 /* AppleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600280000000000000002 /* AppleSignInPlugin.swift */; };
 		CE2600270000000000000001 /* AppIconPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE2600270000000000000002 /* AppIconPlugin.swift */; };
@@ -63,6 +64,7 @@
 /* Begin PBXFileReference section */
 		CE2600290000000000000012 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CE2600290000000000000004 /* GoogleAuthCallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthCallback.swift; sourceTree = "<group>"; };
+		CE2611110000000000000002 /* NativeMapPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapPlugin.swift; sourceTree = "<group>"; };
 		CE2600290000000000000002 /* GoogleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignInPlugin.swift; sourceTree = "<group>"; };
 		CE2600280000000000000002 /* AppleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInPlugin.swift; sourceTree = "<group>"; };
 		CE2600270000000000000002 /* AppIconPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconPlugin.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				CE2600270000000000000002 /* AppIconPlugin.swift */,
 				CE2600300000000000000002 /* NavigationScreenPlugin.swift */,
 				CE2600280000000000000002 /* AppleSignInPlugin.swift */,
+				CE2611110000000000000002 /* NativeMapPlugin.swift */,
 				CE2600290000000000000002 /* GoogleSignInPlugin.swift */,
 				CE2600290000000000000004 /* GoogleAuthCallback.swift */,
 				47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */,
@@ -377,6 +380,7 @@
 				CE2600270000000000000001 /* AppIconPlugin.swift in Sources */,
 				CE2600300000000000000001 /* NavigationScreenPlugin.swift in Sources */,
 				CE2600280000000000000001 /* AppleSignInPlugin.swift in Sources */,
+				CE2611110000000000000001 /* NativeMapPlugin.swift in Sources */,
 				CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */,
 				CE2600290000000000000003 /* GoogleAuthCallback.swift in Sources */,
 				C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */,

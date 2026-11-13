@@ -10,6 +10,7 @@ class JourneyBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(NavigationScreenPlugin())
         bridge?.registerPluginInstance(AppleSignInPlugin())
         bridge?.registerPluginInstance(GoogleSignInPlugin())
+        bridge?.registerPluginInstance(NativeMapPlugin())
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

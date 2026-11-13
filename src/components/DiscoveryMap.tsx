@@ -12,6 +12,7 @@ import {
   compassHeadingFromEvent,
   type CompassOrientationEvent,
 } from "../deviceHeading";
+import { reverseGeocodeDestination } from "../destinationSearch";
 import { favoritePlaceIconVector, type FavoritePlace } from "../favoritePlaces";
 import {
   discoveryCellCenter,
@@ -19,14 +20,14 @@ import {
   splitRoute,
 } from "../geo";
 import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
-import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
+import { createAppleBasemap, DISCOVERY_OVERLAY_STYLE, type AppleBasemap } from "../appleMap";
 import { useAppearance } from "../appearance";
-import { applyMapAppearance } from "../mapAppearance";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
 
 type Props = {
+  userInitial?: string;
   reward?: MapReward;
   mode: MapMode;
   points: Coordinate[];
@@ -81,25 +82,17 @@ function userMarkerClassName(
 
 function createUserMarkerElement(
   locationState: NonNullable<Props["locationState"]>,
+  initial: string | undefined,
 ) {
   const element = document.createElement("div");
   element.className = userMarkerClassName(locationState);
-  element.innerHTML = `<span class="user-marker__direction" aria-hidden="true">
-    <svg viewBox="0 0 44 44" focusable="false">
-      <defs>
-        <linearGradient id="user-direction-fill" x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0" stop-color="#4285f4" stop-opacity="0.42" />
-          <stop offset="0.58" stop-color="#637cff" stop-opacity="0.2" />
-          <stop offset="1" stop-color="#7b73ff" stop-opacity="0" />
-        </linearGradient>
-        <filter id="user-direction-soften" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="0.65" />
-        </filter>
-      </defs>
-      <path d="M22 43 L6 9 Q22 0 38 9 Z" fill="url(#user-direction-fill)" filter="url(#user-direction-soften)" />
-      <path d="M22 42 L8 10 Q22 3 36 10 Z" fill="url(#user-direction-fill)" opacity="0.72" />
+  element.dataset.testid = "user-location-marker";
+  element.innerHTML = `<span class="user-marker__direction" data-testid="user-location-beam" aria-hidden="true">
+    <svg viewBox="0 0 80 100" focusable="false">
+      <path d="M40 100 L6 43 C-5 20 10 4 40 4 C70 4 85 20 74 43 Z" fill="currentColor" />
     </svg>
-  </span><span class="user-marker__dot"></span>`;
+  </span><span class="user-marker__dot" aria-hidden="true"></span>`;
+  element.querySelector(".user-marker__dot")!.textContent = initial ?? "";
   return element;
 }
 
@@ -145,24 +138,8 @@ function createFavoriteMarkerElement(
   return element;
 }
 
-function suggestedPlaceName(map: MapLibreMap, point: maplibregl.PointLike) {
-  const candidates = map
-    .queryRenderedFeatures(point)
-    .flatMap((feature) => {
-      const name = feature.properties?.name;
-      if (typeof name !== "string" || !name.trim()) return [];
-      const layerId = feature.layer.id.toLowerCase();
-      let priority = 0;
-      if (/(poi|amenity|shop|restaurant|cafe)/.test(layerId)) priority += 50;
-      if (/(park|landuse|building|landmark)/.test(layerId)) priority += 30;
-      if (feature.geometry.type === "Point") priority += 20;
-      return priority > 0 ? [{ name: name.trim(), priority }] : [];
-    })
-    .sort((first, second) => second.priority - first.priority);
-  return candidates[0]?.name;
-}
-
 export const DiscoveryMap = memo(function DiscoveryMap({
+  userInitial,
   reward,
   mode,
   points,
@@ -194,12 +171,21 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 }: Props) {
   useAppTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  const basemapContainerRef = useRef<HTMLDivElement>(null);
+  const basemapRef = useRef<AppleBasemap | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const onUserMarkerChangeRef = useRef(onUserMarkerChange);
   useEffect(() => { onUserMarkerChangeRef.current = onUserMarkerChange; }, [onUserMarkerChange]);
   const favoriteMarkersRef = useRef<maplibregl.Marker[]>([]);
   const fogLayerRef = useRef<DiscoveryFogLayer | null>(null);
   const currentPointRef = useRef(currentPoint);
+  const userInitialRef = useRef(userInitial);
+  useEffect(() => {
+    userInitialRef.current = userInitial;
+    const label = markerRef.current?.getElement().querySelector(".user-marker__dot");
+    if (label) label.textContent = userInitial ?? "";
+  }, [userInitial]);
   const locationStateRef = useRef(locationState);
   const onMapClickRef = useRef(onMapClick);
   const onDestinationSelectRef = useRef(onDestinationSelect);
@@ -218,18 +204,15 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   const onUserCenteredChangeRef = useRef(onUserCenteredChange);
   onUserCenteredChangeRef.current = onUserCenteredChange;
   const compassHeadingRef = useRef<number | undefined>(undefined);
-  const [mapStyle, setMapStyle] = useState<
-    Awaited<ReturnType<typeof loadMapStyle>> | string | null
-  >(null);
+  const mapStyle = DISCOVERY_OVERLAY_STYLE;
   const { theme: appTheme } = useAppearance();
   const theme = mapRewardTheme(reward ?? "standard", appTheme);
   const rewardRef = useRef(reward);
   rewardRef.current = reward;
   const themeRef = useRef(theme);
   themeRef.current = theme;
-  const baseStyleRef = useRef<maplibregl.StyleSpecification | null>(null);
   useEffect(() => {
-    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme, reward ?? "standard");
+    basemapRef.current?.setTheme(theme);
     fogLayerRef.current?.setTheme(reward === "paper" ? "monochrome" : reward === "midnight" ? "celestial" : theme);
   }, [theme, reward, mapRef]);
   const geometry = useMemo<FogGeometry>(
@@ -282,26 +265,12 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     onUserNavigationRef.current = onUserNavigation;
   }, [onUserNavigation]);
   useEffect(() => {
-    const controller = new AbortController();
-    void loadMapStyle(controller.signal)
-      .then(setMapStyle)
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        console.warn(
-          "Map style could not be patched; using the original style",
-          errorDiagnostic(error),
-        );
-        setMapStyle(MAP_STYLE_URL);
-      });
-    return () => controller.abort();
-  }, []);
-  useEffect(() => {
     locationStateRef.current = locationState;
     const element = markerRef.current?.getElement();
     const map = mapRef.current;
     if (element) {
-      element.className = userMarkerClassName(locationState);
+      element.classList.remove("user-marker--idle", "user-marker--located", "user-marker--tracking");
+      element.classList.add(`user-marker--${locationState}`);
       updateUserMarkerHeading(
         element,
         compassHeadingRef.current ?? currentPointRef.current?.heading,
@@ -345,7 +314,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || mapRef.current || !mapStyle) return;
+    const basemapContainer = basemapContainerRef.current;
+    if (!container || !basemapContainer || mapRef.current) return;
+    const initialization = new AbortController();
+    let favoriteLookup: AbortController | null = null;
+    setMapError(null);
     const nativeApp = Capacitor.isNativePlatform();
     const map = new maplibregl.Map({
       container,
@@ -358,6 +331,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       bearing: 0,
       attributionControl: false,
       maxZoom: 19,
+      maxPitch: 0,
       pixelRatio: Math.min(window.devicePixelRatio || 1, nativeApp ? 1.5 : 2),
       renderWorldCopies: false,
       fadeDuration: 0,
@@ -366,21 +340,11 @@ export const DiscoveryMap = memo(function DiscoveryMap({
 
     if (import.meta.env.DEV)
       (window as Window & { __hecateMap?: MapLibreMap }).__hecateMap = map;
-    map.addControl(
-      new maplibregl.AttributionControl({ compact: true }),
-      "bottom-right",
-    );
     map.on("error", (event) =>
       console.error("Map rendering error", errorDiagnostic(event.error)),
     );
     map.on("style.load", () => {
-      baseStyleRef.current = map.getStyle();
-      const initialReward = rewardRef.current ?? "standard";
-      // The downloaded style already has its light, standard colors. Applying
-      // every paint property here is a no-op but blocks the first frame.
-      if (themeRef.current === "dark" || initialReward !== "standard")
-        applyMapAppearance(map, baseStyleRef.current, themeRef.current, initialReward);
-      map.setProjection({ type: "globe" });
+      map.setProjection({ type: "mercator" });
       const fogLayer = new DiscoveryFogLayer(
         stateRef.current.geometry,
         stateRef.current.mode,
@@ -401,7 +365,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       }
       const point = currentPointRef.current;
       if (point && !markerRef.current) {
-        const element = createUserMarkerElement(locationStateRef.current);
+        const element = createUserMarkerElement(locationStateRef.current, userInitialRef.current);
         updateUserMarkerHeading(
           element,
           compassHeadingRef.current ?? point.heading,
@@ -481,10 +445,17 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         return;
       }
       if (favoritePlacementActiveRef.current) {
-        onFavoritePlaceRequestRef.current?.({
-          lng: event.lngLat.lng,
-          lat: event.lngLat.lat,
-          suggestedName: suggestedPlaceName(map, event.point),
+        favoriteLookup?.abort();
+        const lookup = new AbortController();
+        favoriteLookup = lookup;
+        const point = { lng: event.lngLat.lng, lat: event.lngLat.lat };
+        void reverseGeocodeDestination(point, lookup.signal).then((result) => {
+          if (lookup.signal.aborted) return;
+          onFavoritePlaceRequestRef.current?.({ ...point, suggestedName: result?.name });
+        }).catch((error: Error) => {
+          if (lookup.signal.aborted) return;
+          console.error("Favorite place lookup failed", { point, error: errorDiagnostic(error) });
+          setMapError(error.message);
         });
         return;
       }
@@ -492,11 +463,26 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     });
     map.on("moveend", handleMoveEnd);
     map.on("move", handleViewMove);
-    onReadyRef.current?.();
+    void createAppleBasemap(basemapContainer, map, themeRef.current, initialization.signal, (error) => {
+      console.error("Apple basemap failed", { error: errorDiagnostic(error) });
+      setMapError(error.message);
+    }).then((basemap) => {
+      if (initialization.signal.aborted) { basemap.remove(); return; }
+      basemapRef.current = basemap;
+      basemap.setTheme(themeRef.current);
+      onReadyRef.current?.();
+    }).catch((error: Error) => {
+      if (initialization.signal.aborted) return;
+      console.error("Apple basemap initialization failed", { error: errorDiagnostic(error) });
+      setMapError(error.message);
+    });
     return () => {
+      initialization.abort();
+      favoriteLookup?.abort();
+      basemapRef.current?.remove();
+      basemapRef.current = null;
       canvas.removeEventListener("pointerdown", handlePointerDown, true);
       canvas.removeEventListener("wheel", interruptCamera, true);
-      baseStyleRef.current = null;
       fogLayerRef.current = null;
       if (externalFogLayerRef) externalFogLayerRef.current = null;
       markerRef.current?.remove();
@@ -545,7 +531,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     if (!map) return;
     onUserCenteredChangeRef.current?.(isUserCentered(map, currentPoint));
     if (!markerRef.current) {
-      const element = createUserMarkerElement(locationStateRef.current);
+      const element = createUserMarkerElement(locationStateRef.current, userInitialRef.current);
       updateUserMarkerHeading(
         element,
         compassHeadingRef.current ?? currentPoint.heading,
@@ -597,8 +583,12 @@ export const DiscoveryMap = memo(function DiscoveryMap({
   return (
     <div
       data-testid="discovery-map"
+      data-map-reward={reward ?? "standard"}
+      data-map-theme={theme}
       className={`map-stage${reward === "paper" ? " map-stage--monochrome" : ""}${favoritePlacementActive ? " map-stage--placing-favorite" : ""}`}
     >
+      <div ref={basemapContainerRef} className="apple-basemap" data-testid="apple-basemap" />
+      {mapError && <div className="map-provider-error" role="alert">{t("Map preview unavailable: {{value0}}", { value0: mapError })}</div>}
       <div
         ref={containerRef}
         className="map"
