@@ -1,13 +1,14 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type { Coordinate } from "./types";
 
-export type JourneyStartMode = "manual" | "assisted" | "automatic";
+export type JourneyStartMode = "manual" | "automatic";
 export type JourneySource = "manual" | "automatic";
-export type JourneyPreferences = { mode: JourneyStartMode; autoPause: boolean; stopMinutes: 7 | 10 | 15 };
+export type JourneyPreferences = { mode: JourneyStartMode; autoPause: boolean; pauseMinutes: number; stopMinutes: number };
 export type JourneyMotion = { activity: "walking" | "cycling" | "stationary" | "other" | "unknown"; since: number };
 export type JourneySeed = { source: JourneySource; startedAt: number; points: Coordinate[] };
 export const AUTO_START_MS = 5 * 60_000;
-export const AUTO_PAUSE_MS = 2 * 60_000;
+export const JOURNEY_PAUSE_DURATIONS: readonly number[] = [1, 2, 3, 5, 10, 15];
+export const JOURNEY_STOP_DURATIONS: readonly number[] = [5, 7, 10, 15, 20, 30, 60];
 export const AUTO_RESTART_COOLDOWN_MS = 30 * 60_000;
 
 interface JourneyMotionPlugin {
@@ -19,7 +20,7 @@ interface JourneyMotionPlugin {
 export const JourneyMotionMonitor = registerPlugin<JourneyMotionPlugin>("JourneyMotion");
 
 export function defaultJourneyPreferences(): JourneyPreferences {
-  return { mode: "manual", autoPause: true, stopMinutes: 7 };
+  return { mode: "manual", autoPause: true, pauseMinutes: 2, stopMinutes: 7 };
 }
 
 export function parseJourneyMotion(value: JourneyMotion): JourneyMotion {
@@ -33,12 +34,13 @@ export function parseJourneyMotion(value: JourneyMotion): JourneyMotion {
 export function loadJourneyPreferences(ownerId: string): JourneyPreferences {
   const raw = localStorage.getItem(`hecate:journey-preferences:v1:${ownerId}`);
   if (raw === null) return defaultJourneyPreferences();
-  const value: JourneyPreferences = JSON.parse(raw);
+  const value: Omit<JourneyPreferences, "mode"> & { mode: JourneyStartMode | "assisted" } = JSON.parse(raw);
   if (!value || !["manual", "assisted", "automatic"].includes(value.mode)
-    || typeof value.autoPause !== "boolean" || ![7, 10, 15].includes(value.stopMinutes)) {
+    || typeof value.autoPause !== "boolean" || !JOURNEY_STOP_DURATIONS.includes(value.stopMinutes)
+    || (value.pauseMinutes !== undefined && !JOURNEY_PAUSE_DURATIONS.includes(value.pauseMinutes))) {
     throw new TypeError("Saved journey settings are invalid. Choose your journey settings again.");
   }
-  return { mode: value.mode, autoPause: value.autoPause, stopMinutes: value.stopMinutes };
+  return { mode: value.mode === "assisted" ? "automatic" : value.mode, autoPause: value.autoPause, pauseMinutes: value.pauseMinutes ?? 2, stopMinutes: value.stopMinutes };
 }
 
 export function saveJourneyPreferences(ownerId: string, preferences: JourneyPreferences): void {

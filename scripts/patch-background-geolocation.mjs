@@ -458,3 +458,24 @@ if (!registration.includes("CAP_PLUGIN_METHOD(getMotionAuthorizationStatus,")) {
 }
 
 await import("./patch-android-reminder-motion.mjs");
+
+// Keep journey watchers alive while native Live Activity actions suspend their GPS updates.
+source = readFileSync(pluginPath, "utf8");
+if (!source.includes("private var journeyPauseObserver")) {
+  source = source.replace("private var journeyStopObserver: NSObjectProtocol?", "private var journeyStopObserver: NSObjectProtocol?\n    private var journeyPauseObserver: NSObjectProtocol?");
+  source = source.replace("    deinit {", "    deinit {\n        if let journeyPauseObserver { NotificationCenter.default.removeObserver(journeyPauseObserver) }");
+  source = source.replace("    func start() {", `    func start() {
+        if let journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }`);
+  source = source.replace("        UIDevice.current.isBatteryMonitoringEnabled = true", `        UIDevice.current.isBatteryMonitoringEnabled = true
+        journeyPauseObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("HecateJourneyPauseRequested"), object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self, let walkId = notification.userInfo?["walkId"] as? String,
+                  let paused = notification.userInfo?["paused"] as? Bool else { return }
+            for watcher in self.watchers where watcher.journeyId == walkId {
+                if paused { watcher.stop() }
+                else if UserDefaults.standard.data(forKey: "hecate.journey.stop." + walkId) == nil { watcher.start() }
+            }
+        }`);
+  writeFileSync(pluginPath, source);
+}

@@ -82,6 +82,16 @@ describe("discovery route geometry", () => {
     expect(splitRoute([{ ...a, walkId: "one" }, { ...b, walkId: "two" }])).toHaveLength(2);
   });
 
+  it("starts a new segment at explicit pause/resume boundaries", () => {
+    const resumed = { ...b, recordedAt: 40_000, segmentBreakBefore: true };
+    const continued = { ...b, lng: 2.172, recordedAt: 70_000 };
+    const segments = splitRoute([a, resumed, continued]);
+
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toEqual([a]);
+    expect(segments[1]).toEqual([resumed, continued]);
+  });
+
   it("deduplicates repeated visits to the same discovery cell", () => {
     const nearby = { ...a, recordedAt: 2_000, lng: a.lng + 0.000001 };
     const cells = discoveryCellsFromPoints([a, nearby]);

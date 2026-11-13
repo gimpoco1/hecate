@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import type { CityBoundary } from "./city";
 import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { AUTO_PAUSE_MS, AUTO_RESTART_COOLDOWN_MS, AUTO_START_MS, JourneyMotionMonitor, defaultJourneyPreferences, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { AUTO_RESTART_COOLDOWN_MS, AUTO_START_MS, JourneyMotionMonitor, defaultJourneyPreferences, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
+
+import type { JourneyPauseRequest } from "./journeyActivity";
 
 type PauseMode = "manual" | "automatic" | null;
 type Session = { id: string | null; source: JourneySource; cooldownUntil: number; idleSince: number | null; pausedAt: number | null; pausedMs: number; pauseMode: PauseMode };
@@ -50,6 +53,9 @@ export function useJourneyAutomation(options: Options) {
   const preferencesRef = useRef(preferences);
   preferencesRef.current = preferences;
   const [error, setError] = useState("");
+  const [errorDismissed, setErrorDismissed] = useState(false);
+  useEffect(() => { setErrorDismissed(false); }, [error]);
+  function dismissError(): void { setErrorDismissed(true); }
   const [settingsReady, setSettingsReady] = useState(false);
   const [paused, setPaused] = useState(false);
   const [pausedMs, setPausedMs] = useState(0);
@@ -135,6 +141,34 @@ export function useJourneyAutomation(options: Options) {
     previousWalkId.current = options.walkId;
   }, [options.walkId]);
 
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform() || !settingsReady || !options.ownerId) return;
+    const ownerId = options.ownerId;
+    let active = true;
+    const refresh = (): void => {
+      void readReminderMotionAuthorization().then(status => {
+        if (!active || latest.current.ownerId !== ownerId) return;
+        const message = t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself.");
+        if (status === "authorized") {
+          setError(current => current === message ? "" : current);
+          return;
+        }
+        const current = preferencesRef.current;
+        if (current.mode !== "manual" || current.autoPause) {
+          const manual: JourneyPreferences = { ...current, mode: "manual", autoPause: false };
+          saveJourneyPreferences(ownerId, manual);
+          preferencesRef.current = manual;
+          motion.current = null;
+          setPreferences(manual);
+          setError(message);
+        }
+      }).catch((failure: Error) => { if (active) setError(failure.message); });
+    };
+    refresh();
+    const listener = CapacitorApp.addListener("appStateChange", ({ isActive }) => { if (isActive) refresh(); });
+    return () => { active = false; void listener.then(handle => handle.remove()); };
+  }, [settingsReady, options.ownerId]);
+
   async function changePreferences(next: JourneyPreferences): Promise<void> {
     const ownerId = latest.current.ownerId;
     if (!ownerId) throw new Error(t("Sign in before changing journey settings."));
@@ -142,8 +176,13 @@ export function useJourneyAutomation(options: Options) {
       throw new Error(t("Automatic journeys require the iOS or Android app."));
     }
     const previous = preferencesRef.current;
-    if ((next.mode !== "manual" && previous.mode === "manual") || (next.autoPause && !previous.autoPause)) {
-      if (!await requestReminderMotionPermission()) throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
+    if (next.mode !== "manual" || next.autoPause) {
+      let motion = await readReminderMotionAuthorization();
+      if (motion === "notDetermined") {
+        if (!await requestReminderMotionPermission()) throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
+        motion = await readReminderMotionAuthorization();
+      }
+      if (motion !== "authorized") throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
     }
     if (next.mode !== "manual" && next.mode !== previous.mode && await readLocationAuthorization() !== "always") {
       throw new Error(t("Allow Always location access in Settings to start journeys in the background."));
@@ -202,7 +241,7 @@ export function useJourneyAutomation(options: Options) {
           return;
         }
         if (session.current.pauseMode === "manual" && session.current.pausedAt !== null) return;
-        if (preferencesRef.current.autoPause && now - idleSince >= AUTO_PAUSE_MS) {
+        if (preferencesRef.current.autoPause && now - idleSince >= preferencesRef.current.pauseMinutes * 60_000) {
           if (session.current.pausedAt === null) {
             session.current = { ...session.current, pausedAt: idleSince, pauseMode: "automatic" };
             persist();
@@ -288,7 +327,22 @@ export function useJourneyAutomation(options: Options) {
     const checkTime = (): void => { void tick().catch(fail); };
     locationTick.current = checkTime;
     const setup = async (): Promise<void> => {
-      if (await readReminderMotionAuthorization() !== "authorized") throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
+      let motionAuthorization = await readReminderMotionAuthorization();
+      if (motionAuthorization === "notDetermined") {
+        if (await requestReminderMotionPermission()) {
+          motionAuthorization = await readReminderMotionAuthorization();
+        }
+      }
+      if (motionAuthorization !== "authorized") {
+        if (!valid() || !ownerId) return;
+        const manual: JourneyPreferences = { ...preferencesRef.current, mode: "manual", autoPause: false };
+        saveJourneyPreferences(ownerId, manual);
+        preferencesRef.current = manual;
+        motion.current = null;
+        setPreferences(manual);
+        setError(t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself."));
+        return;
+      }
       if (preferencesRef.current.mode !== "manual" && await readLocationAuthorization() !== "always") {
         throw new Error(t("Allow Always location access in Settings to start journeys in the background."));
       }
@@ -367,16 +421,39 @@ export function useJourneyAutomation(options: Options) {
     latest.current.onResume();
   }
 
+  function applyWidgetPause(request: JourneyPauseRequest): void {
+    if (request.walkId !== latest.current.walkId || request.ownerId !== latest.current.ownerId || latest.current.startedAt === null) return;
+    session.current = { ...session.current, id: request.walkId, pausedAt: request.paused ? request.requestedAt : null,
+      idleSince: request.paused ? request.requestedAt : null, pauseMode: request.paused ? "manual" : null,
+      pausedMs: Math.max(0, request.activeStartedAt - latest.current.startedAt) };
+    persist();
+    setPaused(request.paused);
+    setPausedAt(session.current.pausedAt);
+    setPausedMs(session.current.pausedMs);
+    pausedRecorderId.current = request.paused ? request.walkId : null;
+  }
+
+  function activityState(now: number): { paused: boolean; elapsedMs: number } {
+    const current = session.current;
+    return { paused: current.pausedAt !== null, elapsedMs: Math.max(0, now - (latest.current.startedAt ?? now) - current.pausedMs - (current.pausedAt === null ? 0 : Math.max(0, now - current.pausedAt))) };
+  }
+
+  function isManualPause(): boolean { return session.current.pauseMode === "manual"; }
   function isAutomaticJourney(): boolean { return session.current.source === "automatic" && session.current.id !== null; }
   function observeLocation(): void { locationTick.current?.(); }
 
   return {
     preferences,
+    applyWidgetPause,
+    activityState,
+    isManualPause,
     changePreferences,
     paused,
     pausedMs,
     pausedAt,
     error,
+    errorDismissed,
+    dismissError,
     markStarted,
     manualStop,
     acceptPoint,

@@ -204,19 +204,6 @@ button {
   letter-spacing: -0.6px;
   cursor: pointer;
 }
-.brand::before {
-  content: "";
-  position: absolute;
-  inset: -8px -14px;
-  z-index: -1;
-  pointer-events: none;
-  border-radius: 999px;
-  background: rgba(var(--theme-surface-warm-rgb, 248, 247, 242), 0.12);
-  -webkit-backdrop-filter: blur(5px);
-  backdrop-filter: blur(5px);
-  -webkit-mask-image: radial-gradient(ellipse, #000 45%, transparent 72%);
-  mask-image: radial-gradient(ellipse, #000 45%, transparent 72%);
-}
 .brand__mark {
   width: 42px;
   height: 42px;
@@ -227,6 +214,32 @@ button {
   background: rgba(var(--theme-surface-warm-rgb, 248, 247, 242), 0.88);
   border: 1px solid rgba(var(--theme-border-rgb, 28, 58, 47), 0.08);
   box-shadow: 0 8px 26px rgba(27, 51, 42, 0.11);
+}
+.brand__text {
+  position: relative;
+  isolation: isolate;
+  padding: 4px 8px;
+}
+.brand--light .brand__text {
+  color: #f4f7ff;
+  text-shadow: 0 1px 6px rgba(6, 8, 24, 0.45);
+}
+.brand--dark .brand__text {
+  color: #183c2f;
+  text-shadow: 0 1px 4px rgba(248, 247, 242, 0.35);
+}
+.brand__text::before {
+  content: "";
+  position: absolute;
+  inset: -10px -16px -10px -3px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 999px;
+  background: rgba(247, 244, 237, 0.1);
+  -webkit-backdrop-filter: blur(8px) saturate(104%);
+  backdrop-filter: blur(8px) saturate(104%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 38%, rgba(0, 0, 0, 0.45) 64%, transparent 92%);
+  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 38%, rgba(0, 0, 0, 0.45) 64%, transparent 92%);
 }
 .hecate-mark {
   display: block;
@@ -854,7 +867,7 @@ button {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .discovery-control:hover {
   transform: scale(1.04);
@@ -868,15 +881,26 @@ button {
   background: var(--theme-surface-strong, #6a392c);
 }
 .discovery-control--pause {
-  width: 24px;
-  height: 24px;
-  border-radius: 0;
-  background: transparent;
+  width: auto;
+  min-width: 52px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), 0.24);
+  border-radius: 999px;
+  background: rgba(var(--theme-surface-warm-rgb, 248, 247, 242), 0.9);
   box-shadow: none;
   color: var(--forest);
 }
 .discovery-control--pause:hover {
   transform: none;
+  background: rgba(var(--theme-surface-warm-rgb, 248, 247, 242), 1);
+}
+.end-label {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 .play-triangle {
   width: 0;
@@ -4581,6 +4605,12 @@ button {
     padding: 0;
     font-size: 18px;
   }
+  .brand__text {
+    padding: 3px 7px;
+  }
+  .brand__text::before {
+    inset: -8px -12px -8px -2px;
+  }
   .avatar-button {
     width: 40px;
     height: 40px;
@@ -7084,6 +7114,29 @@ button {
   margin-top: 8px;
 }
 
+.journey-permission-toast {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: start;
+  padding: 16px;
+  background: var(--theme-surface-warm, #fbf2df);
+  border-color: var(--theme-border, #dec58e);
+  color: var(--theme-text-warm, #705221);
+}
+.journey-permission-toast .account-toast__mark {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: inherit;
+}
+.journey-permission-toast .app-error-toast__action {
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border, #dec58e);
+  border-radius: 10px;
+  background: var(--theme-surface, #fffaf0);
+  color: inherit;
+  font: inherit;
+}
+
 .map-appearance-settings { margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(var(--theme-border-rgb, 24, 60, 47), .12); }
 .map-appearance-settings h3 { margin: 0 0 16px; font-size: 15px; }
 .map-appearance-catalog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0; }
@@ -7192,7 +7245,5 @@ button {
 .journey-mode-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .journey-mode-options label:has(input:checked) .journey-mode-symbol { color: var(--forest); }
 .journey-mode-options label:has(input:disabled) { opacity: .5; cursor: default; }
-.journey-end-options.appearance-settings { padding: 12px 0 0; }
 .journey-settings-note { margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
-.journey-auto-status { position: absolute; left: 16px; right: 16px; bottom: calc(var(--journey-card-visible-height, 104px) + 16px); z-index: 9; padding: 10px 14px; border-radius: 14px; background: var(--theme-surface-alt, #e9ede3); color: var(--forest); box-shadow: 0 4px 18px #0002; font-size: 12px; text-align: center; }

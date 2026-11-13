@@ -11,13 +11,22 @@ export type JourneyActivitySnapshot = {
   startedAt: number;
   distanceKm: number;
   newGroundMeters: number;
+  paused: boolean;
+  elapsedMs: number;
   navigation?: NavigationCue | null;
   navigationRemaining?: NavigationRemaining | null;
 };
 
 export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
 
+export type JourneyPauseRequest = { id: string; walkId: string; ownerId: string; paused: boolean; requestedAt: number; activeStartedAt: number };
+
 interface JourneyActivityPlugin {
+  getPauseRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyPauseRequest | null }>;
+  acknowledgePause(options: { ownerId: string; walkId: string; id: string }): Promise<void>;
+  pauseLocation(options: { walkId: string }): Promise<void>;
+  resumeLocation(options: { walkId: string }): Promise<void>;
+  addListener(event: "pauseRequested", listener: (request: JourneyPauseRequest) => void): Promise<PluginListenerHandle>;
   setAppearance(options: { preference: AppearancePreference; theme: ColorTheme; language: LanguagePreference }): Promise<void>;
   start(snapshot: JourneyActivitySnapshot & { ownerId: string }): Promise<void>;
   update(snapshot: JourneyActivitySnapshot): Promise<void>;
@@ -49,10 +58,12 @@ export function journeyActivitySnapshot(
     startedAt: walk.startedAt,
     distanceKm: routeDistanceKm(walk.points),
     newGroundMeters: journeyNewGroundMeters(points, startingDistanceKm),
+    paused: false,
+    elapsedMs: 0,
   };
 }
 
-export function journeyActionFromUrl(value: string): { action: "open" | "stop"; walkId: string } | null {
+export function journeyActionFromUrl(value: string): { action: "open" | "stop" | "pause" | "resume"; walkId: string } | null {
   let url: URL;
   try {
     url = new URL(value);
@@ -61,6 +72,7 @@ export function journeyActionFromUrl(value: string): { action: "open" | "stop"; 
   }
   if (url.protocol !== "hecate:" || url.host !== "journey") return null;
   const walkId = url.searchParams.get("walkId");
-  if (!walkId || (url.pathname !== "/open" && url.pathname !== "/stop")) return null;
-  return { action: url.pathname === "/stop" ? "stop" : "open", walkId };
+  if (!walkId || !["/open", "/stop", "/pause", "/resume"].includes(url.pathname)) return null;
+  const action = url.pathname.slice(1) as "open" | "stop" | "pause" | "resume";
+  return { action, walkId };
 }

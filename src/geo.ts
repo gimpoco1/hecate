@@ -266,6 +266,7 @@ export function splitRoute(points: Coordinate[]) {
         const segment = segments.at(-1);
         const previous = segment?.at(-1);
         const isNewSegment = previous && (
+          point.segmentBreakBefore === true ||
           point.recordedAt - previous.recordedAt > 2 * 60 * 60 * 1000 ||
           distanceKm(previous, point) > 5
         );

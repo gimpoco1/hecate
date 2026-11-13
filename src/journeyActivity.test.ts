@@ -32,12 +32,14 @@ describe("journey Live Activity", () => {
   it("handles an empty journey before the first GPS fix", () => {
     expect(journeyActivitySnapshot(
       { id: "walk", startedAt: 1000, points: [] }, 0, [],
-    )).toEqual({ walkId: "walk", startedAt: 1000, distanceKm: 0, newGroundMeters: 0 });
+    )).toEqual({ walkId: "walk", startedAt: 1000, distanceKm: 0, newGroundMeters: 0, paused: false, elapsedMs: 0 });
   });
 
   it("accepts only journey links with a walk ID and a known action", () => {
     expect(journeyActionFromUrl("hecate://journey/stop?walkId=walk")).toEqual({ walkId: "walk", action: "stop" });
     expect(journeyActionFromUrl("hecate://journey/open?walkId=walk")).toEqual({ walkId: "walk", action: "open" });
+    expect(journeyActionFromUrl("hecate://journey/pause?walkId=walk")).toEqual({ walkId: "walk", action: "pause" });
+    expect(journeyActionFromUrl("hecate://journey/resume?walkId=walk")).toEqual({ walkId: "walk", action: "resume" });
     for (const value of ["invalid", "https://journey/stop?walkId=walk", "hecate://auth/stop?walkId=walk", "hecate://journey/stop", "hecate://journey/delete?walkId=walk"]) {
       expect(journeyActionFromUrl(value)).toBeNull();
     }

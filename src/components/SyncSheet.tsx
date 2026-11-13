@@ -58,7 +58,6 @@ import type {
 type Props = {
   journeyPreferences: JourneyPreferences;
   onJourneyPreferencesChange: (preferences: JourneyPreferences) => Promise<void>;
-  journeyAutomationError: string;
   mapRewards: RewardState;
   highlightedMapReward: MapReward | null;
   onRequiredAchievementOpen: (id: PersonalAchievementId) => void;
@@ -67,6 +66,7 @@ type Props = {
   open: boolean;
   returnHighlight: "history" | "stats" | null;
   onReturnHighlightEnd: () => void;
+  initialJourneySettingsOpen: boolean;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   onFeedbackOpen: () => void;
@@ -177,7 +177,6 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 export function SyncSheet({
   journeyPreferences,
   onJourneyPreferencesChange,
-  journeyAutomationError,
   mapRewards,
   highlightedMapReward,
   onRequiredAchievementOpen,
@@ -186,6 +185,7 @@ export function SyncSheet({
   open,
   returnHighlight,
   onReturnHighlightEnd,
+  initialJourneySettingsOpen,
   initialAuthIntent = "signin",
   onClose,
   onFeedbackOpen,
@@ -238,6 +238,9 @@ export function SyncSheet({
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
   const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
   const [journeySettingsOpen, setJourneySettingsOpen] = useState(false);
+  useEffect(() => {
+    if (open && initialJourneySettingsOpen) setJourneySettingsOpen(true);
+  }, [open, initialJourneySettingsOpen]);
   useEffect(() => {
     if (highlightedMapReward !== null) setAppearanceSheetOpen(true);
   }, [highlightedMapReward]);
@@ -991,7 +994,7 @@ export function SyncSheet({
                 </section>
               </div>
             )}
-            {journeySettingsOpen && <JourneySettings preferences={journeyPreferences} onChange={onJourneyPreferencesChange} monitoringError={journeyAutomationError} onBack={() => setJourneySettingsOpen(false)} onClose={() => { setJourneySettingsOpen(false); onClose(); }} />}
+            {journeySettingsOpen && <JourneySettings preferences={journeyPreferences} onChange={onJourneyPreferencesChange} onBack={() => setJourneySettingsOpen(false)} onClose={() => { setJourneySettingsOpen(false); onClose(); }} />}
             {gpxImportSheetOpen && (
               <div
                 className="sheet-backdrop gpx-import-backdrop"
@@ -1228,6 +1231,7 @@ export function SyncSheet({
                               <Trans i18nKey="settings.reminderTiming" components={{
                                 discovery: <ReminderDuration
                                   title={t("Discovery reminder delay")}
+                                  description={t("Choose how long Hecate waits before reminding you.")}
                                   value={activityNotificationPreferences.discoveryReminderMinutes}
                                   options={DISCOVERY_REMINDER_DURATIONS}
                                   disabled={notificationPending || reminderPending}
@@ -1235,6 +1239,7 @@ export function SyncSheet({
                                 />,
                                 inactivity: <ReminderDuration
                                   title={t("Inactivity reminder delay")}
+                                  description={t("Choose how long Hecate waits before reminding you.")}
                                   value={activityNotificationPreferences.inactivityReminderMinutes}
                                   options={INACTIVITY_REMINDER_DURATIONS}
                                   disabled={notificationPending || reminderPending}

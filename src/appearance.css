@@ -69,6 +69,7 @@
 }
 :root[data-theme="dark"] .discovery-control { color: #15232b; }
 :root[data-theme="dark"] .discovery-control--tracking { color: #fff4ec; background: #804936; }
+:root[data-theme="dark"] .discovery-control--pause { color: #eef4ef; }
 :root[data-theme="dark"] .saved-place-map-preview__marker,
 :root[data-theme="dark"] .walking-stats-overview__icon,
 :root[data-theme="dark"] .favorite-editor__place-icon,

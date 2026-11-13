@@ -19,6 +19,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStopRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPauseRequest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgePause", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseLocation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeLocation", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reconcile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getControlRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeControlRequest", returnType: CAPPluginReturnPromise)
@@ -32,6 +36,8 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(journeyStopped(_:)),
                                                name: JourneyStopStore.notification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(journeyPaused(_:)),
+                                               name: JourneyPauseStore.notification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(journeyControlRequested(_:)),
                                                name: JourneyControlStore.notification, object: nil)
     }
@@ -144,6 +150,80 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         } catch { call.reject("Could not read the saved widget stop request.", nil, error) }
     }
 
+    private func pauseData(_ request: JourneyPauseRequest) -> JSObject {
+        ["id": request.id, "walkId": request.walkId, "ownerId": request.ownerId,
+         "paused": request.paused, "requestedAt": request.requestedAt, "activeStartedAt": request.activeStartedAt]
+    }
+
+    @objc private func journeyPaused(_ notification: Notification) {
+        guard let request = notification.object as? JourneyPauseRequest else { return }
+        notifyListeners("pauseRequested", data: pauseData(request), retainUntilConsumed: true)
+    }
+
+    @objc func getPauseRequest(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), let ownerId = call.getString("ownerId") else {
+            call.reject("Reading a widget pause requires the journey and owner IDs.")
+            return
+        }
+        do {
+            guard let request = try JourneyPauseStore.read(walkId: walkId) else { call.resolve(["request": NSNull()]); return }
+            guard request.ownerId == ownerId else { call.reject("The widget pause belongs to a different account."); return }
+            call.resolve(["request": pauseData(request)])
+        } catch { call.reject("Could not read the saved widget pause request.", nil, error) }
+    }
+
+    @objc func acknowledgePause(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), let ownerId = call.getString("ownerId"), let id = call.getString("id") else {
+            call.reject("Acknowledging a widget pause requires its journey, owner and request IDs.")
+            return
+        }
+        do {
+            if let request = try JourneyPauseStore.read(walkId: walkId) {
+                guard request.ownerId == ownerId else { call.reject("The widget pause belongs to a different account."); return }
+                if request.id == id { JourneyPauseStore.remove(walkId: walkId) }
+            }
+            call.resolve()
+        } catch { call.reject("Could not acknowledge the saved widget pause request.", nil, error) }
+    }
+
+    @objc func pauseLocation(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), !walkId.isEmpty else { call.reject("Pausing GPS requires a journey ID."); return }
+        DispatchQueue.main.async {
+            JourneyPauseStore.remove(walkId: walkId)
+            UserDefaults.standard.set(true, forKey: "hecate.journey.gps-paused." + walkId)
+            NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil, userInfo: ["walkId": walkId, "paused": true])
+            call.resolve()
+        }
+    }
+
+    @objc func resumeLocation(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), !walkId.isEmpty else { call.reject("Resuming GPS requires a journey ID."); return }
+        DispatchQueue.main.async {
+            JourneyPauseStore.remove(walkId: walkId)
+            UserDefaults.standard.set(false, forKey: "hecate.journey.gps-paused." + walkId)
+            NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil, userInfo: ["walkId": walkId, "paused": false])
+            call.resolve()
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func applyingPauseRequest(_ state: JourneyActivityAttributes.ContentState, walkId: String) throws -> JourneyActivityAttributes.ContentState {
+        guard let request = try JourneyPauseStore.read(walkId: walkId) else {
+            if state.paused, let previous = Activity<JourneyActivityAttributes>.activities.first(where: { $0.attributes.walkId == walkId })?.content.state, previous.paused {
+                var updated = state
+                updated.activeStartedAt = previous.activeStartedAt
+                updated.updatedAt = previous.updatedAt
+                return updated
+            }
+            return state
+        }
+        var updated = state
+        updated.paused = request.paused
+        updated.activeStartedAt = Date(timeIntervalSince1970: request.activeStartedAt / 1000)
+        updated.updatedAt = request.paused ? Date(timeIntervalSince1970: request.requestedAt / 1000) : Date()
+        return updated
+    }
+
     @objc func acknowledgeStop(_ call: CAPPluginCall) {
         guard let walkId = call.getString("walkId"), let ownerId = call.getString("ownerId") else {
             call.reject("Acknowledging a widget stop requires the journey and owner IDs.")
@@ -181,6 +261,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             state.colorTheme = self.colorTheme
             do {
                 if try JourneyStopStore.read(walkId: walkId) != nil { call.resolve(); return }
+                state = try self.applyingPauseRequest(state, walkId: walkId)
                 for activity in Activity<JourneyActivityAttributes>.activities {
                     if activity.attributes.walkId == walkId && activity.content.state.finishedAt != nil {
                         call.resolve()
@@ -222,15 +303,17 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         enqueueActivityOperation {
-            var state = state
-            state.appearance = self.appearance
-            state.colorTheme = self.colorTheme
-            for activity in Activity<JourneyActivityAttributes>.activities
-                where activity.attributes.walkId == walkId &&
-                    (activity.activityState == .active || activity.activityState == .stale) {
-                await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(300)))
-            }
-            call.resolve()
+            do {
+                var state = try self.applyingPauseRequest(state, walkId: walkId)
+                state.appearance = self.appearance
+                state.colorTheme = self.colorTheme
+                for activity in Activity<JourneyActivityAttributes>.activities
+                    where activity.attributes.walkId == walkId &&
+                        (activity.activityState == .active || activity.activityState == .stale) {
+                    await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(300)))
+                }
+                call.resolve()
+            } catch { call.reject("Could not update the journey pause state.", nil, error) }
         }
     }
 
@@ -291,6 +374,9 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let distance = call.getDouble("distanceKm"), distance.isFinite, distance >= 0 else {
             return nil
         }
+        let paused = call.getBool("paused") ?? false
+        let elapsedMs = call.getDouble("elapsedMs") ?? 0
+        guard elapsedMs.isFinite, elapsedMs >= 0 else { return nil }
         let meters = call.getDouble("newGroundMeters")
         if let meters, !meters.isFinite || meters < 0 { return nil }
         var navigation: JourneyNavigation?
@@ -312,6 +398,8 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         return JourneyActivityAttributes.ContentState(
             distanceKm: distance,
             newGroundMeters: meters,
+            paused: paused,
+            activeStartedAt: Date().addingTimeInterval(-(elapsedMs / 1000)),
             updatedAt: Date(),
             finishedAt: finishedAt,
             navigation: finishedAt == nil ? navigation : nil,
