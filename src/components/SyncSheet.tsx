@@ -9,8 +9,10 @@ import { errorDiagnostic } from "../diagnostics";
 import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { JourneySettings } from "./JourneySettings";
+import type { JourneyPreferences } from "../journeyAutomation";
 import { useAppearance } from "../appearance";
-import { mdiHistory, mdiPaletteOutline } from "@mdi/js";
+import { mdiHistory, mdiPaletteOutline, mdiRecordCircleOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
 import { useEffect, useRef, useState } from "react";
@@ -54,6 +56,9 @@ import type {
 } from "../activityNotifications";
 
 type Props = {
+  journeyPreferences: JourneyPreferences;
+  onJourneyPreferencesChange: (preferences: JourneyPreferences) => Promise<void>;
+  journeyAutomationError: string;
   mapRewards: RewardState;
   highlightedMapReward: MapReward | null;
   onRequiredAchievementOpen: (id: PersonalAchievementId) => void;
@@ -170,6 +175,9 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 }
 
 export function SyncSheet({
+  journeyPreferences,
+  onJourneyPreferencesChange,
+  journeyAutomationError,
   mapRewards,
   highlightedMapReward,
   onRequiredAchievementOpen,
@@ -229,6 +237,7 @@ export function SyncSheet({
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
   const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
+  const [journeySettingsOpen, setJourneySettingsOpen] = useState(false);
   useEffect(() => {
     if (highlightedMapReward !== null) setAppearanceSheetOpen(true);
   }, [highlightedMapReward]);
@@ -355,6 +364,7 @@ export function SyncSheet({
       setNotificationSettingsSheetOpen(false);
       setAppearanceSheetOpen(false);
       setLanguageSheetOpen(false);
+      setJourneySettingsOpen(false);
       return;
     }
     if (!supabase) {
@@ -860,6 +870,11 @@ export function SyncSheet({
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
                 <LanguageButton onClick={() => setLanguageSheetOpen(true)} />
+                <button type="button" className="account-settings-link" data-testid="journey-settings-open" onClick={() => setJourneySettingsOpen(true)}>
+                  <span className="account-settings-link__mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiRecordCircleOutline} /></svg></span>
+                  <span><strong>{t("Journey recording")}</strong><small>{t("Automatic starts, pauses and stops")}</small></span>
+                  <ChevronIcon size={16} strokeWidth={2.3} />
+                </button>
                 <button
                   type="button"
                   className="account-settings-link"
@@ -976,6 +991,7 @@ export function SyncSheet({
                 </section>
               </div>
             )}
+            {journeySettingsOpen && <JourneySettings preferences={journeyPreferences} onChange={onJourneyPreferencesChange} monitoringError={journeyAutomationError} onBack={() => setJourneySettingsOpen(false)} onClose={() => { setJourneySettingsOpen(false); onClose(); }} />}
             {gpxImportSheetOpen && (
               <div
                 className="sheet-backdrop gpx-import-backdrop"

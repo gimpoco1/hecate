@@ -1,3 +1,3 @@
-"NSMotionUsageDescription" = "Hecate uses motion activity to manage GPS checks for discovery reminders. Motion activity is not saved or synced.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "Hecate uses background location during a journey you start, or when you enable discovery reminders, to suggest recording a journey through new areas. Reminder locations are not saved to your map or account.";
+"NSMotionUsageDescription" = "Hecate uses motion to detect walking and cycling for automatic journeys, pauses and discovery reminders. Motion is processed on this device.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Hecate uses background location for journeys you start, optional automatic journeys and discovery reminders. Automatic journeys temporarily buffer your route and save it after five continuous minutes of walking. Shorter buffers and reminder samples are not saved to your account.";
 "NSLocationWhenInUseUsageDescription" = "Hecate uses your location to show your position, map the places you explore during a journey, and suggest recording when discovery reminders are enabled.";

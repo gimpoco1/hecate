@@ -21,6 +21,8 @@ import { useNavigationScreen } from "./navigationScreen";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
+import { useJourneyAutomation } from "./useJourneyAutomation";
+import type { JourneySeed } from "./journeyAutomation";
 import { errorHaptic, journeyStartHaptic, selectionHaptic, successHaptic } from "./haptics";
 import { hasReachedRouteDestination, navigationCue, navigationRemaining, type NavigationCue, type NavigationRemaining } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
@@ -80,6 +82,8 @@ import {
 import { cityMilestoneProgress } from "./badges";
 import { createJourneyRecordingTracker } from "./journeyRecording";
 import {
+  JOURNEY_AUTO_START_NOTIFICATION_ID,
+  sendJourneyAutoStartNotification,
   JOURNEY_SPEED_STOP_MESSAGE,
   JOURNEY_SPEED_STOP_NOTIFICATION_ID,
   openJourneySpeedStopReport,
@@ -218,6 +222,8 @@ import {
   shouldStartJourneyDrag,
 } from "./journeyUi";
 import {
+  createAutomaticJourneyTracker,
+  createAutomaticMonitoringTracker,
   createForegroundLocationTracker,
   createLocationTracker,
   acquireForegroundLocation,
@@ -1469,8 +1475,45 @@ export default function App() {
   const activeWalkDistance = routeDistanceKm(
     activeWalkRef.current?.points ?? [],
   );
+  const progressCities = useMemo(() => {
+    const unique = new Map(discoveredCities.map((city) => [city.id, city]));
+    if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
+    return [...unique.values()];
+  }, [cityBoundary, discoveredCities]);
+  const automation = useJourneyAutomation({
+    ownerId: accountUserId,
+    walkId: activeWalkRef.current?.id ?? null,
+    startedAt: activeWalkRef.current?.startedAt ?? null,
+    ready: authReady && !discoveryLoading && !walkFinalizing && !journeySaveError &&
+      (discoveryHistoryReadyRef.current || Boolean(activeWalkRef.current && trackingUserRef.current === accountUserId)),
+    cities: progressCities,
+    onStart: (seed) => startRecordedJourney(seed),
+    onPause: async () => {
+      resetInactivityReminder();
+      selectionHaptic();
+      // Automatic journeys retain location callbacks until their end deadline; paused fixes are discarded.
+      if (automation.isAutomaticJourney()) return;
+      const tracker = trackerRef.current;
+      trackerRef.current = null;
+      await tracker?.stop();
+    },
+    onResume: () => {
+      if (activeWalkRef.current && !trackerRef.current) setTracking("requesting");
+      selectionHaptic();
+    },
+    onStop: async (finishedAt) => {
+      journeyFinishedAtRef.current = finishedAt;
+      await stopRecordedJourney();
+    },
+  });
   const activeWalkElapsedMs = activeWalkRef.current
-    ? Math.max(0, elapsedNow - activeWalkRef.current.startedAt)
+    ? Math.max(
+      0,
+      elapsedNow -
+      activeWalkRef.current.startedAt -
+      automation.pausedMs -
+      (automation.pausedAt === null ? 0 : Math.max(0, elapsedNow - automation.pausedAt)),
+    )
     : 0;
   const showActiveJourneyMetrics = tracking === "tracking";
   const displayedDistanceCounter = journeyDistanceCounter(activeWalkDistance);
@@ -1883,11 +1926,6 @@ export default function App() {
     journeyExpandedRef.current = citiesExpanded;
     card.dataset.expanded = String(citiesExpanded);
   }, [citiesExpanded, isCityScale]);
-  const progressCities = useMemo(() => {
-    const unique = new Map(discoveredCities.map((city) => [city.id, city]));
-    if (cityBoundary) unique.set(cityBoundary.id, cityBoundary);
-    return [...unique.values()];
-  }, [cityBoundary, discoveredCities]);
   useEffect(() => {
     setDiscoveryProgressReady(false);
     if (!accountUserId) {
@@ -2411,6 +2449,7 @@ export default function App() {
             REMINDER_NOTIFICATION_ID,
             REMINDER_TEST_NOTIFICATION_ID,
             JOURNEY_SPEED_STOP_NOTIFICATION_ID,
+            JOURNEY_AUTO_START_NOTIFICATION_ID,
             MORNING_INVITE_TEST_NOTIFICATION_ID,
             WEEKLY_RECAP_TEST_NOTIFICATION_ID,
             STREAK_REMINDER_TEST_NOTIFICATION_ID,
@@ -3077,9 +3116,8 @@ export default function App() {
     const backgroundReminder =
       nativeApp &&
       reminderMotionAllowed === true &&
-      reminderEnabled &&
       Boolean(accountUserId) &&
-      notificationPermissionReady === true;
+      (automation.preferences.mode === "manual" ? reminderEnabled && notificationPermissionReady === true : !automation.error);
     let disposed = false;
     let nativeActive = !nativeApp;
     let nativeStateKnown = !nativeApp;
@@ -3116,7 +3154,7 @@ export default function App() {
         const tracker =
           mode === "foreground"
             ? createForegroundLocationTracker()
-            : createReminderLocationTracker();
+            : automation.preferences.mode !== "manual" ? createAutomaticMonitoringTracker() : createReminderLocationTracker();
         foregroundTrackerRef.current = tracker;
         trackerMode = mode;
         if (mode === "foreground") setPassiveLocationStatus("requesting");
@@ -3153,7 +3191,7 @@ export default function App() {
                     : current,
                 );
               }
-              if (!reminderEnabled || !accountUserId) return;
+              if (!reminderEnabled || !accountUserId || automation.preferences.mode !== "manual") return;
               if (!discoveryHistoryReadyRef.current) {
                 reminderRef.current.reset();
                 return;
@@ -3302,6 +3340,8 @@ export default function App() {
     reminderEnabled,
     reminderMotionAllowed,
     tracking,
+    automation.preferences.mode,
+    automation.error,
   ]);
 
   useEffect(() => () => cityLookupAbortRef.current?.abort(), []);
@@ -3507,6 +3547,7 @@ export default function App() {
   }, [accountUserId, currentPoint, mapReadyGeneration]);
 
   const addPoint = (point: Coordinate) => {
+    automation.observeLocation();
     if (
       widgetStopRef.current &&
       widgetStopRef.current.walkId === activeWalkRef.current?.id
@@ -3524,6 +3565,7 @@ export default function App() {
       }
       return;
     }
+    if (!automation.acceptPoint()) return;
     latestPassivePointRef.current = point;
     const navigationRoute = plannedJourneyRouteRef.current;
     if (navigationRoute && !simulationRouteRef.current) {
@@ -3722,6 +3764,7 @@ export default function App() {
       widgetStopRef.current?.walkId === active?.id
         ? widgetStopRef.current
         : null;
+    if (widgetStop) automation.manualStop();
     const finishedAt = Math.max(
       active?.startedAt ?? 0,
       widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now(),
@@ -4437,20 +4480,20 @@ export default function App() {
     });
   };
 
-  const toggleTracking = async () => {
-    if (tracking === "tracking") {
-      resetInactivityReminder();
-      const tracker = trackerRef.current;
-      trackerRef.current = null;
-      reminderRef.current.reset();
-      setTracking("idle");
-      setPassiveLocationStatus("idle");
-      void Promise.resolve(tracker?.stop()).catch(() => undefined);
-      await saveJourneyWithFeedback();
-      return;
-    }
+  const stopRecordedJourney = async (): Promise<void> => {
+    resetInactivityReminder();
+    const tracker = trackerRef.current;
+    await tracker?.stop();
+    trackerRef.current = null;
+    reminderRef.current.reset();
+    setTracking("idle");
+    setPassiveLocationStatus("idle");
+    await saveJourneyWithFeedback();
+  };
+
+  const startRecordedJourney = async (seed: JourneySeed): Promise<void> => {
     void requestDeviceHeadingPermission();
-    if (walkFinalizing || journeySaveError) return;
+    if (trackingStateRef.current === "tracking" || trackingStateRef.current === "requesting" || activeWalkRef.current || walkFinalizing || journeySaveError) return;
     if (!accountUserId) {
       setSyncOpen(true);
       return;
@@ -4483,7 +4526,7 @@ export default function App() {
       points: startingPoints,
       discoveryDistance,
     };
-    const startedAt = Date.now();
+    const startedAt = seed.startedAt;
     activeWalkRef.current = { id: walkId, startedAt, points: [] };
     setElapsedNow(startedAt);
     trackingUserRef.current = accountUserId;
@@ -4493,7 +4536,7 @@ export default function App() {
     });
     setJourneyStopMessage(null);
     const tracker = createJourneyRecordingTracker(
-      createLocationTracker(walkId),
+      seed.source === "automatic" ? createAutomaticJourneyTracker(walkId) : createLocationTracker(walkId),
       progressCities,
     );
     trackerRef.current = tracker;
@@ -4502,6 +4545,8 @@ export default function App() {
     setTracking("tracking");
     let trackerFailed = false;
     try {
+      automation.markStarted(walkId, seed.source);
+      for (const point of seed.points) addPoint(point);
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
@@ -4530,6 +4575,11 @@ export default function App() {
       });
       if (trackerFailed || trackerRef.current !== tracker) return;
       journeyStartHaptic();
+      if (seed.source === "automatic" && Capacitor.isNativePlatform()) {
+        void sendJourneyAutoStartNotification(LocalNotifications, accountUserId, walkId,
+          () => accountUserIdRef.current === accountUserId && activeWalkRef.current?.id === walkId,
+        ).catch((error) => console.error("Could not notify automatic journey start", { walkId, error: errorDiagnostic(error) }));
+      }
     } catch (error) {
       // A user can stop while native watcher registration is still pending.
       // Do not let that stale rejection overwrite the idle state or clear a
@@ -4541,11 +4591,42 @@ export default function App() {
       resetInactivityReminder();
       trackerRef.current = null;
       void Promise.resolve(tracker.stop()).catch(() => undefined);
-      activeWalkRef.current = null;
-      trackingUserRef.current = null;
-      saveWalkJournal(accountUserId, pendingWalksRef.current, null);
+      setJourneyStopMessage(error instanceof Error ? error.message : t("Could not start journey recording."));
+      if (seed.points.length >= 2) await finalizeRecordedWalk();
+      else {
+        activeWalkRef.current = null;
+        trackingUserRef.current = null;
+        saveWalkJournal(accountUserId, pendingWalksRef.current, null);
+      }
       setPassiveLocationStatus("idle");
       setTracking("unavailable");
+    }
+  };
+
+  const toggleTracking = async (): Promise<void> => {
+    try {
+      if (tracking === "tracking") {
+        automation.manualStop();
+        await stopRecordedJourney();
+        return;
+      }
+      await startRecordedJourney({ source: "manual", startedAt: Date.now(), points: [] });
+    } catch (error) {
+      console.error("Could not change journey recording state", { error: errorDiagnostic(error) });
+      setJourneyStopMessage(error instanceof Error ? error.message : t("Could not change journey recording. Keep Hecate open and try again."));
+      errorHaptic();
+    }
+  };
+
+  const toggleJourneyPause = async (): Promise<void> => {
+    try {
+      if (tracking !== "tracking") return;
+      if (automation.paused) automation.resumeJourney();
+      else await automation.pauseJourney();
+    } catch (error) {
+      console.error("Could not pause journey recording", { error: errorDiagnostic(error) });
+      setJourneyStopMessage(error instanceof Error ? error.message : t("Could not change journey recording. Keep Hecate open and try again."));
+      errorHaptic();
     }
   };
 
@@ -4679,7 +4760,7 @@ export default function App() {
       return;
     const restoredWalkId = activeWalkRef.current.id;
     const tracker = createJourneyRecordingTracker(
-      createLocationTracker(restoredWalkId),
+      automation.isAutomaticJourney() ? createAutomaticJourneyTracker(restoredWalkId) : createLocationTracker(restoredWalkId),
       progressCities,
     );
     trackerRef.current = tracker;
@@ -5989,7 +6070,9 @@ export default function App() {
         </aside>
       )}
 
+      {automation.paused && <div className="journey-auto-status" role="status" data-testid="journey-auto-paused">{t("Journey paused · resume walking or cycling to continue")}</div>}
       <div className="app-error-stack" data-testid="app-error-stack">
+        {automation.error && <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-automation-error"><span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span><div className="account-toast__message"><p>{automation.error}</p><button className="app-error-toast__action" type="button" onClick={() => setSyncOpen(true)}>{t("Journey recording")}</button></div></aside>}
         {(journeyStopMessage || (tracking === "unavailable" && !locationErrorDismissed)) && (
           <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-error-toast">
             <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
@@ -6234,7 +6317,7 @@ export default function App() {
               className={`journey-card__summary${showActiveJourneyMetrics ? " journey-card__summary--tracking" : ""}`}
             >
               <div className="eyebrow">
-                {showActiveJourneyMetrics ? t("Exploring…") : t("Your discovery")}
+                {showActiveJourneyMetrics ? automation.paused ? t("Paused") : t("Exploring…") : t("Your discovery")}
               </div>
               <div className="discovery-metrics">
                 {showActiveJourneyMetrics ? (
@@ -6291,50 +6374,86 @@ export default function App() {
                 )}
               </div>
             </div>
-            <button
-              data-testid="journey-control"
-              className={`discovery-control discovery-control--${tracking}`}
-              onClick={toggleTracking}
-              onPointerDown={(event) => event.stopPropagation()}
-              disabled={
-                !authReady ||
-                discoveryLoading ||
-                tracking === "requesting" ||
-                walkFinalizing ||
-                Boolean(journeySaveError)
-              }
-              aria-label={
-                !accountUserId
-                  ? t("Sign in to start discovering")
-                  : tracking === "tracking"
-                    ? t("Stop discovering")
+            {tracking === "tracking" ? (
+              <div className="journey-controls">
+                <button
+                  data-testid="journey-pause-control"
+                  className="discovery-control discovery-control--pause"
+                  onClick={toggleJourneyPause}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  disabled={
+                    !authReady ||
+                    discoveryLoading ||
+                    walkFinalizing ||
+                    Boolean(journeySaveError)
+                  }
+                  aria-label={automation.paused ? t("Resume discovering") : t("Pause discovering")}
+                  title={automation.paused ? t("Resume discovering") : t("Pause discovering")}
+                >
+                  {automation.paused ? (
+                    <span className="play-triangle" />
+                  ) : (
+                    <span className="pause-bars" />
+                  )}
+                </button>
+                <button
+                  data-testid="journey-control"
+                  className="discovery-control discovery-control--tracking"
+                  onClick={toggleTracking}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  disabled={
+                    !authReady ||
+                    discoveryLoading ||
+                    walkFinalizing ||
+                    Boolean(journeySaveError)
+                  }
+                  aria-label={!accountUserId ? t("Sign in to start discovering") : t("Stop discovering")}
+                  title={!accountUserId ? t("Sign in to discover") : t("Stop discovering")}
+                >
+                  <span className="stop-square" />
+                </button>
+              </div>
+            ) : (
+              <button
+                data-testid="journey-control"
+                className={`discovery-control discovery-control--${tracking}`}
+                hidden={automation.preferences.mode === "automatic" && tracking !== "requesting"}
+                onClick={toggleTracking}
+                onPointerDown={(event) => event.stopPropagation()}
+                disabled={
+                  !authReady ||
+                  discoveryLoading ||
+                  tracking === "requesting" ||
+                  walkFinalizing ||
+                  Boolean(journeySaveError)
+                }
+                aria-label={
+                  !accountUserId
+                    ? t("Sign in to start discovering")
                     : walkFinalizing
                       ? t("Finishing your discovery")
                       : tracking === "requesting"
                         ? t("Finding your location")
                         : t("Start discovering")
-              }
-              title={
-                !accountUserId
-                  ? t("Sign in to discover")
-                  : tracking === "tracking"
-                    ? t("Stop discovering")
+                }
+                title={
+                  !accountUserId
+                    ? t("Sign in to discover")
                     : walkFinalizing
                       ? t("Finishing your discovery")
                       : t("Start discovering")
-              }
-            >
-              {tracking === "tracking" ? (
-                <span className="stop-square" />
-              ) : tracking === "requesting" || walkFinalizing ? (
-                <span className="control-spinner" />
-              ) : (
-                <span className="play-triangle" />
-              )}
-            </button>
+                }
+              >
+                {tracking === "requesting" || walkFinalizing ? (
+                  <span className="control-spinner" />
+                ) : (
+                  <span className="play-triangle" />
+                )}
+              </button>
+            )}
           </div>
           {navigationGuidance}
-          {tracking === "tracking" && (
+          {tracking === "tracking" && !automation.paused && (
             <div className="tracking-notice">
               <span />
               {nativeApp
@@ -6417,6 +6536,9 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          journeyPreferences={automation.preferences}
+          onJourneyPreferencesChange={automation.changePreferences}
+          journeyAutomationError={automation.error}
           mapRewards={mapRewards}
           highlightedMapReward={highlightedMapReward}
           onRequiredAchievementOpen={id => {

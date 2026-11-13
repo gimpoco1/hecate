@@ -1,3 +1,3 @@
-"NSMotionUsageDescription" = "Hecate koristi podatke o kretanju za upravljanje GPS provjerama za podsjetnike za istraživanje. Ti se podaci ne spremaju niti sinkroniziraju.";
-"NSLocationAlwaysAndWhenInUseUsageDescription" = "Hecate koristi lokaciju u pozadini tijekom putovanja koje pokreneš ili kada uključiš podsjetnike, kako bi predložio snimanje putovanja novim područjima. Lokacije podsjetnika ne spremaju se na kartu ili račun.";
+"NSMotionUsageDescription" = "Hecate koristi kretanje za prepoznavanje hodanja i vožnje biciklom, automatska istraživanja, pauze i podsjetnike. Obrađuje se na ovom uređaju.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Hecate koristi lokaciju u pozadini za ručna istraživanja, neobavezna automatska istraživanja i podsjetnike. Automatska istraživanja privremeno čuvaju rutu i spremaju je nakon pet minuta neprekinutog hodanja. Kraće se rute i uzorci podsjetnika ne spremaju na račun.";
 "NSLocationWhenInUseUsageDescription" = "Hecate koristi tvoju lokaciju za prikaz položaja, dodavanje mjesta koja istražuješ tijekom putovanja na kartu i prijedlog za snimanje kada su podsjetnici uključeni.";

@@ -5,6 +5,7 @@ import type { AppLauncher } from "@capacitor/app-launcher";
 import { JOURNEY_SPEED_STOP_ACTION_TYPE_ID, registerNotificationActions } from "./notificationActions";
 
 export const JOURNEY_SPEED_STOP_NOTIFICATION_ID = 1046;
+export const JOURNEY_AUTO_START_NOTIFICATION_ID = 1047;
 export const JOURNEY_SPEED_STOP_MESSAGE =
   "Your journey was stopped because your speed was too high for walking. Your progress up to that point has been saved.";
 
@@ -17,6 +18,34 @@ export type JourneySpeedStopReport = {
   userId: string;
   walkId: string;
 };
+
+/** Confirm a qualified automatic journey without prompting for notification access. */
+export async function sendJourneyAutoStartNotification(
+  client: JourneyNotificationClient,
+  userId: string,
+  walkId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (!isCurrent()) return;
+  const permission = await client.checkPermissions();
+  if (permission.display !== "granted") return;
+  for (let attempt = 1; ; attempt += 1) {
+    if (!isCurrent()) return;
+    try {
+      await client.schedule({ notifications: [{
+        id: JOURNEY_AUTO_START_NOTIFICATION_ID,
+        title: t("Your journey started automatically"),
+        body: t("Five minutes of walking detected. Your route includes the beginning of your walk."),
+        extra: { kind: "automatic-journey", userId, walkId },
+        threadIdentifier: "hecate-journeys",
+      }] });
+      return;
+    } catch (error) {
+      console.warn("Could not notify automatic journey start", { walkId, attempt, error: errorDiagnostic(error) });
+      if (attempt === 3) throw error;
+    }
+  }
+}
 
 /** Open a support draft for the user to review and send, without route coordinates. */
 export async function openJourneySpeedStopReport(

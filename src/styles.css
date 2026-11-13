@@ -850,6 +850,12 @@ button {
   flex: 0 0 48px;
   align-self: center;
 }
+.journey-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .discovery-control:hover {
   transform: scale(1.04);
 }
@@ -860,6 +866,17 @@ button {
 .discovery-control--tracking {
   color: white;
   background: var(--theme-surface-strong, #6a392c);
+}
+.discovery-control--pause {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--forest);
+}
+.discovery-control--pause:hover {
+  transform: none;
 }
 .play-triangle {
   width: 0;
@@ -874,6 +891,27 @@ button {
   height: 13px;
   border-radius: 2px;
   background: currentColor;
+}
+.pause-bars {
+  width: 14px;
+  height: 16px;
+  position: relative;
+}
+.pause-bars::before,
+.pause-bars::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 16px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.pause-bars::before {
+  left: 2px;
+}
+.pause-bars::after {
+  right: 2px;
 }
 .control-spinner {
   width: 18px;
@@ -7145,3 +7183,16 @@ button {
 
 .achievement-card__rotate-icon { position: absolute; top: 12px; right: 12px; color: var(--theme-text-muted, #63716b); opacity: .7; pointer-events: none; }
 .achievement-card__back .achievement-card__rotate-icon { color: rgba(255, 255, 255, .85); }
+
+.journey-settings-sheet > p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.journey-mode-options legend { margin-bottom: 10px; }
+.journey-mode-symbol { flex: 0 0 20px; color: var(--muted); }
+.journey-mode-copy { flex: 1; min-width: 0; }
+.journey-mode-copy strong { font-size: 13px; font-weight: 600; }
+.journey-mode-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.journey-mode-options label:has(input:checked) .journey-mode-symbol { color: var(--forest); }
+.journey-mode-options label:has(input:disabled) { opacity: .5; cursor: default; }
+.journey-end-options.appearance-settings { padding: 12px 0 0; }
+.journey-settings-note { margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+.journey-auto-status { position: absolute; left: 16px; right: 16px; bottom: calc(var(--journey-card-visible-height, 104px) + 16px); z-index: 9; padding: 10px 14px; border-radius: 14px; background: var(--theme-surface-alt, #e9ede3); color: var(--forest); box-shadow: 0 4px 18px #0002; font-size: 12px; text-align: center; }
