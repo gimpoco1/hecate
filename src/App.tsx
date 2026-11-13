@@ -44,7 +44,8 @@ import {
   useState,
 } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
+import { NativeMap, supportsNative3DAppleMaps } from "./nativeMap";
 import { ActionSheet, ActionSheetButtonStyle } from "@capacitor/action-sheet";
 import { AppLauncher } from "@capacitor/app-launcher";
 import { Browser } from "@capacitor/browser";
@@ -878,6 +879,7 @@ export default function App() {
   });
   const [accountUserId, setAccountUserId] = useState<string | null>(null);
   const [accountUserEmail, setAccountUserEmail] = useState("");
+  const [accountInitial, setAccountInitial] = useState("");
   const [authReady, setAuthReady] = useState(!isSyncConfigured);
   useEffect(() => {
     const onAuthError = (): void => {
@@ -925,6 +927,21 @@ export default function App() {
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [perspectiveView, setPerspectiveView] = useState(false);
+  const [nativeMapBusy, setNativeMapBusy] = useState(false);
+  const native3DAppleMaps = supportsNative3DAppleMaps();
+  useEffect(() => {
+    if (!native3DAppleMaps) return;
+    let disposed = false;
+    let listener: PluginListenerHandle | null = null;
+    void NativeMap.addListener("dismissed", () => setPerspectiveView(false)).then(async (handle) => {
+      if (disposed) await handle.remove();
+      else listener = handle;
+    }).catch((error: Error) => setJourneyStopMessage(error.message));
+    return () => {
+      disposed = true;
+      void listener?.remove().catch((error: Error) => console.error("Apple Maps listener cleanup failed", { error }));
+    };
+  }, [native3DAppleMaps]);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
   const [activeNavigationRoute, setActiveNavigationRoute] = useState<PlannedRoute | null>(null);
   const navigationModeRef = useRef<TransportMode>("pedestrian");
@@ -5177,16 +5194,25 @@ export default function App() {
     [cells, settleJourneySheet],
   );
 
-  const toggleMapPerspective = () => {
+  const toggleMapPerspective = async (): Promise<void> => {
     const map = mapRef.current;
-    if (!map) return;
-    const nextPerspective = !perspectiveView;
-    setPerspectiveView(nextPerspective);
-    map.easeTo({
-      pitch: nextPerspective ? 52 : 0,
-      duration: 900,
-      essential: true,
-    });
+    if (!map || nativeMapBusy) return;
+    setNativeMapBusy(true);
+    try {
+      if (perspectiveView) {
+        await NativeMap.dismiss();
+        setPerspectiveView(false);
+      } else {
+        const center = map.getCenter();
+        await NativeMap.present({ latitude: center.lat, longitude: center.lng, zoom: map.getZoom(), bearing: map.getBearing(), pitch: 55, closeLabel: t("Switch to 2D view") });
+        setPerspectiveView(true);
+      }
+    } catch (error) {
+      console.error("Native Apple Maps presentation failed", { error: errorDiagnostic(error) });
+      setJourneyStopMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setNativeMapBusy(false);
+    }
   };
 
   const showGlobe = () => {
@@ -5605,6 +5631,7 @@ export default function App() {
         />}
       </AnimatePresence>
       <DiscoveryMap
+        userInitial={accountInitial}
         onReady={() => setMapReadyGeneration(generation => generation + 1)}
         initialCenter={initialLocation ? [initialLocation.lng, initialLocation.lat] : undefined}
         initialZoom={initialLocation ? 14 : undefined}
@@ -6128,9 +6155,10 @@ export default function App() {
         >
           <FogIcon size={21} struck={mode === "discover"} />
         </button>
-        <button
+        {native3DAppleMaps && <button
           className={perspectiveView ? "active" : ""}
-          onClick={toggleMapPerspective}
+          onClick={() => void toggleMapPerspective()}
+          disabled={nativeMapBusy}
           aria-label={
             perspectiveView ? t("Switch to 2D view") : t("Switch to 3D view")
           }
@@ -6141,7 +6169,7 @@ export default function App() {
             size={21}
             dimension={perspectiveView ? "2d" : "3d"}
           />
-        </button>
+        </button>}
       </nav>
 
       {favoriteDraft && (
@@ -6395,6 +6423,7 @@ export default function App() {
       >
         <SyncSheet
           open={syncOpen}
+          onAccountInitialChange={setAccountInitial}
           mapRewards={mapRewards}
           highlightedMapReward={highlightedMapReward}
           onRequiredAchievementOpen={id => {

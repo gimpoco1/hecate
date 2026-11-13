@@ -74,11 +74,7 @@
 :root[data-theme="dark"] .favorite-editor__place-icon,
 :root[data-theme="dark"] .account-card__avatar,
 :root[data-theme="dark"] .account-favorites__category-icon { background: #244440; color: #e1f28b; }
-:root[data-theme="dark"] .user-marker { background: #ffffff; }
-:root[data-theme="dark"] .user-marker--located .user-marker__dot,
-:root[data-theme="dark"] .user-marker--tracking .user-marker__dot { background: #0a84ff; border-color: #d9efff; }
 
-:root[data-theme="dark"] .map-stage > .map.maplibregl-map { background: #131f30; }
 :root[data-theme="dark"] .achievement-card__progress { background: rgba(240, 244, 235, 0.18); }
 :root[data-theme="dark"] .achievement-card__progress span { background: var(--lime); }
 

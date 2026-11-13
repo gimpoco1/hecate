@@ -951,7 +951,7 @@
   "privacy.useHeading": "Como usamos as informações",
   "privacy.use": "Usamos os dados para fornecer a app: autenticar, guardar e sincronizar descobertas entre dispositivos com sessão iniciada, mostrar mapas e responder a pedidos de suporte. Não vendemos o histórico de localização nem o usamos para publicidade ou rastreio entre apps.",
   "privacy.storageHeading": "Onde são guardadas as informações",
-  "privacy.storage": "Os dados de conta, rotas e exploração são guardados na base de dados Supabase da tua conta. O Hecate usa mapas do OpenFreeMap. Estes fornecedores tratam os dados apenas para fornecer os seus serviços.",
+  "privacy.storage": "Os dados de conta, rotas e exploração são guardados na base de dados Supabase da tua conta. O Hecate usa Apple Maps para apresentar mapas e dados do OpenFreeMap para criar ilustrações de cidades que podes exportar. Os fornecedores de mapas recebem as áreas pedidas pela app e informações de ligação, como o teu endereço IP. Estes fornecedores tratam os dados necessários para prestar os seus serviços.",
   "privacy.choicesHeading": "As tuas opções e eliminação",
   "privacy.choices": "Podes parar um percurso ativo a qualquer momento e desativar lembretes em Conta e sincronização. Podes também controlar permissões de localização e notificações nas definições do dispositivo.",
   "privacy.deletion": "Para eliminar a conta e as descobertas e rotas associadas, abre Conta e sincronização no Hecate, seleciona <strong>Eliminar conta</strong> e confirma. A eliminação é permanente e irreversível. Se não conseguires aceder à app, contacta-nos no endereço abaixo.",

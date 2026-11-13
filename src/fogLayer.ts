@@ -390,7 +390,7 @@ void main() {
   float proximity = texture(u_mask, v_uv).r;
   float distanceInRadii = (1.0 - proximity) * 3.0;
   float revealed = 1.0 - smoothstep(1.0, 1.87, distanceInRadii);
-  float fogAlpha = mix(0.9, 0.96, u_monochrome) * u_fog_opacity * (1.0 - revealed);
+  float fogAlpha = mix(mix(0.9, 0.94, u_dark_mode), 0.96, u_monochrome) * u_fog_opacity * (1.0 - revealed);
 
   float contourRange = step(1.08, distanceInRadii) * step(distanceInRadii, 2.99);
   float contourPhase = fract((distanceInRadii - 1.08) / 0.16);
@@ -406,14 +406,14 @@ void main() {
     contourLine * contourRange * contourStrength * u_fog_opacity;
   float edgeHazeAlpha =
     (1.0 - smoothstep(0.0, 0.62, abs(distanceInRadii - 1.28))) *
-    mix(0.08, 0.14, u_dark_mode) * u_fog_opacity;
+    mix(0.08, 0.06, u_dark_mode) * u_fog_opacity;
   float glowAlpha =
     (1.0 - smoothstep(0.0, 0.24, abs(distanceInRadii - 0.98))) *
-    mix(0.16, 0.32, u_dark_mode) * u_fog_opacity;
+    mix(0.05, 0.08, u_dark_mode) * u_fog_opacity;
 
-  vec3 fogColor = mix(vec3(0.855, 0.878, 0.855), vec3(0.075, 0.115, 0.175), u_dark_mode);
-  vec3 edgeHazeColor = mix(vec3(0.490, 0.541, 0.510), vec3(0.58, 0.72, 0.43), u_dark_mode);
-  vec3 contourColor = mix(vec3(0.259, 0.318, 0.290), vec3(0.35, 0.46, 0.60), u_dark_mode);
+  vec3 fogColor = mix(vec3(0.62, 0.68, 0.66), vec3(0.20, 0.28, 0.34), u_dark_mode);
+  vec3 edgeHazeColor = mix(vec3(0.31, 0.41, 0.38), vec3(0.34, 0.43, 0.50), u_dark_mode);
+  vec3 contourColor = mix(vec3(0.20, 0.31, 0.28), vec3(0.35, 0.46, 0.60), u_dark_mode);
   vec3 glowColor = mix(vec3(0.745, 0.878, 0.290), vec3(0.74, 0.89, 0.49), u_dark_mode);
   if (u_monochrome > 0.5) {
     fogColor = vec3(0.66);
@@ -422,7 +422,7 @@ void main() {
     glowColor = vec3(0.48);
   }
   if (u_celestial > 0.5) {
-    fogColor = vec3(0.055, 0.040, 0.115);
+    fogColor = vec3(0.17, 0.14, 0.29);
     edgeHazeColor = vec3(0.42, 0.30, 0.62);
     contourColor = vec3(0.51, 0.40, 0.68);
     glowColor = vec3(1.0, 0.65, 0.24);

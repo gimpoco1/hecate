@@ -951,7 +951,7 @@
   "privacy.useHeading": "How we use information",
   "privacy.use": "We use your information to provide the app: authenticate you, save and synchronize your discoveries across your signed-in devices, show maps, and respond to support requests. We do not sell your location history or use it for advertising or cross-app tracking.",
   "privacy.storageHeading": "Where information is stored",
-  "privacy.storage": "Account, route, and discovery data are stored in our Supabase-backed database for your signed-in account. Hecate uses OpenFreeMap map tiles to display the map. These providers process data only as needed to provide their services.",
+  "privacy.storage": "Account, route, and discovery data are stored in our Supabase-backed database for your signed-in account. Hecate uses Apple Maps to display maps and OpenFreeMap data to create exportable city artwork. Map providers receive the map regions requested by the app and connection information such as your IP address. These providers process data as needed to provide their services.",
   "privacy.choicesHeading": "Your choices and deletion",
   "privacy.choices": "You can stop an active journey at any time and turn discovery reminders off in Account &amp; sync. You can also control location and notification permissions in your device settings.",
   "privacy.deletion": "To delete your account and the discoveries and routes associated with it, open Hecate’s account and sync panel, select <strong>Delete account</strong>, and confirm. Deletion is permanent and cannot be undone. If you cannot access the app, contact us at the address below.",

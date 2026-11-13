@@ -60,6 +60,7 @@ type Props = {
   onSelectMapReward: (reward: MapReward) => void;
   onViewMapReward: (reward: MapReward) => void;
   open: boolean;
+  onAccountInitialChange: (initial: string) => void;
   returnHighlight: "history" | "stats" | null;
   onReturnHighlightEnd: () => void;
   initialAuthIntent?: PasswordIntent;
@@ -169,6 +170,18 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
   }
 }
 
+async function requestAccountProfile(): Promise<Awaited<ReturnType<typeof loadMyLeaderboardProfile>>> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await loadMyLeaderboardProfile();
+    } catch (error) {
+      if (attempt === 3) throw error;
+      console.warn("Account profile request failed; retrying", { attempt, error: errorDiagnostic(error) });
+    }
+  }
+  throw new Error("Account profile request exhausted its attempts.");
+}
+
 export function SyncSheet({
   mapRewards,
   highlightedMapReward,
@@ -176,6 +189,7 @@ export function SyncSheet({
   onSelectMapReward,
   onViewMapReward,
   open,
+  onAccountInitialChange,
   returnHighlight,
   onReturnHighlightEnd,
   initialAuthIntent = "signin",
@@ -304,9 +318,10 @@ export function SyncSheet({
   const [autoUpdatesEnabled, setAutoUpdatesEnabled] = useState(
     isAutomaticUpdatesEnabled,
   );
-  const [publishedDisplayName, setPublishedDisplayName] = useState<
-    string | null
-  >(null);
+  const [publishedProfile, setPublishedProfile] = useState<{
+    userId: string;
+    displayName: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!keyboardInset) return;
@@ -357,6 +372,9 @@ export function SyncSheet({
       setLanguageSheetOpen(false);
       return;
     }
+  }, [open]);
+
+  useEffect(() => {
     if (!supabase) {
       setAuthLoading(false);
       return;
@@ -373,29 +391,40 @@ export function SyncSheet({
       setMessageTone("error");
       setAuthLoading(false);
     });
-  }, [open]);
+  }, []);
 
   useEffect(() => {
-    if (!open || !user) {
-      setPublishedDisplayName(null);
+    if (!user) {
+      setPublishedProfile(null);
       return;
     }
 
     let active = true;
-    void loadMyLeaderboardProfile()
+    void requestAccountProfile()
       .then((profile) => {
         if (!active) return;
-        setPublishedDisplayName(profile?.displayName ?? null);
+        setPublishedProfile(profile ? { userId: user.id, displayName: profile.displayName } : null);
       })
-      .catch(() => {
+      .catch((error: Error) => {
         if (!active) return;
-        setPublishedDisplayName(null);
+        console.error("Account profile could not be loaded", { userId: user.id, error: errorDiagnostic(error) });
+        setMessage(error.message);
+        setMessageTone("error");
       });
 
     return () => {
       active = false;
     };
-  }, [open, user]);
+  }, [user]);
+
+  const accountDisplayName = user
+    ? displayNameForUser(user, publishedProfile?.userId === user.id ? publishedProfile.displayName : null)
+    : "";
+  const accountEmail = user?.email ?? t("Signed-in account");
+  const accountInitial = (accountDisplayName || accountEmail).trim().charAt(0).toUpperCase();
+  useEffect(() => {
+    onAccountInitialChange(user ? accountInitial : "");
+  }, [accountInitial, onAccountInitialChange, user]);
 
   if (!open) return null;
 
@@ -516,14 +545,6 @@ export function SyncSheet({
     }
   };
 
-  const accountDisplayName = user
-    ? displayNameForUser(user, publishedDisplayName)
-    : "";
-  const accountEmail = user?.email ?? t("Signed-in account");
-  const accountInitial = (accountDisplayName || accountEmail)
-    .trim()
-    .charAt(0)
-    .toUpperCase();
   const favoriteCollectionCount = new Set(
     favoritePlaces.map((place) => place.icon),
   ).size;

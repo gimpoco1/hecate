@@ -31,6 +31,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@apple/mapkit-loader": "^1.0.0",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/action-sheet": "^8.1.1",
     "@capacitor/android": "^8.5.3",

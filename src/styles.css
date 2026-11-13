@@ -161,14 +161,9 @@ button {
   inset: 0;
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(
-      circle at 52% 58%,
-      rgba(var(--theme-surface-alt-rgb, 217, 242, 106), 0.2) 0,
-      rgba(var(--theme-surface-alt-rgb, 217, 242, 106), 0.06) 28%,
-      transparent 48%
-    ),
-    linear-gradient(155deg, var(--theme-surface-alt, #e9eee7) 0%, var(--theme-surface-alt, #ccd9cf) 52%, var(--theme-surface-alt, #a8bdb1) 100%);
+  background: transparent;
+  z-index: 1;
+  pointer-events: none;
 }
 .topbar {
   position: absolute;
@@ -2368,27 +2363,26 @@ button {
 .user-marker {
   position: relative;
   isolation: isolate;
-  width: 27px;
-  height: 27px;
-  border-radius: 50%;
-  background: var(--theme-surface, white);
-  padding: 4px;
-  box-shadow:
-    0 3px 15px rgba(20, 54, 42, 0.35),
-    0 0 0 5px rgba(109, 124, 116, 0.24);
+  width: 36px;
+  height: 40px;
+  border: 4px solid #86cffa;
+  border-radius: 46% 46% 44% 44%;
+  background: #25445d;
+  color: #fffdf7;
+  box-shadow: 0 2px 5px rgba(24, 56, 78, .28), 0 0 0 1px rgba(42, 106, 148, .12);
 }
 .user-marker__direction {
   position: absolute;
   z-index: -1;
   left: 50%;
   bottom: 50%;
-  width: 42px;
-  height: 44px;
+  width: 72px;
+  height: 90px;
+  color: #69bbf0;
   visibility: hidden;
   opacity: 0;
   transform: translate(-50%, 0) rotate(var(--user-heading, 0deg));
   transform-origin: 50% 100%;
-  transition: transform 180ms linear;
   pointer-events: none;
 }
 .user-marker__direction svg {
@@ -2399,31 +2393,22 @@ button {
 }
 .user-marker--has-heading .user-marker__direction {
   visibility: visible;
-  opacity: 1;
+  opacity: .32;
 }
 .user-marker__dot {
   position: relative;
   z-index: 1;
-  display: block;
+  display: grid;
+  place-items: center;
   width: 100%;
   height: 100%;
-  border-radius: 50%;
-  background: var(--theme-surface-alt, #7d8983);
-  border: 3px solid var(--theme-border, #d7ddd9);
-  transition:
-    background 180ms ease,
-    border-color 180ms ease;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1;
 }
-.user-marker--located,
-.user-marker--tracking {
-  box-shadow:
-    0 3px 15px rgba(20, 54, 42, 0.35),
-    0 0 0 5px rgba(10, 132, 255, 0.2);
-}
-.user-marker--located .user-marker__dot,
-.user-marker--tracking .user-marker__dot {
-  background: var(--theme-surface-blue, #0a84ff);
-  border-color: var(--theme-border, #d9efff);
+.user-marker--idle {
+  border-color: #aac7d9;
+  background: #526a7c;
 }
 
 .favorite-marker {
@@ -7145,3 +7130,42 @@ button {
 
 .achievement-card__rotate-icon { position: absolute; top: 12px; right: 12px; color: var(--theme-text-muted, #63716b); opacity: .7; pointer-events: none; }
 .achievement-card__back .achievement-card__rotate-icon { color: rgba(255, 255, 255, .85); }
+
+.apple-basemap {
+  position: absolute;
+  inset: 0;
+}
+.map-provider-error {
+  position: absolute;
+  z-index: 3;
+  inset: 50% 24px auto;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--theme-surface, #f4f0e7);
+  color: var(--theme-text, #233a31);
+}
+
+/* Keep Apple's logo and legal control visible and clickable above the fog. */
+.map-stage > .map .maplibregl-canvas {
+  pointer-events: auto;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 112px 100%, 112px calc(100% - 30px), 0 calc(100% - 30px));
+}
+.map-stage > .map .maplibregl-marker {
+  pointer-events: auto;
+}
+.saved-place-map-preview__overlay {
+  pointer-events: none;
+}
+/* Leave highlight headroom before tinting so streets and building edges do not clip to white. */
+.map-stage[data-map-theme="light"] .apple-basemap,
+.saved-place-map-preview[data-map-theme="light"] .apple-basemap { filter: brightness(.92) contrast(1.18); }
+.map-stage[data-map-theme="dark"] .apple-basemap,
+.saved-place-map-preview[data-map-theme="dark"] .apple-basemap { filter: brightness(1.18) contrast(1.1); }
+.map-stage[data-map-reward="paper"] .apple-basemap { filter: brightness(.90) contrast(1.22) grayscale(1); }
+.map-stage[data-map-reward="parchment"] .apple-basemap { filter: brightness(.87) contrast(1.18) sepia(.18) saturate(.72); }
+.map-stage[data-map-reward="midnight"] .apple-basemap { filter: brightness(1.18) contrast(1.1) hue-rotate(24deg) saturate(.85); }
+.map-stage[data-map-reward="woodland"] .apple-basemap { filter: brightness(.88) contrast(1.18) sepia(.08) hue-rotate(22deg) saturate(.8); }
+.map-stage[data-map-reward="tidal"] .apple-basemap { filter: brightness(.88) contrast(1.18) sepia(.12) saturate(.65) hue-rotate(145deg); }
+.map-stage[data-map-reward="ember"] .apple-basemap { filter: brightness(1.18) contrast(1.1) sepia(.16) hue-rotate(315deg); }
+.map-stage[data-map-reward="aurora"] .apple-basemap { filter: brightness(1.18) contrast(1.1) hue-rotate(325deg) saturate(1.1); }
+.map-stage[data-map-reward="frontier"] .apple-basemap { filter: brightness(.87) contrast(1.18) sepia(.16) saturate(.85); }

@@ -10,9 +10,8 @@ import {
   type FavoritePlace,
   type FavoritePlaceIcon,
 } from "../favoritePlaces";
-import { loadMapStyle } from "../mapStyle";
+import { createAppleBasemap, DISCOVERY_OVERLAY_STYLE, type AppleBasemap } from "../appleMap";
 import { useAppearance } from "../appearance";
-import { applyMapAppearance } from "../mapAppearance";
 import { ArrowLeftIcon, ChevronIcon, SaveIcon, XIcon } from "./Icons";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -66,58 +65,45 @@ function formatSavedAt(timestamp: number): string {
   }).format(timestamp);
 }
 
-function collapseMapAttribution(container: HTMLDivElement): void {
-  container
-    .querySelector(".maplibregl-ctrl-attrib")
-    ?.classList.remove("maplibregl-compact-show");
-}
-
 function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
   useAppTranslation();
   const { theme } = useAppearance();
   const themeRef = useRef(theme);
   themeRef.current = theme;
-  const baseStyleRef = useRef<maplibregl.StyleSpecification | null>(null);
+  const basemapRef = useRef<AppleBasemap | null>(null);
+  const basemapContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   useEffect(() => {
-    if (mapRef.current && baseStyleRef.current) applyMapAppearance(mapRef.current, baseStyleRef.current, theme, "standard");
+    basemapRef.current?.setTheme(theme);
   }, [theme]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const basemapContainer = basemapContainerRef.current;
+    if (!container || !basemapContainer) return;
     const controller = new AbortController();
     setErrorMessage(null);
 
-    void loadMapStyle(controller.signal)
-      .then((style) => {
-        if (controller.signal.aborted) return;
-        const map = new maplibregl.Map({
-          container,
-          style,
-          center: [place.lng, place.lat],
-          zoom: 15.5,
-          pitch: 0,
-          bearing: 0,
-          interactive: false,
-          attributionControl: false,
-          renderWorldCopies: false,
-          fadeDuration: 0,
-        });
-        mapRef.current = map;
-        baseStyleRef.current = style;
-        map.once("style.load", () => applyMapAppearance(map, style, themeRef.current, "standard"));
-        map.addControl(
-          new maplibregl.AttributionControl({ compact: true }),
-          "bottom-left",
-        );
-        map.once("idle", () => collapseMapAttribution(container));
-        map.on("error", (event) => {
-          console.error("Saved place map rendering failed", { placeId: place.id, error: errorDiagnostic(event.error) });
-        });
-      })
+    const map = new maplibregl.Map({
+      container,
+      style: DISCOVERY_OVERLAY_STYLE,
+      center: [place.lng, place.lat],
+      zoom: 15.5,
+      interactive: false,
+      attributionControl: false,
+      renderWorldCopies: false,
+      fadeDuration: 0,
+    });
+    mapRef.current = map;
+    void createAppleBasemap(basemapContainer, map, themeRef.current, controller.signal, (error) => {
+      setErrorMessage(mapPreviewErrorMessage(error));
+    }).then((basemap) => {
+      if (controller.signal.aborted) { basemap.remove(); return; }
+      basemapRef.current = basemap;
+      basemap.setTheme(themeRef.current);
+    })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         console.error("Saved place map preview failed", { placeId: place.id, error: errorDiagnostic(error) });
@@ -126,7 +112,8 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
 
     return () => {
       controller.abort();
-      baseStyleRef.current = null;
+      basemapRef.current?.remove();
+      basemapRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -141,8 +128,9 @@ function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
   }
 
   return (
-    <div className="saved-place-map-preview" aria-label={t("Map preview of {{value0}}", { value0: place.name })}>
-      <div ref={containerRef} className="saved-place-map-preview__map" />
+    <div className="saved-place-map-preview" data-map-theme={theme} aria-label={t("Map preview of {{value0}}", { value0: place.name })}>
+      <div ref={basemapContainerRef} className="apple-basemap" />
+      <div ref={containerRef} className="saved-place-map-preview__map saved-place-map-preview__overlay" />
       <span className="saved-place-map-preview__marker" aria-hidden="true">
         <FavoriteGlyph icon={place.icon} />
       </span>

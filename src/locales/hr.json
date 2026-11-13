@@ -963,7 +963,7 @@
   "privacy.useHeading": "Kako koristimo informacije",
   "privacy.use": "Informacije koristimo za pružanje aplikacije: autentifikaciju, spremanje i sinkronizaciju otkrića na prijavljenim uređajima, prikaz karata i odgovaranje na zahtjeve podrške. Ne prodajemo povijest lokacije niti je koristimo za oglašavanje ili praćenje između aplikacija.",
   "privacy.storageHeading": "Gdje se informacije pohranjuju",
-  "privacy.storage": "Podaci računa, ruta i istraživanja pohranjuju se u našoj Supabase bazi za prijavljeni račun. Hecate koristi OpenFreeMap kartografske pločice za prikaz karte. Pružatelji obrađuju podatke samo koliko je potrebno za njihove usluge.",
+  "privacy.storage": "Podaci računa, ruta i istraživanja pohranjuju se u našoj Supabase bazi za prijavljeni račun. Hecate koristi Apple Maps za prikaz karata i podatke OpenFreeMapa za izradu prikaza gradova za izvoz. Pružatelji karata primaju područja koja aplikacija zatraži i podatke o vezi, poput vaše IP adrese. Ti pružatelji obrađuju podatke potrebne za pružanje svojih usluga.",
   "privacy.choicesHeading": "Tvoje mogućnosti i brisanje",
   "privacy.choices": "Aktivnu rutu možeš zaustaviti bilo kada i isključiti podsjetnike u Računu i sinkronizaciji. Dopuštenjima za lokaciju i obavijesti možeš upravljati u postavkama uređaja.",
   "privacy.deletion": "Za brisanje računa i povezanih otkrića i ruta otvori Račun i sinkronizaciju u Hecateu, odaberi <strong>Izbriši račun</strong> i potvrdi. Brisanje je trajno i ne može se poništiti. Ako ne možeš pristupiti aplikaciji, javi se na adresu ispod.",

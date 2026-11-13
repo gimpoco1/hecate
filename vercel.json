@@ -19,7 +19,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://tools.applemediaservices.com https://toolbox.marketingtools.apple.com https://thumb.wikimedia.org https://upload.wikimedia.org; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://myqsbtpfertaltyzaoyk.supabase.co wss://myqsbtpfertaltyzaoyk.supabase.co https://tiles.openfreemap.org https://nominatim.openstreetmap.org https://photon.komoot.io https://valhalla1.openstreetmap.de; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://*.apple-mapkit.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.apple-mapkit.com https://tools.applemediaservices.com https://toolbox.marketingtools.apple.com https://thumb.wikimedia.org https://upload.wikimedia.org; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob: https://*.apple-mapkit.com https://myqsbtpfertaltyzaoyk.supabase.co wss://myqsbtpfertaltyzaoyk.supabase.co https://tiles.openfreemap.org https://nominatim.openstreetmap.org https://photon.komoot.io https://valhalla1.openstreetmap.de; worker-src 'self' blob: https://*.apple-mapkit.com; frame-src https://*.apple-mapkit.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",

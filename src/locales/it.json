@@ -951,7 +951,7 @@
   "privacy.useHeading": "Come usiamo le informazioni",
   "privacy.use": "Usiamo i dati per fornire l'app: autenticarti, salvare e sincronizzare le scoperte tra i dispositivi connessi, mostrare mappe e rispondere alle richieste di assistenza. Non vendiamo la cronologia delle posizioni né la usiamo per pubblicità o tracciamento tra app.",
   "privacy.storageHeading": "Dove sono conservate le informazioni",
-  "privacy.storage": "I dati di account, percorsi ed esplorazioni sono conservati nel database Supabase per il tuo account. Hecate usa le mappe di OpenFreeMap. Questi fornitori trattano i dati solo per fornire i propri servizi.",
+  "privacy.storage": "I dati di account, percorsi ed esplorazioni sono conservati nel database Supabase per il tuo account. Hecate usa Apple Maps per mostrare le mappe e i dati OpenFreeMap per creare illustrazioni delle città esportabili. I fornitori di mappe ricevono le aree richieste dall’app e informazioni sulla connessione, come il tuo indirizzo IP. Questi fornitori trattano i dati necessari per fornire i propri servizi.",
   "privacy.choicesHeading": "Le tue scelte ed eliminazione",
   "privacy.choices": "Puoi interrompere un tragitto attivo in qualsiasi momento e disattivare i promemoria in Account e sincronizzazione. Puoi anche gestire i permessi di posizione e notifiche nelle impostazioni del dispositivo.",
   "privacy.deletion": "Per eliminare l'account e le scoperte e i percorsi associati, apri Account e sincronizzazione in Hecate, seleziona <strong>Elimina account</strong> e conferma. L'eliminazione è permanente e irreversibile. Se non puoi accedere all'app, contattaci all'indirizzo sotto.",
