@@ -59,9 +59,22 @@ export function parseStoredWalk(value: unknown): { points: Coordinate[]; cursor:
   const walkId = value.walk_id;
   const eligible = value.achievement_eligible;
   const count = value.coordinates.length;
+  const metadata = value.point_metadata;
+  if (metadata !== null && metadata !== undefined && (!Array.isArray(metadata) || metadata.length !== count)) {
+    throw new TypeError(t("Discovery history contains an invalid walk."));
+  }
+  let previousTime = startedAt;
   const points = value.coordinates.map((point: unknown, index: number): Coordinate => {
     const [lng, lat] = position(point);
-    return { lng, lat, recordedAt: startedAt + (finishedAt - startedAt) * index / (count - 1), walkId, achievementEligible: eligible };
+    const sample = Array.isArray(metadata) ? metadata[index] : null;
+    if (Array.isArray(metadata) && (!Array.isArray(sample) || sample.length !== 2 || typeof sample[0] !== "number" ||
+        !Number.isFinite(sample[0]) || sample[0] < previousTime || sample[0] > finishedAt || typeof sample[1] !== "boolean")) {
+      throw new TypeError(t("Discovery history contains an invalid walk."));
+    }
+    const recordedAt: number = sample === null ? startedAt + (finishedAt - startedAt) * index / (count - 1) : sample[0];
+    previousTime = recordedAt;
+    return { lng, lat, recordedAt, walkId, achievementEligible: eligible,
+      ...(sample !== null && sample[1] ? { segmentBreakBefore: true } : {}) };
   });
   return { points, cursor: { startedAt: value.started_at as string, id: walkId } };
 }

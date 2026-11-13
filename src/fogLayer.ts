@@ -612,7 +612,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   }
 
   appendRoutePoint(previous: Coordinate | null, point: Coordinate): void {
-    this.appendRevealCoordinates(revealCoordinatesBetween(previous, [point]));
+    this.appendRevealCoordinates(revealCoordinatesBetween(point.segmentBreakBefore ? null : previous, [point]));
     const liquidHead = MercatorCoordinate.fromLngLat(point, 0);
     this.liquidHead = [liquidHead.x, liquidHead.y];
     if (this.map && previous && !coordinatesMatch(previous, point))

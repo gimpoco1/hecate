@@ -13,7 +13,7 @@ import { selectionHaptic } from "./haptics";
 import type { JourneyPauseRequest } from "./journeyActivity";
 
 type PauseMode = "manual" | "automatic" | null;
-type Session = { id: string | null; source: JourneySource; cooldownUntil: number; idleSince: number | null; pausedAt: number | null; pausedMs: number; pauseMode: PauseMode };
+type Session = { id: string | null; source: JourneySource; cooldownUntil: number; idleSince: number | null; pausedAt: number | null; pausedMs: number; pauseMode: PauseMode; resumedAt: number | null };
 type Options = {
   ownerId: string | null;
   walkId: string | null;
@@ -27,7 +27,7 @@ type Options = {
 };
 
 function emptySession(): Session {
-  return { id: null, source: "manual", cooldownUntil: 0, idleSince: null, pausedAt: null, pausedMs: 0, pauseMode: null };
+  return { id: null, source: "manual", cooldownUntil: 0, idleSince: null, pausedAt: null, pausedMs: 0, pauseMode: null, resumedAt: null };
 }
 
 function sessionKey(ownerId: string): string { return `hecate:journey-automation:v1:${ownerId}`; }
@@ -38,11 +38,12 @@ function loadSession(ownerId: string): Session {
   const value: Session = JSON.parse(raw);
   if (!value || (value.id !== null && typeof value.id !== "string") || !["manual", "automatic"].includes(value.source)
     || !Number.isFinite(value.cooldownUntil) || !Number.isFinite(value.pausedMs)
+    || (value.resumedAt !== undefined && value.resumedAt !== null && !Number.isFinite(value.resumedAt))
     || ![null, "manual", "automatic"].includes((value as { pauseMode?: PauseMode }).pauseMode ?? null)
     || (value.idleSince !== null && !Number.isFinite(value.idleSince)) || (value.pausedAt !== null && !Number.isFinite(value.pausedAt))) {
     throw new TypeError(t("Saved automatic journey state is invalid. Reopen journey settings and try again."));
   }
-  return { ...value, pauseMode: (value as { pauseMode?: PauseMode }).pauseMode ?? null };
+  return { ...value, resumedAt: value.resumedAt ?? null, pauseMode: (value as { pauseMode?: PauseMode }).pauseMode ?? null };
 }
 
 /** Owns temporary route buffering; only the normal journey recorder can commit discoveries. */
@@ -85,7 +86,7 @@ export function useJourneyAutomation(options: Options) {
   }
 
   function markStarted(id: string, source: JourneySource): void {
-    session.current = { ...session.current, id, source, idleSince: null, pausedAt: null, pausedMs: 0 };
+    session.current = { ...session.current, id, source, idleSince: null, pausedAt: null, pausedMs: 0, pauseMode: null, resumedAt: null };
     setPaused(false);
     setPausedMs(0);
     setPausedAt(null);
@@ -98,10 +99,7 @@ export function useJourneyAutomation(options: Options) {
   }
 
   function manualStop(): void {
-    session.current = { ...session.current, idleSince: null, pausedAt: null, pauseMode: null, cooldownUntil: Date.now() + AUTO_RESTART_COOLDOWN_MS };
-    setPaused(false);
-    setPausedMs(0);
-    setPausedAt(null);
+    session.current = { ...session.current, cooldownUntil: Date.now() + AUTO_RESTART_COOLDOWN_MS };
     persist();
   }
 
@@ -154,7 +152,7 @@ export function useJourneyAutomation(options: Options) {
           return;
         }
         const current = preferencesRef.current;
-        if (current.mode !== "manual" || current.autoPause) {
+        if (status !== "notDetermined" && (current.mode !== "manual" || current.autoPause)) {
           const manual: JourneyPreferences = { ...current, mode: "manual", autoPause: false };
           saveJourneyPreferences(ownerId, manual);
           preferencesRef.current = manual;
@@ -189,8 +187,8 @@ export function useJourneyAutomation(options: Options) {
     }
     if (latest.current.ownerId !== ownerId) throw new Error(t("Your account changed. Reopen journey settings."));
     saveJourneyPreferences(ownerId, next);
-    if (!next.autoPause && session.current.pausedAt !== null) {
-      session.current = { ...session.current, pausedMs: session.current.pausedMs + Date.now() - session.current.pausedAt, pausedAt: null };
+    if (!next.autoPause && session.current.pauseMode === "automatic" && session.current.pausedAt !== null) {
+      session.current = { ...session.current, pausedMs: session.current.pausedMs + Date.now() - session.current.pausedAt, pausedAt: null, pauseMode: null };
       pausedRecorderId.current = null;
       persist();
       setPaused(false);
@@ -308,7 +306,7 @@ export function useJourneyAutomation(options: Options) {
         } else if (session.current.idleSince === null) {
           const startedAt = latest.current.startedAt;
           if (startedAt === null) throw new Error("An active journey is missing its start time.");
-          session.current = { ...session.current, idleSince: Math.max(next.since, startedAt) };
+          session.current = { ...session.current, idleSince: Math.max(next.since, startedAt, session.current.resumedAt ?? startedAt) };
           persist();
         }
       }
@@ -412,6 +410,7 @@ export function useJourneyAutomation(options: Options) {
       idleSince: null,
       pausedMs: session.current.pausedMs + Math.max(0, resumedAt - pausedAt),
       pauseMode: null,
+      resumedAt,
     };
     persist();
     setPaused(false);
@@ -424,7 +423,7 @@ export function useJourneyAutomation(options: Options) {
   function applyWidgetPause(request: JourneyPauseRequest): void {
     if (request.walkId !== latest.current.walkId || request.ownerId !== latest.current.ownerId || latest.current.startedAt === null) return;
     session.current = { ...session.current, id: request.walkId, pausedAt: request.paused ? request.requestedAt : null,
-      idleSince: request.paused ? request.requestedAt : null, pauseMode: request.paused ? "manual" : null,
+      idleSince: request.paused ? request.requestedAt : null, resumedAt: request.paused ? session.current.resumedAt : request.requestedAt, pauseMode: request.paused ? "manual" : null,
       pausedMs: Math.max(0, request.activeStartedAt - latest.current.startedAt) };
     persist();
     setPaused(request.paused);

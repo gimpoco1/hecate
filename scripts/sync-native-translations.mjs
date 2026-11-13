@@ -12,6 +12,7 @@ const androidKeys = {
   journey_channel: "Walking journeys",
   journey_channel_description: "Live walking distance, new area, elapsed time, and journey controls",
   journey_exploring: "Exploring…",
+  journey_paused: "Paused",
   journey_complete: "Journey complete",
   journey_stop: "Stop journey",
   journey_walk: "this walk",

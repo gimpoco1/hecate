@@ -399,7 +399,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             distanceKm: distance,
             newGroundMeters: meters,
             paused: paused,
-            activeStartedAt: Date().addingTimeInterval(-(elapsedMs / 1000)),
+            activeStartedAt: (finishedAt ?? Date()).addingTimeInterval(-(elapsedMs / 1000)),
             updatedAt: Date(),
             finishedAt: finishedAt,
             navigation: finishedAt == nil ? navigation : nil,

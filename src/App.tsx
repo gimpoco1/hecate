@@ -1499,7 +1499,7 @@ export default function App() {
       selectionHaptic();
       // Automatic journeys retain location callbacks until their end deadline; paused fixes are discarded.
       if (automation.isAutomaticJourney() && !automation.isManualPause()) return;
-      if (Capacitor.getPlatform() === "ios" && activeWalkRef.current) {
+      if (Capacitor.isNativePlatform() && activeWalkRef.current) {
         await JourneyActivity.pauseLocation({ walkId: activeWalkRef.current.id });
         return;
       }
@@ -1510,7 +1510,7 @@ export default function App() {
     onResume: () => {
       if (activeWalkRef.current) nextRecordedPointStartsNewSegmentRef.current = true;
       const walk = activeWalkRef.current;
-      if (walk && Capacitor.getPlatform() === "ios") {
+      if (walk && Capacitor.isNativePlatform()) {
         void JourneyActivity.resumeLocation({ walkId: walk.id }).then(() => {
           if (activeWalkRef.current?.id === walk.id && !trackerRef.current) setTracking("requesting");
         }).catch((error: Error) => {
@@ -3654,7 +3654,7 @@ export default function App() {
       }
       return;
     }
-    if (!automation.acceptPoint()) return;
+    if (!automation.acceptPoint() || (activeWalkRef.current && point.recordedAt < activeWalkRef.current.startedAt)) return;
     latestPassivePointRef.current = point;
     const navigationRoute = plannedJourneyRouteRef.current;
     if (navigationRoute && !simulationRouteRef.current) {
@@ -3863,6 +3863,7 @@ export default function App() {
     if (widgetStop) automation.manualStop();
     const finishedAt = Math.max(
       active?.startedAt ?? 0,
+      active?.points.at(-1)?.recordedAt ?? 0,
       widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now(),
     );
     if (active && walkOwner) journeyFinishedAtRef.current = finishedAt;
@@ -3873,8 +3874,9 @@ export default function App() {
         liveStart.discoveryDistance,
         pointsRef.current,
       );
+      const elapsedMs = automation.activityState(finishedAt).elapsedMs;
       enqueueJourneyActivity(() =>
-        JourneyActivity.end({ ...snapshot, paused: false, elapsedMs: activeWalkElapsedMs, finishedAt }),
+        JourneyActivity.end({ ...snapshot, paused: false, elapsedMs, finishedAt }),
       );
     }
     if (active && walkOwner) {
@@ -4940,6 +4942,10 @@ export default function App() {
               : "unavailable",
         );
       });
+      if (Capacitor.getPlatform() === "android" && automation.activityState(Date.now()).paused &&
+          (!automation.isAutomaticJourney() || automation.isManualPause())) {
+        await JourneyActivity.pauseLocation({ walkId: restoredWalkId });
+      }
     };
     void restore()
       .then(() => {

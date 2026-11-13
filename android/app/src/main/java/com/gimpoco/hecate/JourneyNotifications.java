@@ -104,9 +104,13 @@ final class JourneyNotifications {
         if (stored == null) return null;
         try {
             JSONObject json = new JSONObject(stored);
-            return new JourneyState(json.getString("walkId"), json.getString("ownerId"), json.getLong("startedAt"),
+            long startedAt = json.getLong("startedAt");
+            Long finishedAt = json.isNull("finishedAt") ? null : json.getLong("finishedAt");
+            long updatedAt = json.has("updatedAt") ? json.getLong("updatedAt") : (finishedAt == null ? System.currentTimeMillis() : finishedAt);
+            return new JourneyState(json.getString("walkId"), json.getString("ownerId"), startedAt,
                 json.getDouble("distanceKm"), json.isNull("newGroundMeters") ? null : json.getDouble("newGroundMeters"),
-                json.isNull("finishedAt") ? null : json.getLong("finishedAt"));
+                finishedAt, json.has("paused") && json.getBoolean("paused"),
+                json.has("elapsedMs") ? json.getLong("elapsedMs") : Math.max(0, updatedAt - startedAt), updatedAt);
         } catch (JSONException error) {
             throw new IllegalStateException("Saved Android journey data is invalid: " + key, error);
         }
@@ -118,6 +122,9 @@ final class JourneyNotifications {
         json.put("ownerId", state.ownerId());
         json.put("startedAt", state.startedAt());
         json.put("distanceKm", state.distanceKm());
+        json.put("paused", state.paused());
+        json.put("elapsedMs", state.elapsedMs());
+        json.put("updatedAt", state.updatedAt());
         json.put("newGroundMeters", state.newGroundMeters() == null ? JSONObject.NULL : state.newGroundMeters());
         json.put("finishedAt", state.finishedAt() == null ? JSONObject.NULL : state.finishedAt());
         return json;
@@ -149,9 +156,10 @@ final class JourneyNotifications {
             new Intent(context, JourneyActionReceiver.class).setAction(DEMOTE)
                 .setData(android.net.Uri.parse("hecate://journey/demote/" + state.walkId())).putExtra("walkId", state.walkId()),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return builder().setContentTitle(text(R.string.journey_exploring))
-            .setContentText(metricsLabel(state)).setStyle(new NotificationCompat.BigTextStyle().bigText(metricsLabel(state)))
-            .setWhen(state.startedAt()).setShowWhen(true).setUsesChronometer(true)
+        String metrics = metricsLabel(state) + (state.paused() ? " · " + state.elapsedLabel(locale()) : "");
+        return builder().setContentTitle(text(state.paused() ? R.string.journey_paused : R.string.journey_exploring))
+            .setContentText(metrics).setStyle(new NotificationCompat.BigTextStyle().bigText(metrics))
+            .setWhen(state.updatedAt() - state.elapsedMs()).setShowWhen(!state.paused()).setUsesChronometer(!state.paused())
             .setOngoing(true).setRequestPromotedOngoing(!state.walkId().equals(preferences.getString("demoted", null)))
             .setShortCriticalText(state.distanceLabel(locale())).setDeleteIntent(demote)
             .addAction(new NotificationCompat.Action(0, text(R.string.journey_stop), stop)).build();

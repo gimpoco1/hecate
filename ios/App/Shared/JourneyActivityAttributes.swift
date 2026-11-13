@@ -48,12 +48,22 @@ struct JourneyActivityAttributes: ActivityAttributes {
         var paused: Bool = false
         var activeStartedAt: Date = .now
         var updatedAt: Date
-        let finishedAt: Date?
+        var finishedAt: Date?
         var navigation: JourneyNavigation? = nil
         var navigationRemaining: JourneyNavigationRemaining? = nil
         var appearance: JourneyAppearance? = nil
         var colorTheme: JourneyColorTheme? = nil
         var language: String? = nil
+
+        func ending(at date: Date) -> Self {
+            var finished = self
+            if paused { finished.activeStartedAt = activeStartedAt.addingTimeInterval(max(0, date.timeIntervalSince(updatedAt))) }
+            finished.updatedAt = date
+            finished.finishedAt = date
+            finished.navigation = nil
+            finished.navigationRemaining = nil
+            return finished
+        }
     }
 
     let walkId: String
@@ -130,11 +140,7 @@ struct StopJourneyIntent: LiveActivityIntent {
         let finishedAt = Date(timeIntervalSince1970: request.finishedAt / 1000)
         let state = activity.content.state
         await activity.end(
-            ActivityContent(state: JourneyActivityAttributes.ContentState(
-                distanceKm: state.distanceKm, newGroundMeters: state.newGroundMeters,
-                paused: state.paused, activeStartedAt: state.activeStartedAt,
-                updatedAt: finishedAt, finishedAt: finishedAt, appearance: state.appearance, colorTheme: state.colorTheme, language: state.language
-            ), staleDate: nil),
+            ActivityContent(state: state.ending(at: finishedAt), staleDate: nil),
             dismissalPolicy: .after(finishedAt.addingTimeInterval(5))
         )
         return .result()

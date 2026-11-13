@@ -1242,5 +1242,6 @@
   "Manual": "Manuale",
   "Automatic": "Automatico",
   "You start each journey.": "Avvii tu ogni percorso.",
-  "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "La registrazione dei percorsi è passata a Manuale perché l’accesso al movimento è disattivato. Puoi comunque avviare i percorsi manualmente."
+  "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "La registrazione dei percorsi è passata a Manuale perché l’accesso al movimento è disattivato. Puoi comunque avviare i percorsi manualmente.",
+  "Allow {{value0}}": "Consenti {{value0}}"
 }

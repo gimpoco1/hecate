@@ -5,7 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { t } from "../i18n";
 import { JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
-import { openLocationSettings, readLocationAuthorization, readReminderMotionAuthorization, reminderMotionPermissionLabel, type LocationAuthorization, type ReminderMotionAuthorization } from "../location";
+import { openLocationSettings, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, reminderMotionPermissionLabel, type LocationAuthorization, type ReminderMotionAuthorization } from "../location";
 import { ArrowLeftIcon, XIcon, WarningIcon, ChevronIcon } from "./Icons";
 import { ReminderDuration } from "./ReminderDuration";
 import { mdiAutoMode, mdiGestureTap } from "@mdi/js";
@@ -63,6 +63,16 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
     catch (failure) { const message = failure instanceof Error ? failure.message : t("Could not save journey settings."); setError(message); return message; }
     finally { setPending(false); }
   }
+  async function enableMotion(): Promise<void> {
+    setPending(true);
+    setError("");
+    try {
+      await requestReminderMotionPermission();
+      const [location, motion] = await Promise.all([readLocationAuthorization(), readReminderMotionAuthorization()]);
+      setPermissions({ location, motion });
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not request motion access. Please try again.")); }
+    finally { setPending(false); }
+  }
   const choices: { mode: JourneyStartMode; title: string; description: string; icon: string }[] = [
     { mode: "manual", icon: mdiGestureTap, title: t("Manual"), description: t("You start each journey.") },
     { mode: "automatic", icon: mdiAutoMode, title: t("Automatic"), description: t("Hecate starts journeys for you when it detects walking.") },
@@ -80,7 +90,7 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
         <div>
           <strong>{permissions.motion !== "authorized" ? t("{{value0}} access is off", { value0: reminderMotionPermissionLabel() }) : t("Check location access")}</strong>
           <p>{t("Automatic recording needs Always location and motion access. A temporary route is collected while walking is being detected. Background detection may be delayed by your phone.")}</p>
-          <button className="notification-permission-notice__action" type="button" data-testid="journey-permission-settings" onClick={() => { void openLocationSettings().catch(failure => setError(failure instanceof Error ? failure.message : t("Could not open device Settings."))); }}>{t("Open Settings")} <ChevronIcon size={14} /></button>
+          <button className="notification-permission-notice__action" type="button" data-testid="journey-permission-settings" disabled={pending} onClick={() => { if (permissions.motion === "notDetermined") void enableMotion(); else void openLocationSettings().catch(failure => setError(failure instanceof Error ? failure.message : t("Could not open device Settings."))); }}>{permissions.motion === "notDetermined" ? t("Allow {{value0}}", { value0: reminderMotionPermissionLabel() }) : t("Open Settings")} <ChevronIcon size={14} /></button>
         </div>
       </div>}
       {!native && <p role="status">{t("Automatic journeys require the iOS or Android app.")}</p>}

@@ -3,6 +3,7 @@
     <string name="journey_channel">Rute</string>
     <string name="journey_channel_description">Prijeđena udaljenost, nove dionice, proteklo vrijeme i kontrole rute uživo</string>
     <string name="journey_exploring">Istraživanje…</string>
+    <string name="journey_paused">Pauzirano</string>
     <string name="journey_complete">Ruta završena</string>
     <string name="journey_stop">Završi rutu</string>
     <string name="journey_walk">ova ruta</string>

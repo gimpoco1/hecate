@@ -118,6 +118,7 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
     p_started_at: new Date(walk.startedAt).toISOString(),
     p_finished_at: new Date(walk.finishedAt).toISOString(),
     p_coordinates: walk.points.map(point => [point.lng, point.lat]),
+    p_point_metadata: walk.points.map(point => [Math.trunc(point.recordedAt), point.segmentBreakBefore === true]),
     p_point_count: walk.points.length,
     p_achievement_eligible: walk.achievementEligible !== false,
   });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MercatorCoordinate } from "maplibre-gl";
 import { DISCOVERY_RADIUS_M } from "./geo";
 import {
+  DiscoveryFogLayer,
   appendedFogRouteCoordinates,
   fogRevealCoordinates,
   fogTileCoordinates,
@@ -84,5 +85,16 @@ describe("appendedFogRouteCoordinates", () => {
     expect(
       appendedFogRouteCoordinates([[start]], [[replacement]]),
     ).toBeNull();
+  });
+});
+
+describe("live fog after a pause", () => {
+  it("reveals only the resumed location without filling the skipped route", () => {
+    const previous = { lng: 2.17, lat: 41.38, recordedAt: 1000 };
+    const resumed = { lng: 2.18, lat: 41.38, recordedAt: 601000, segmentBreakBefore: true };
+    const layer = new DiscoveryFogLayer({ routeSegments: [[previous]], cellCenters: [] }, "discover");
+    layer.appendRoutePoint(previous, resumed);
+    const centers = Reflect.get(layer, "revealCoordinateKeys") as Set<string>;
+    expect(centers.size).toBe(2);
   });
 });
