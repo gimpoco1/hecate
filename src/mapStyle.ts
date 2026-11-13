@@ -13,6 +13,24 @@ export function patchMapStyle(style: StyleSpecification): StyleSpecification {
   return {
     ...style,
     layers: style.layers.map((layer) => {
+      if (layer.id === "label_other" && layer.type === "symbol") {
+        return {
+          ...layer,
+          layout: {
+            ...layer.layout,
+            "text-font": ["Noto Sans Regular"],
+            "text-letter-spacing": 0.14,
+            "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10, 12, 13, 16, 15],
+          },
+          paint: {
+            ...layer.paint,
+            "text-color": "#596d65",
+            "text-halo-color": "#dce2dc",
+            "text-halo-blur": 0.4,
+            "text-halo-width": 1,
+          },
+        };
+      }
       if (
         !ROAD_SHIELD_LAYER_IDS.has(layer.id) ||
         !("filter" in layer) ||

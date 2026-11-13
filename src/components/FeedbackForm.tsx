@@ -2,6 +2,7 @@ import { t, useAppTranslation } from "../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { FEEDBACK_REASONS, submitFeedback, type FeedbackReason } from "../feedback";
 import { XIcon } from "./Icons";
+import { errorHaptic, selectionHaptic, successHaptic } from "../haptics";
 import { mdiBatteryOutline, mdiBugOutline, mdiCheck, mdiCheckCircleOutline, mdiClockOutline, mdiDotsHorizontal, mdiEmailOutline, mdiHelpCircleOutline, mdiLockOutline, mdiMessageTextOutline, mdiPuzzleOutline, mdiSendOutline } from "@mdi/js";
 
 type Props = { onClose: () => void; keyboardInset: number; userId: string; accountEmail: string };
@@ -45,7 +46,9 @@ export function FeedbackForm({ onClose, keyboardInset, userId, accountEmail }: P
     try {
       await submitFeedback({ id: submissionId.current, reason, message, replyEmail }, userId);
       setSent(true);
+      successHaptic();
     } catch (failure) {
+      errorHaptic();
       setError(failure instanceof Error ? failure.message : t("Your feedback wasn’t sent. Please try again."));
     } finally {
       submittingRef.current = false;
@@ -70,7 +73,7 @@ export function FeedbackForm({ onClose, keyboardInset, userId, accountEmail }: P
       <fieldset disabled={sending}>
         <legend>{t("What could be better?")}</legend>
         <div className="feedback-reasons">{FEEDBACK_REASONS.map((item) => <label key={item.value}>
-          <input type="radio" name="feedback-reason" value={item.value} required checked={reason === item.value} onChange={() => setReason(item.value)} data-testid={`feedback-reason-${item.value}`} />
+          <input type="radio" name="feedback-reason" value={item.value} required checked={reason === item.value} onChange={() => { setReason(item.value); selectionHaptic(); }} data-testid={`feedback-reason-${item.value}`} />
           <FeedbackIcon path={reasonIcons[item.value]} size={22} />
           <span>{item.label}</span>
           <span className="feedback-choice-check"><FeedbackIcon path={mdiCheck} size={12} /></span>

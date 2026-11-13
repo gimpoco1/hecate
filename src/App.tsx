@@ -21,6 +21,7 @@ import { useNavigationScreen } from "./navigationScreen";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
+import { errorHaptic, journeyStartHaptic, selectionHaptic, successHaptic } from "./haptics";
 import { hasReachedRouteDestination, navigationCue, navigationRemaining, type NavigationCue, type NavigationRemaining } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
@@ -998,6 +999,7 @@ export default function App() {
         const reached = { route, deadline: Date.now() + 10_000 };
         arrivalRef.current = reached;
         setArrival(reached);
+        successHaptic();
       }
       if (document.visibilityState === "visible")
         setTurnCue((current) =>
@@ -2017,6 +2019,7 @@ export default function App() {
     const next = { ...loadMapRewards(accountUserId), selected };
     saveMapRewards(accountUserId, next);
     setMapRewards(next);
+    selectionHaptic();
   }
 
   function viewMapReward(reward: MapReward): void {
@@ -3936,12 +3939,14 @@ export default function App() {
     }
   };
 
-  const finalizeRecordedWalk = (): void => {
+  const finalizeRecordedWalk = (): Promise<boolean> => {
     clearPlannedRoute();
     setWalkFinalizing(true);
-    void finishActiveWalk()
+    return finishActiveWalk()
+      .then(() => true)
       .catch((error) => {
         console.error("Could not finalize recorded walk", { error: errorDiagnostic(error) });
+        errorHaptic();
         if (
           activeWalkRef.current &&
           trackingUserRef.current === accountUserIdRef.current
@@ -3952,8 +3957,13 @@ export default function App() {
               : t("Could not save this journey. Keep Hecate open and retry saving."),
           );
         }
+        return false;
       })
       .finally(() => setWalkFinalizing(false));
+  };
+
+  const saveJourneyWithFeedback = async (): Promise<void> => {
+    if (await finalizeRecordedWalk()) successHaptic();
   };
 
   const importGpxFile = async (file: File): Promise<GpxImportResult> => {
@@ -4436,7 +4446,7 @@ export default function App() {
       setTracking("idle");
       setPassiveLocationStatus("idle");
       void Promise.resolve(tracker?.stop()).catch(() => undefined);
-      finalizeRecordedWalk();
+      await saveJourneyWithFeedback();
       return;
     }
     void requestDeviceHeadingPermission();
@@ -4495,6 +4505,7 @@ export default function App() {
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
         trackerFailed = true;
+        errorHaptic();
         const journeyStopped =
           error.code === "journey-stopped" || error.code === "speed-exceeded";
         setJourneyStopMessage(journeyStopped ? error.message : null);
@@ -4518,11 +4529,14 @@ export default function App() {
         );
       });
       if (trackerFailed || trackerRef.current !== tracker) return;
-    } catch {
+      journeyStartHaptic();
+    } catch (error) {
       // A user can stop while native watcher registration is still pending.
       // Do not let that stale rejection overwrite the idle state or clear a
       // newer walk that may already be starting.
       if (trackerRef.current !== tracker) return;
+      console.error("Could not start journey location tracking", { walkId, error: errorDiagnostic(error) });
+      errorHaptic();
       focusFirstTrackingPointRef.current = false;
       resetInactivityReminder();
       trackerRef.current = null;
@@ -4766,6 +4780,7 @@ export default function App() {
   };
 
   const handleLocationControl = (): void => {
+    selectionHaptic();
     const point = simulationPointRef.current ?? (locationIsCurrent ? currentPoint : null);
     if (!point || (mapRef.current?.getZoom() ?? zoom) < 6 || !followCameraEnabledRef.current || !userCenteredRef.current) {
       if (simulationPointRef.current) focusOnUserPoint(simulationPointRef.current);
@@ -4814,6 +4829,7 @@ export default function App() {
     ) => {
       const card = journeyCardRef.current;
       if (!card) return;
+      if (expanded !== journeyExpandedRef.current) selectionHaptic();
       const { collapsed, expanded: expandedHeight } = journeyBounds(card);
       const targetHeight = expanded ? expandedHeight : collapsed;
       const startHeight = fromHeight ?? journeyVisibleHeight(card);
@@ -5180,6 +5196,7 @@ export default function App() {
   const toggleMapPerspective = () => {
     const map = mapRef.current;
     if (!map) return;
+    selectionHaptic();
     const nextPerspective = !perspectiveView;
     setPerspectiveView(nextPerspective);
     map.easeTo({
@@ -5349,6 +5366,7 @@ export default function App() {
       ...favoritePlaces.filter((place) => place.id !== saved.id),
       saved,
     ]);
+    successHaptic();
     setFavoriteDraft(null);
   };
 
@@ -5356,6 +5374,7 @@ export default function App() {
     persistFavoritePlaces(
       favoritePlaces.filter((place) => place.id !== draft.id),
     );
+    successHaptic();
     setSelectedFavoritePlaceId(null);
     setFavoriteDraft(null);
   };
@@ -5719,6 +5738,7 @@ export default function App() {
             const point = latestPassivePointRef.current ?? currentPoint;
             if (!point)
               throw new Error(t("Find your current location before starting navigation."));
+            selectionHaptic();
             mapOrientationRef.current = "heading-up";
             setMapOrientation("heading-up");
             void requestDeviceHeadingPermission();
@@ -5985,7 +6005,7 @@ export default function App() {
             <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
             <div className="account-toast__message">
               <p>{journeySaveError}</p>
-              <button className="app-error-toast__action" type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={finalizeRecordedWalk}>{t("Retry saving journey")}</button>
+              <button className="app-error-toast__action" type="button" data-testid="retry-journey-save" disabled={walkFinalizing} onClick={saveJourneyWithFeedback}>{t("Retry saving journey")}</button>
             </div>
           </aside>
         )}
@@ -6063,6 +6083,7 @@ export default function App() {
           aria-label={t("Plan a discovery route")}
           aria-pressed={routePlannerOpen}
           onClick={() => {
+            selectionHaptic();
             if (simulationRouteRef.current) clearRouteDestination();
             if (routePlannerOpen) clearPlannedRoute();
             else {
@@ -6084,6 +6105,7 @@ export default function App() {
             className={favoritePlacementActive ? "active" : ""}
             type="button"
             onClick={() => {
+              selectionHaptic();
               if (routePlannerOpen) clearPlannedRoute();
               setFavoriteDraft(null);
               setFavoritePlacementActive((active) => !active);

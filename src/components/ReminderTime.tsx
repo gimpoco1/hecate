@@ -1,6 +1,7 @@
 import { t, useAppTranslation, currentLanguage } from "../i18n";
 import { createPortal } from "react-dom";
 import { useId, useRef, useState } from "react";
+import { errorHaptic, selectionHaptic } from "../haptics";
 
 type Props = {
   value: string;
@@ -76,7 +77,7 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
                       type="button"
                       aria-label={t("{{value0}} {{value1}}", { value0: label, value1: option })}
                       aria-pressed={selected === option}
-                      onClick={() => select(option)}
+                      onClick={() => { if (selected !== option) selectionHaptic(); select(option); }}
                     >
                       {option}
                     </button>
@@ -94,7 +95,8 @@ export function   ReminderTime({ value, title, disabled, onChange }: Props) {
             onClick={() => {
               const message = onChange(`${hour}:${minute}`);
               setError(message ?? "");
-              if (!message) picker.current?.hidePopover();
+              if (message) errorHaptic();
+              else { selectionHaptic(); picker.current?.hidePopover(); }
             }}
           >{t("Save time")}</button>
         </div>
