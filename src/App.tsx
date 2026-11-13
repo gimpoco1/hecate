@@ -6697,6 +6697,11 @@ export default function App() {
           reminderMotionError={reminderMotionError}
           reminderMotionAllowed={reminderMotionAllowed}
           notificationPermissionReady={notificationPermissionReady}
+          onNotificationPermissionRequest={async () => {
+            const allowed = await ensureNotificationPermission();
+            setNotificationPermissionReady(allowed);
+            return allowed;
+          }}
           keyboardInset={keyboardInset}
           travelledDistance={discoveryProgress.travelledDistance}
           discoveredCityCount={cityProgresses.length}
