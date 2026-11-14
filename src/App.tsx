@@ -4676,7 +4676,7 @@ export default function App() {
     setTracking("tracking");
     let trackerFailed = false;
     try {
-      automation.markStarted(walkId, seed.source);
+      automation.markStarted(walkId, seed.source, seed.pausedMs);
       for (const point of seed.points) addPoint(point);
       await tracker.start(addPoint, (error) => {
         if (trackerRef.current !== tracker) return;
@@ -4743,7 +4743,7 @@ export default function App() {
         if (tour.step === "start") tour.advance("start");
         return;
       }
-      await startRecordedJourney({ source: "manual", startedAt: Date.now(), points: [] });
+      await startRecordedJourney({ source: "manual", startedAt: Date.now(), pausedMs: 0, points: [] });
     } catch (error) {
       console.error("Could not change journey recording state", { error: errorDiagnostic(error) });
       setJourneyStopMessage(error instanceof Error ? error.message : t("Could not change journey recording. Keep Hecate open and try again."));

@@ -17,7 +17,7 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
     private let authorizationManager = CLLocationManager()
     private var stopLocationUpdates: (() -> Void)?
     private var active = false
-    private var latest: JSObject?
+    private var latest: (activity: String, since: Double)?
     private var lastHeartbeatAt = Date.distantPast
     private var stationary = false
     private var awaitingMotion = false
@@ -79,7 +79,7 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
                     else { isStationary = update.isStationary }
                     if isStationary {
                         self.stationary = true
-                        if self.latest?["activity"] as? String != "stationary" {
+                        if self.latest?.activity != "stationary" {
                             self.publish(activity: "stationary", since: Date().timeIntervalSince1970 * 1000)
                         }
                     } else if update.location != nil {
@@ -94,7 +94,7 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
                         let now = Date()
                         if now.timeIntervalSince(self.lastHeartbeatAt) >= 10 {
                             self.lastHeartbeatAt = now
-                            if let latest = self.latest { self.notifyListeners("motion", data: latest, retainUntilConsumed: true) }
+                            if let latest = self.latest { self.notifyListeners("motion", data: ["activity": latest.activity, "since": latest.since], retainUntilConsumed: true) }
                         }
                     }
                     // Keep iterating while stationary: ending the sequence would prevent automatic resume.
@@ -111,8 +111,11 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func publish(activity: String, since: Double) {
+        // Keep the onset of a continuous activity; location updates supply the heartbeat.
+        if let latest, since < latest.since || latest.activity == activity { return }
         let sample: JSObject = ["activity": activity, "since": since]
-        latest = sample
+        latest = (activity: activity, since: since)
+        lastHeartbeatAt = Date()
         notifyListeners("motion", data: sample, retainUntilConsumed: true)
     }
 
@@ -137,7 +140,7 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Motion & Fitness access was revoked. Enable it in Settings.", "MOTION_NOT_AUTHORIZED")
                 return
             }
-            if let latest = self.latest { call.resolve(["motion": latest]) }
+            if let latest = self.latest { call.resolve(["motion": ["activity": latest.activity, "since": latest.since]]) }
             else { call.resolve(["motion": NSNull()]) }
         }
     }

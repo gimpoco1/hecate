@@ -1267,7 +1267,7 @@
   "onboarding.notificationSettings": "En Ajustes, abre Notificaciones y activa Permitir notificaciones. Después vuelve a Hecate.",
   "onboarding.notificationNext": "Después, permite las notificaciones para recibir recordatorios.",
   "onboarding.remindersReady": "Los recordatorios están listos.",
-  "settings.journeyStartTiming": "Tras <duration/> caminando de forma continua, Hecate guarda un recorrido que incluye ese tiempo inicial. Los paseos más cortos se descartan.",
+  "settings.journeyStartTiming": "Tras <duration/> caminando, Hecate guarda el recorrido desde el principio. Las paradas de hasta 2 minutos mantienen el progreso, pero no cuentan para el temporizador. Las paradas más largas lo reinician.",
   "settings.journeyRestartTiming": "Después de terminar un recorrido manualmente, espera <duration/> antes de detectar otro paseo.",
   "settings.journeyRestartTitle": "Reactivar la grabación automática",
   "settings.journeyRestartDescription": "Al terminar la espera, el temporizador de caminata vuelve a empezar. Puedes iniciar un recorrido manualmente en cualquier momento."

@@ -1267,7 +1267,7 @@
   "onboarding.notificationSettings": "In Settings, open Notifications and turn on Allow Notifications. Then return to Hecate.",
   "onboarding.notificationNext": "Next, allow notifications to receive reminders.",
   "onboarding.remindersReady": "Discovery reminders are ready.",
-  "settings.journeyStartTiming": "After <duration/> of continuous walking, Hecate saves a journey including that initial walking time. Shorter walks are discarded.",
+  "settings.journeyStartTiming": "After <duration/> of walking, Hecate saves the journey from the beginning. Stops of up to 2 minutes keep your progress but do not count toward the timer. Longer stops reset it.",
   "settings.journeyRestartTiming": "After you end a journey manually, wait <duration/> before detecting a new walk.",
   "settings.journeyRestartTitle": "Restart automatic recording",
   "settings.journeyRestartDescription": "Once this wait ends, the walking timer starts again. You can still start a journey manually at any time."

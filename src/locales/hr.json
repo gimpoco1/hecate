@@ -1282,7 +1282,7 @@
   "onboarding.notificationSettings": "U Postavkama otvori Obavijesti i uključi dopuštenje obavijesti. Zatim se vrati u Hecate.",
   "onboarding.notificationNext": "Zatim dopusti obavijesti za primanje podsjetnika.",
   "onboarding.remindersReady": "Podsjetnici za istraživanje su spremni.",
-  "settings.journeyStartTiming": "Nakon <duration/> neprekidnog hodanja, Hecate sprema putovanje uključujući to početno vrijeme. Kraće šetnje se odbacuju.",
+  "settings.journeyStartTiming": "Nakon <duration/> hodanja, Hecate sprema putovanje od početka. Stanke do 2 minute čuvaju napredak, ali se ne broje u mjeraču vremena. Dulje stanke ga poništavaju.",
   "settings.journeyRestartTiming": "Nakon ručnog završetka putovanja, pričekaj <duration/> prije prepoznavanja nove šetnje.",
   "settings.journeyRestartTitle": "Ponovno automatsko snimanje",
   "settings.journeyRestartDescription": "Nakon isteka čekanja, mjerač hodanja počinje iznova. Putovanje možeš pokrenuti ručno u bilo kojem trenutku."

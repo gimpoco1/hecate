@@ -1267,7 +1267,7 @@
   "onboarding.notificationSettings": "Nelle Impostazioni, apri Notifiche e attiva Consenti notifiche. Poi torna a Hecate.",
   "onboarding.notificationNext": "Poi, consenti le notifiche per ricevere promemoria.",
   "onboarding.remindersReady": "I promemoria sono pronti.",
-  "settings.journeyStartTiming": "Dopo <duration/> di cammino continuo, Hecate salva un percorso includendo il tempo iniziale. Le passeggiate più brevi vengono scartate.",
+  "settings.journeyStartTiming": "Dopo <duration/> di cammino, Hecate salva il percorso dall’inizio. Le soste fino a 2 minuti mantengono i progressi ma non contano nel timer. Le soste più lunghe lo azzerano.",
   "settings.journeyRestartTiming": "Dopo aver terminato un percorso manualmente, attendi <duration/> prima di rilevare una nuova passeggiata.",
   "settings.journeyRestartTitle": "Riavvio della registrazione automatica",
   "settings.journeyRestartDescription": "Al termine dell’attesa, il timer di cammino riparte. Puoi avviare un percorso manualmente in qualsiasi momento."

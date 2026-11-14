@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { CANDIDATE_STOP_GRACE_MS, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -66,7 +66,7 @@ export function useJourneyAutomation(options: Options) {
   const previousWalkId = useRef<string | null>(options.walkId);
   const session = useRef<Session>(emptySession());
   const motion = useRef<JourneyMotion | null>(null);
-  const candidate = useRef<{ startedAt: number; points: Coordinate[] } | null>(null);
+  const candidate = useRef<{ startedAt: number; clock: CandidateWalkingClock; startsNewSegment: boolean; points: Coordinate[] } | null>(null);
   const candidateTracker = useRef<LocationTracker | null>(null);
   const busy = useRef(false);
   const motionQueue = useRef<Promise<void>>(Promise.resolve());
@@ -86,10 +86,10 @@ export function useJourneyAutomation(options: Options) {
     await tracker?.stop();
   }
 
-  function markStarted(id: string, source: JourneySource): void {
-    session.current = { ...session.current, id, source, idleSince: null, pausedAt: null, pausedMs: 0, pauseMode: null, resumedAt: null };
+  function markStarted(id: string, source: JourneySource, initialPausedMs: number): void {
+    session.current = { ...session.current, id, source, idleSince: null, pausedAt: null, pausedMs: initialPausedMs, pauseMode: null, resumedAt: null };
     setPaused(false);
-    setPausedMs(0);
+    setPausedMs(initialPausedMs);
     setPausedAt(null);
     pausedRecorderId.current = null;
     persist();
@@ -272,25 +272,30 @@ export function useJourneyAutomation(options: Options) {
         }
         return;
       }
+      const interruptedAt = candidate.current?.clock.interruptedAt;
+      if (interruptedAt !== undefined && interruptedAt !== null && now - interruptedAt > CANDIDATE_STOP_GRACE_MS) {
+        await discardCandidate();
+      }
       if (preferencesRef.current.mode === "manual" || now < session.current.cooldownUntil || motion.current?.activity !== "walking") return;
       if (!candidateTracker.current) {
-        candidate.current = { startedAt: now, points: [] };
+        candidate.current = { startedAt: now, clock: { walkingMs: 0, walkingSince: now, interruptedAt: null }, startsNewSegment: false, points: [] };
         const tracker = createJourneyRecordingTracker(createCandidateLocationTracker(), latest.current.cities);
         candidateTracker.current = tracker;
         await tracker.start((point) => {
           if (!valid() || candidateTracker.current !== tracker || !candidate.current || latest.current.walkId || motion.current?.activity !== "walking") return;
-          candidate.current = { ...candidate.current, points: [...candidate.current.points, point] };
+          const recordedPoint = candidate.current.startsNewSegment ? { ...point, segmentBreakBefore: true } : point;
+          candidate.current = { ...candidate.current, startsNewSegment: false, points: [...candidate.current.points, recordedPoint] };
           void tick().catch(fail);
         }, (failure) => fail(new Error(failure.message)));
       }
       const buffer = candidate.current;
-      if (!buffer || buffer.points.length < 2 || now - buffer.startedAt < preferencesRef.current.startMinutes * 60_000
+      if (!buffer || buffer.points.length < 2 || candidateWalkingDuration(buffer.clock, now) < preferencesRef.current.startMinutes * 60_000
         || now - buffer.points[buffer.points.length - 1].recordedAt > 30_000) return;
       busy.current = true;
       try {
         await discardCandidate();
         if (!valid() || motion.current?.activity !== "walking" || latest.current.walkId) return;
-        await latest.current.onStart({ source: "automatic", startedAt: buffer.startedAt, points: buffer.points });
+        await latest.current.onStart({ source: "automatic", startedAt: buffer.startedAt, pausedMs: Math.max(0, now - buffer.startedAt - candidateWalkingDuration(buffer.clock, now)), points: buffer.points });
       } finally { busy.current = false; }
     };
 
@@ -309,7 +314,12 @@ export function useJourneyAutomation(options: Options) {
         return;
       }
       motion.current = next;
-      if (next.activity !== "walking") await discardCandidate();
+      if (candidate.current) {
+        const clock = advanceCandidateWalkingClock(candidate.current.clock, next);
+        if (clock === null) await discardCandidate();
+        else candidate.current = { ...candidate.current, clock,
+          startsNewSegment: candidate.current.startsNewSegment || clock.interruptedAt !== null };
+      }
       if (!valid()) return;
       if (latest.current.walkId) {
         if (isJourneyMovement(next)) {

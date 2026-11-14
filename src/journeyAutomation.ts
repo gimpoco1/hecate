@@ -5,7 +5,7 @@ export type JourneyStartMode = "manual" | "automatic";
 export type JourneySource = "manual" | "automatic";
 export type JourneyPreferences = { mode: JourneyStartMode; autoPause: boolean; startMinutes: number; restartMinutes: number; pauseMinutes: number; stopMinutes: number };
 export type JourneyMotion = { activity: "walking" | "cycling" | "stationary" | "other" | "unknown"; since: number };
-export type JourneySeed = { source: JourneySource; startedAt: number; points: Coordinate[] };
+export type JourneySeed = { source: JourneySource; startedAt: number; pausedMs: number; points: Coordinate[] };
 export const JOURNEY_START_DURATIONS: readonly number[] = [1, 2, 3, 5, 7, 10, 15];
 export const JOURNEY_PAUSE_DURATIONS: readonly number[] = [1, 2, 3, 5, 10, 15];
 export const JOURNEY_STOP_DURATIONS: readonly number[] = [5, 7, 10, 15, 20, 30, 60];
@@ -71,4 +71,25 @@ export function isJourneyMovement(motion: JourneyMotion): boolean {
 export function inactivityDeadlineBeforeMovement(idleSince: number | null, motion: JourneyMotion, delayMinutes: number): number | null {
   if (idleSince === null || !isJourneyMovement(motion)) return null;
   return motion.since - idleSince >= delayMinutes * 60_000 ? idleSince : null;
+}
+
+export const CANDIDATE_STOP_GRACE_MS = 2 * 60_000;
+export type CandidateWalkingClock = { walkingMs: number; walkingSince: number | null; interruptedAt: number | null };
+
+/** Brief stationary or uncertain intervals preserve progress without counting as walking. */
+export function advanceCandidateWalkingClock(clock: CandidateWalkingClock, motion: JourneyMotion): CandidateWalkingClock | null {
+  if (motion.activity === "cycling" || motion.activity === "other") return null;
+  if (motion.activity === "walking") {
+    if (clock.walkingSince !== null) return clock;
+    if (clock.interruptedAt === null) throw new Error("Interrupted candidate walking clock is missing its stop time.");
+    if (motion.since - clock.interruptedAt > CANDIDATE_STOP_GRACE_MS) return null;
+    return { walkingMs: clock.walkingMs, walkingSince: Math.max(motion.since, clock.interruptedAt), interruptedAt: null };
+  }
+  if (clock.walkingSince === null) return clock;
+  const interruptedAt = Math.max(motion.since, clock.walkingSince);
+  return { walkingMs: clock.walkingMs + interruptedAt - clock.walkingSince, walkingSince: null, interruptedAt };
+}
+
+export function candidateWalkingDuration(clock: CandidateWalkingClock, now: number): number {
+  return clock.walkingMs + (clock.walkingSince === null ? 0 : Math.max(0, now - clock.walkingSince));
 }
