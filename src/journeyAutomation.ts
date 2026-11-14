@@ -9,6 +9,7 @@ export type JourneySeed = { source: JourneySource; startedAt: number; points: Co
 export const JOURNEY_START_DURATIONS: readonly number[] = [1, 2, 3, 5, 7, 10, 15];
 export const JOURNEY_PAUSE_DURATIONS: readonly number[] = [1, 2, 3, 5, 10, 15];
 export const JOURNEY_STOP_DURATIONS: readonly number[] = [5, 7, 10, 15, 20, 30, 60];
+export const ONBOARDING_JOURNEY_MODE_KEY = "hecate:onboarding-journey-mode:v1";
 export const AUTO_RESTART_COOLDOWN_MS = 30 * 60_000;
 
 interface JourneyMotionPlugin {
@@ -35,7 +36,7 @@ export function parseJourneyMotion(value: JourneyMotion): JourneyMotion {
 
 export function loadJourneyPreferences(ownerId: string): JourneyPreferences {
   const raw = localStorage.getItem(`hecate:journey-preferences:v1:${ownerId}`);
-  if (raw === null) return defaultJourneyPreferences();
+  if (raw === null) return applyOnboardingJourneyPreferences(ownerId, defaultJourneyPreferences());
   const value: Omit<JourneyPreferences, "mode"> & { mode: JourneyStartMode | "assisted" } = JSON.parse(raw);
   if (!value || !["manual", "assisted", "automatic"].includes(value.mode)
     || typeof value.autoPause !== "boolean" || !JOURNEY_STOP_DURATIONS.includes(value.stopMinutes)
@@ -43,7 +44,18 @@ export function loadJourneyPreferences(ownerId: string): JourneyPreferences {
     || (value.pauseMinutes !== undefined && !JOURNEY_PAUSE_DURATIONS.includes(value.pauseMinutes))) {
     throw new TypeError("Saved journey settings are invalid. Choose your journey settings again.");
   }
-  return { mode: value.mode === "assisted" ? "automatic" : value.mode, autoPause: value.autoPause, startMinutes: value.startMinutes ?? 5, pauseMinutes: value.pauseMinutes ?? 2, stopMinutes: value.stopMinutes };
+  const preferences: JourneyPreferences = { mode: value.mode === "assisted" ? "automatic" : value.mode, autoPause: value.autoPause, startMinutes: value.startMinutes ?? 5, pauseMinutes: value.pauseMinutes ?? 2, stopMinutes: value.stopMinutes };
+  return applyOnboardingJourneyPreferences(ownerId, preferences);
+}
+
+function applyOnboardingJourneyPreferences(ownerId: string, preferences: JourneyPreferences): JourneyPreferences {
+  const onboardingMode = localStorage.getItem(ONBOARDING_JOURNEY_MODE_KEY);
+  if (onboardingMode === null) return preferences;
+  if (onboardingMode !== "manual" && onboardingMode !== "automatic") throw new TypeError("Invalid onboarding journey recording mode.");
+  const chosen: JourneyPreferences = { ...preferences, mode: onboardingMode, autoPause: onboardingMode === "automatic", startMinutes: 5 };
+  saveJourneyPreferences(ownerId, chosen);
+  localStorage.removeItem(ONBOARDING_JOURNEY_MODE_KEY);
+  return chosen;
 }
 
 export function saveJourneyPreferences(ownerId: string, preferences: JourneyPreferences): void {

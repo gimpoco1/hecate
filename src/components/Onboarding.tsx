@@ -13,6 +13,7 @@ import type { Coordinate } from "../types";
 import { acquireForegroundLocation, requestForegroundLocationPermission, requestReminderMotionPermission, readReminderMotionAuthorization, reminderMotionPermissionLabel, hasBackgroundLocationPermission, readForegroundLocationPermission, openLocationSettings } from "../location";
 import { canRequestOnboardingNotifications, requestOnboardingNotifications, readOnboardingNotificationPermission } from "../onboardingPermissions";
 import { errorDiagnostic } from "../diagnostics";
+import { JourneyMotionMonitor, ONBOARDING_JOURNEY_MODE_KEY, type JourneyStartMode } from "../journeyAutomation";
 import "./Onboarding.css";
 
 const COMPLETION_KEY = "hecate.onboarding.v1";
@@ -37,11 +38,12 @@ export function Onboarding({ children }: { children: ReactNode }) {
   useAppTranslation();
   const motionControls = useGuideMotion();
   const nativeApp = Capacitor.isNativePlatform();
-  const pages = nativeApp ? introPages : introPages.filter(page => page.kind !== "motion");
+
   const [complete, setComplete] = useState(() => localStorage.getItem(COMPLETION_KEY) === "complete");
   const [step, setStep] = useState(0);
   const [requesting, setRequesting] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(false);
+  const [journeyMode, setJourneyMode] = useState<JourneyStartMode>("manual");
   const [motionAvailable, setMotionAvailable] = useState(true);
   const [initialLocation, setInitialLocation] = useState<Coordinate | undefined>();
   const [locationResult, setLocationResult] = useState<boolean | null>(null);
@@ -49,10 +51,13 @@ export function Onboarding({ children }: { children: ReactNode }) {
   const [motionResult, setMotionResult] = useState<boolean | null>(null);
   const [backgroundAllowed, setBackgroundAllowed] = useState<boolean | null>(null);
   const [permissionError, setPermissionError] = useState("");
+  const automaticReady = nativeApp && journeyMode === "automatic" && locationResult === true && motionResult === true && backgroundAllowed === true && motionAvailable;
+  const pages = introPages.filter(page => page.kind !== "motion" || (nativeApp && journeyMode !== "automatic"));
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     const restart = (): void => {
       setStep(0);
+      setJourneyMode("manual");
       setCheckingPermission(false);
       setRequesting(false);
       setInitialLocation(undefined);
@@ -72,6 +77,9 @@ export function Onboarding({ children }: { children: ReactNode }) {
   }, [step, complete]);
 
   function finish(): void {
+    if (step >= pages.findIndex(page => page.kind === "location")) {
+      localStorage.setItem(ONBOARDING_JOURNEY_MODE_KEY, automaticReady ? "automatic" : "manual");
+    }
     localStorage.setItem(COMPLETION_KEY, "complete");
     setComplete(true);
   }
@@ -131,6 +139,14 @@ export function Onboarding({ children }: { children: ReactNode }) {
       try {
         if (kind === "location") {
           const allowed = await readForegroundLocationPermission();
+          if (nativeApp) {
+            const [motion, background, { available }] = await Promise.all([readReminderMotionAuthorization(), hasBackgroundLocationPermission(), JourneyMotionMonitor.getAvailability()]);
+            if (active) {
+              setMotionAvailable(available);
+              setMotionResult(motion === "notDetermined" ? null : motion === "authorized");
+              setBackgroundAllowed(background);
+            }
+          }
           if (active) setLocationResult(allowed);
         }
         if (kind === "notifications") {
@@ -191,6 +207,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
 
   if (complete) return <OnboardingLocationContext.Provider value={initialLocation}>{children}</OnboardingLocationContext.Provider>;
   const page = pages[step];
+  const configuringAutomatic = page.kind === "location" && journeyMode === "automatic";
   const permissionPage = page.kind === "location" || page.kind === "notifications" || page.kind === "motion";
   const permissionResult = page.kind === "location" ? locationResult : page.kind === "motion" ? motionResult : notificationResult;
   const needsSettings = nativeApp && permissionPage && (page.kind !== "motion" || motionAvailable) && (permissionResult === false || (page.kind === "motion" && motionResult === true && backgroundAllowed === false));
@@ -211,7 +228,16 @@ export function Onboarding({ children }: { children: ReactNode }) {
         <section className="onboarding-copy" aria-labelledby="onboarding-title">
           <h1 id="onboarding-title" tabIndex={-1} ref={heading}>{t(page.title)}</h1>
           <p className="onboarding-description">{t(page.description, { permission: reminderMotionPermissionLabel() })}</p>
-          {page.caption && permissionResult !== false && <p className="onboarding-caption">{t(page.caption)}</p>}
+          {page.kind === "location" && <fieldset className="onboarding-journey-modes" disabled={busy}>
+            <legend>{t("Start journeys")}</legend>
+            {(["manual", "automatic"] as const).map(mode => <label key={mode}>
+              <input type="radio" name="onboarding-journey-mode" data-testid={`onboarding-journey-${mode}`} checked={journeyMode === mode} disabled={mode === "automatic" && (!nativeApp || !motionAvailable)} onChange={() => setJourneyMode(mode)} />
+              <span><strong>{t(mode === "manual" ? "Manual" : "Automatic")}</strong><small>{t(mode === "manual" ? "You start each journey." : "onboarding.automaticDescription")}</small></span>
+            </label>)}
+          </fieldset>}
+          {configuringAutomatic && <p className="onboarding-caption">{t("onboarding.automaticPermissions")}</p>}
+          {page.kind === "location" && nativeApp && !motionAvailable && <p className="onboarding-caption">{t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.")}</p>}
+          {page.caption && !configuringAutomatic && permissionResult !== false && <p className="onboarding-caption">{t(page.caption)}</p>}
           {permissionPage && permissionResult !== null && !(page.kind === "motion" && motionResult === true && backgroundAllowed === false) && (page.kind !== "motion" || motionAvailable) && <p className={`onboarding-permission-status${permissionResult === false ? " onboarding-warning" : ""}`} role="status">{permissionResult === false && <PermissionWarningIcon />}{permissionResult
             ? page.kind === "location" ? t("Location is enabled.") : page.kind === "motion" ? t("{{permission}} is enabled.", { permission: reminderMotionPermissionLabel() }) : t("Notifications are enabled.")
             : page.kind === "notifications" ? t("Notifications are blocked. Enable them in Settings.") : t("You can enable this later in Settings.")}</p>}
@@ -223,15 +249,17 @@ export function Onboarding({ children }: { children: ReactNode }) {
           <div className="onboarding-progress" aria-hidden="true">{pages.map((item, index) => <span key={item.title} className={index === step ? "is-current" : ""} />)}</div>
           <div className="onboarding-actions">
             {step > 0 && <button type="button" className="onboarding-back" data-testid="onboarding-back" disabled={busy} onClick={() => { setPermissionError(""); setStep(step - 1); }}>{t("Back")}</button>}
-            {showPermissionButton ? <button type="button" className="onboarding-next" data-testid="onboarding-permission" disabled={busy}
-              onClick={() => void (page.kind === "location" ? enableLocation() : page.kind === "motion" ? enableMotion() : enableNotifications())}>
-              {checkingPermission ? t("Checking permission…") : requesting ? t("Requesting permission…") : page.kind === "location" ? t("Enable location") : page.kind === "motion" ? t("Enable {{permission}}", { permission: reminderMotionPermissionLabel() }) : t("Enable notifications")}
-            </button> : needsSettings ? <button type="button" className="onboarding-next" data-testid="onboarding-settings" disabled={busy} onClick={() => void openPermissionSettings()}>{t("Open Settings")}</button>
-              : <button type="button" className="onboarding-next" data-testid="onboarding-next" disabled={busy} onClick={() => void next()}>
-                {requesting ? t("Finding your location") : step === pages.length - 1 ? t("Explore with Hecate") : t("Continue")}
-              </button>}
+            {configuringAutomatic && locationResult === true && motionResult !== true ? <button type="button" className="onboarding-next" data-testid="onboarding-automatic-motion" disabled={busy} onClick={() => void (motionResult === false ? openPermissionSettings() : enableMotion())}>{motionResult === false ? t("Open Settings") : t("Enable {{permission}}", { permission: reminderMotionPermissionLabel() })}</button>
+              : configuringAutomatic && locationResult === true && backgroundAllowed !== true ? <button type="button" className="onboarding-next" data-testid="onboarding-automatic-location" disabled={busy} onClick={() => void openPermissionSettings()}>{t("Open Settings")}</button>
+                : showPermissionButton ? <button type="button" className="onboarding-next" data-testid="onboarding-permission" disabled={busy}
+                  onClick={() => void (page.kind === "location" ? enableLocation() : page.kind === "motion" ? enableMotion() : enableNotifications())}>
+                  {checkingPermission ? t("Checking permission…") : requesting ? t("Requesting permission…") : page.kind === "location" ? t("Enable location") : page.kind === "motion" ? t("Enable {{permission}}", { permission: reminderMotionPermissionLabel() }) : t("Enable notifications")}
+                </button> : needsSettings ? <button type="button" className="onboarding-next" data-testid="onboarding-settings" disabled={busy} onClick={() => void openPermissionSettings()}>{t("Open Settings")}</button>
+                  : <button type="button" className="onboarding-next" data-testid="onboarding-next" disabled={busy} onClick={() => void next()}>
+                    {requesting ? t("Finding your location") : step === pages.length - 1 ? t("Explore with Hecate") : t("Continue")}
+                  </button>}
           </div>
-          {(showPermissionButton || needsSettings || (page.kind === "location" && locationResult === true && !initialLocation)) && <button type="button" className="onboarding-later" data-testid="onboarding-later" disabled={busy} onClick={advancePage}>{t("Not now")}</button>}
+          {(showPermissionButton || needsSettings || (configuringAutomatic && !automaticReady) || (page.kind === "location" && locationResult === true && !initialLocation)) && <button type="button" className="onboarding-later" data-testid="onboarding-later" disabled={busy} onClick={() => { if (configuringAutomatic) setJourneyMode("manual"); advancePage(); }}>{t("Not now")}</button>}
         </footer>
       </div>
     </main>

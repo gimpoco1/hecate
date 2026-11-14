@@ -1249,5 +1249,7 @@
   "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.": "A deteção automática de percursos requer iOS 17 ou posterior no iPhone e suporte de movimento no Android.",
   "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.": "A gravação de percursos mudou para Manual porque o acesso à localização não está definido como Sempre. Podes continuar a iniciar percursos manualmente.",
   "settings.journeyStartTiming": "Após <duration/> de caminhada contínua, a Hecate guarda um percurso incluindo esse tempo inicial. Os passeios mais curtos são descartados. Os inícios automáticos aguardam 30 minutos após terminares um percurso manualmente.",
-  "Reset to defaults": "Repor predefinições"
+  "Reset to defaults": "Repor predefinições",
+  "onboarding.automaticDescription": "A Hecate inicia um percurso após 5 minutos a caminhar. Também podes iniciá-lo manualmente.",
+  "onboarding.automaticPermissions": "A gravação automática precisa de Movimento e fitness e acesso à localização Sempre, mesmo com o telefone bloqueado. Podes alterar isto nas definições de gravação de percursos."
 }

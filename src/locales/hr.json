@@ -1264,5 +1264,7 @@
   "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.": "Automatsko otkrivanje istraživanja zahtijeva iOS 17 ili noviji na iPhoneu i podršku za kretanje na Androidu.",
   "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.": "Snimanje putovanja prebačeno je na ručno jer pristup lokaciji nije postavljen na Uvijek. Putovanja i dalje možeš pokretati ručno.",
   "settings.journeyStartTiming": "Nakon <duration/> neprekidnog hodanja, Hecate sprema putovanje uključujući to početno vrijeme. Kraće šetnje se odbacuju. Automatsko pokretanje čeka 30 minuta nakon što ručno završiš putovanje.",
-  "Reset to defaults": "Vrati zadane postavke"
+  "Reset to defaults": "Vrati zadane postavke",
+  "onboarding.automaticDescription": "Hecate pokreće putovanje nakon 5 minuta hodanja. I dalje ga možeš pokrenuti ručno.",
+  "onboarding.automaticPermissions": "Automatsko snimanje zahtijeva pristup kretanju i kondiciji te lokaciji Uvijek, čak i kad je telefon zaključan. To možeš promijeniti u postavkama snimanja putovanja."
 }

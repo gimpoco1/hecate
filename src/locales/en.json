@@ -1249,5 +1249,7 @@
   "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.": "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.",
   "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.": "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.",
   "settings.journeyStartTiming": "After <duration/> of continuous walking, Hecate saves a journey including that initial walking time. Shorter walks are discarded. Automatic starts wait 30 minutes after you stop a journey manually.",
-  "Reset to defaults": "Reset to defaults"
+  "Reset to defaults": "Reset to defaults",
+  "onboarding.automaticDescription": "Hecate starts a journey after 5 minutes of walking. You can still start one yourself.",
+  "onboarding.automaticPermissions": "Automatic recording needs Motion & Fitness and Always location access, including while your phone is locked. You can change this anytime in Journey recording settings."
 }
