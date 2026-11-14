@@ -4,7 +4,7 @@ import { Trans } from "react-i18next";
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { t } from "../i18n";
-import { JOURNEY_START_DURATIONS, JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, JourneyMotionMonitor, defaultJourneyPreferences, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
+import { JOURNEY_RESTART_DURATIONS, JOURNEY_START_DURATIONS, JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, JourneyMotionMonitor, defaultJourneyPreferences, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
 import { openLocationSettings, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, reminderMotionPermissionLabel, type LocationAuthorization, type ReminderMotionAuthorization } from "../location";
 import { ArrowLeftIcon, XIcon, WarningIcon, ChevronIcon } from "./Icons";
 import { ReminderDuration } from "./ReminderDuration";
@@ -105,6 +105,7 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
         </label>)}
       </fieldset>
       {preferences.mode !== "manual" && <p className="journey-settings-note"><Trans i18nKey="settings.journeyStartTiming" components={{ duration: <ReminderDuration title={t("Start journeys")} description={t("Hecate starts journeys for you when it detects walking.")} value={preferences.startMinutes} options={JOURNEY_START_DURATIONS} disabled={pending || !automaticAvailable} onChange={minutes => save({ ...preferences, startMinutes: minutes })} /> }} /></p>}
+      {preferences.mode !== "manual" && <p className="journey-settings-note"><Trans i18nKey="settings.journeyRestartTiming" components={{ duration: <ReminderDuration title={t("settings.journeyRestartTitle")} description={t("settings.journeyRestartDescription")} value={preferences.restartMinutes} options={JOURNEY_RESTART_DURATIONS} disabled={pending || !automaticAvailable} onChange={minutes => save({ ...preferences, restartMinutes: minutes })} /> }} /></p>}
       <section className="account-settings-panel" aria-label={t("Pause and resume")}>
         <div className="account-setting">
           <div><strong id="journey-auto-pause-label">{t("Pause automatically")}</strong><p id="journey-auto-pause-description"><Trans i18nKey="settings.journeyPauseTiming" components={{ duration: <ReminderDuration title={t("Pause automatically")} description={t("Pause after staying in one place for this long. Resume the same journey when you move again.")} value={preferences.pauseMinutes} options={JOURNEY_PAUSE_DURATIONS} disabled={pending || !native || (permissions?.motion !== "authorized" || !permissions.available) || !preferences.autoPause} onChange={minutes => save({ ...preferences, pauseMinutes: minutes })} /> }} /></p></div>

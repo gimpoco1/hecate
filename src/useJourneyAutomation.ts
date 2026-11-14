@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { AUTO_RESTART_COOLDOWN_MS, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -100,7 +100,7 @@ export function useJourneyAutomation(options: Options) {
   }
 
   function manualStop(): void {
-    session.current = { ...session.current, cooldownUntil: Date.now() + AUTO_RESTART_COOLDOWN_MS };
+    session.current = { ...session.current, cooldownUntil: Date.now() + preferencesRef.current.restartMinutes * 60_000 };
     persist();
   }
 
@@ -199,6 +199,10 @@ export function useJourneyAutomation(options: Options) {
     }
     if (latest.current.ownerId !== ownerId) throw new Error(t("Your account changed. Reopen journey settings."));
     saveJourneyPreferences(ownerId, next);
+    if (session.current.cooldownUntil > 0 && next.restartMinutes !== previous.restartMinutes) {
+      session.current = { ...session.current, cooldownUntil: session.current.cooldownUntil + (next.restartMinutes - previous.restartMinutes) * 60_000 };
+      persist();
+    }
     if (!next.autoPause && session.current.pauseMode === "automatic" && session.current.pausedAt !== null) {
       session.current = { ...session.current, pausedMs: session.current.pausedMs + Date.now() - session.current.pausedAt, pausedAt: null, pauseMode: null };
       pausedRecorderId.current = null;

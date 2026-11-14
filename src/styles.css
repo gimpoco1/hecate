@@ -3926,7 +3926,8 @@ button {
   opacity: 0.6;
   cursor: wait;
 }
-.account-setting .streak-reminder-time {
+.account-setting .streak-reminder-time,
+.journey-settings-note .streak-reminder-time {
   display: inline;
   min-width: 0;
   margin: 0;
