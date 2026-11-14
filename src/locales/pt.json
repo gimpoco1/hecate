@@ -1245,5 +1245,9 @@
   "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "A gravação de percursos mudou para Manual porque o acesso ao movimento está desativado. Podes continuar a iniciar percursos manualmente.",
   "Allow {{value0}}": "Permitir {{value0}}",
   "Your explored map could not be loaded. Check your connection and retry.": "Não foi possível carregar o teu mapa explorado. Verifica a ligação e tenta novamente.",
-  "Loading your explored map…": "A carregar o teu mapa explorado…"
+  "Loading your explored map…": "A carregar o teu mapa explorado…",
+  "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.": "A deteção automática de percursos requer iOS 17 ou posterior no iPhone e suporte de movimento no Android.",
+  "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.": "A gravação de percursos mudou para Manual porque o acesso à localização não está definido como Sempre. Podes continuar a iniciar percursos manualmente.",
+  "settings.journeyStartTiming": "Após <duration/> de caminhada contínua, a Hecate guarda um percurso incluindo esse tempo inicial. Os passeios mais curtos são descartados. Os inícios automáticos aguardam 30 minutos após terminares um percurso manualmente.",
+  "Reset to defaults": "Repor predefinições"
 }

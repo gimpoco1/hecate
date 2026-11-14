@@ -12,7 +12,6 @@ import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap"
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
 import { formatElapsedDuration } from "./durationFormat";
 import { JourneyHistory } from "./components/JourneyHistory";
-import { Trans } from "react-i18next";
 import { formatNumber, t, useAppTranslation, currentLanguage, languagePreference, setLanguagePreference } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
 import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
@@ -277,6 +276,7 @@ import { observeAuthSession } from "./authSession";
 
 type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
+  elapsedMs: number;
   walkId: string;
   route: JourneyRecapRoute;
   cells: DiscoveryCell[];
@@ -632,20 +632,14 @@ const JourneyDetails = memo(function JourneyDetails({
   );
 });
 
-function formatRecapPercentage(percentage: number) {
-  if (percentage <= 0) return "0%";
-  if (percentage < 0.01) return "<0.01%";
-  if (percentage < 1) return `${formatNumber(percentage, 2)}%`;
-  return formatDiscoveryPercentage(percentage, false);
+function formatJourneyPeriod(startedAt: number, finishedAt: number): string {
+  const start = new Date(startedAt);
+  const end = new Date(finishedAt);
+  const date = new Intl.DateTimeFormat(currentLanguage(), { day: "numeric", month: "short", year: "numeric" });
+  const time = new Intl.DateTimeFormat(currentLanguage(), { hour: "numeric", minute: "2-digit" });
+  const endDate = date.format(start) === date.format(end) ? "" : `${date.format(end)} `;
+  return `${date.format(start)} · ${time.format(start)} – ${endDate}${time.format(end)}`;
 }
-
-function formatDuration(startedAt: number, finishedAt: number) {
-  const minutes = Math.max(1, Math.round((finishedAt - startedAt) / 60_000));
-  if (minutes < 60) return t("{{value0}} min", { value0: minutes });
-  const hours = Math.floor(minutes / 60);
-  return t("{{hours}} hr {{minutes}}", { hours, minutes: minutes % 60 ? t("{{value0}} min", { value0: minutes % 60 }) : "" }).trim();
-}
-
 
 function formatStreakDays(days: number) {
   return t("day", { count: days });
@@ -1134,6 +1128,8 @@ export default function App() {
   const [journeyHistoryFilters, setJourneyHistoryFilters] = useState<JourneyHistoryFilters>(() => ({ weekStart: journeyWeekStart(Date.now()), selectedDay: null }));
   const [explorationSummary, setExplorationSummary] =
     useState<ExplorationSummary | null>(null);
+  const recapDiscoveryPoints = useMemo(() => explorationSummary
+    ? mergeRoutePoints(points, explorationSummary.route.points) : points, [points, explorationSummary]);
   const [achievementCelebrations, setAchievementCelebrations] = useState<
     PersonalAchievementId[]
   >([]);
@@ -1499,8 +1495,6 @@ export default function App() {
     onPause: async () => {
       resetInactivityReminder();
       selectionHaptic();
-      // Automatic journeys retain location callbacks until their end deadline; paused fixes are discarded.
-      if (automation.isAutomaticJourney() && !automation.isManualPause()) return;
       if (Capacitor.isNativePlatform() && activeWalkRef.current) {
         await JourneyActivity.pauseLocation({ walkId: activeWalkRef.current.id });
         return;
@@ -3238,9 +3232,9 @@ export default function App() {
     if (tracking === "requesting" || tracking === "tracking") return;
     const backgroundReminder =
       nativeApp &&
-      reminderMotionAllowed === true &&
       Boolean(accountUserId) &&
-      (automation.preferences.mode === "manual" ? reminderEnabled && notificationPermissionReady === true : !automation.error);
+      ((reminderMotionAllowed === true && reminderEnabled && notificationPermissionReady === true) ||
+        (Capacitor.getPlatform() === "android" && automation.preferences.mode !== "manual" && automation.motionAllowed === true && !automation.error));
     let disposed = false;
     let nativeActive = !nativeApp;
     let nativeStateKnown = !nativeApp;
@@ -3465,6 +3459,7 @@ export default function App() {
     tracking,
     automation.preferences.mode,
     automation.error,
+    automation.motionAllowed,
   ]);
 
   useEffect(() => () => cityLookupAbortRef.current?.abort(), []);
@@ -3955,6 +3950,7 @@ export default function App() {
           discoveredDistanceKm(pointsRef.current) - started.discoveryDistance,
         );
         const summary: ExplorationSummary = {
+          elapsedMs: automation.activityState(finishedAt).elapsedMs,
           walkId: active.id,
           route: createJourneyRecapRoute(pointsRef.current, completed),
           cells: newCells,
@@ -4553,6 +4549,7 @@ export default function App() {
       discoveryCellsFromPoints(previousPoints).map(discoveryCellKey),
     );
     setExplorationSummary({
+      elapsedMs: finishedAt - startedAt,
       walkId,
       route: createJourneyRecapRoute(previousPoints.map(point => ({ ...point, walkId: "dev-previous-journey", recordedAt: point.recordedAt - 3_600_000 })), { id: walkId, startedAt, finishedAt, points }),
       cells: discoveryCellsFromPoints(points).filter(
@@ -4976,8 +4973,7 @@ export default function App() {
               : "unavailable",
         );
       });
-      if (Capacitor.getPlatform() === "android" && automation.activityState(Date.now()).paused &&
-          (!automation.isAutomaticJourney() || automation.isManualPause())) {
+      if (Capacitor.getPlatform() === "android" && automation.activityState(Date.now()).paused) {
         await JourneyActivity.pauseLocation({ walkId: restoredWalkId });
       }
     };
@@ -6858,7 +6854,7 @@ export default function App() {
         setJourneyHistoryOpen(false);
       }} />}
       {explorationSummary && (
-        <div className="exploration-recap-backdrop" role="presentation">
+        <div className="exploration-recap-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setExplorationSummary(null); }}>
           <section
             className="exploration-recap"
             role="dialog"
@@ -6871,8 +6867,8 @@ export default function App() {
               <DiscoveryMap
                 navigationFollowing={false}
                 mode="discover"
-                points={explorationSummary.route.points}
-                cells={explorationSummary.route.cells}
+                points={recapDiscoveryPoints}
+                cells={cells}
                 highlightedPoints={explorationSummary.route.points}
                 highlightedNewGroundSegments={explorationSummary.route.newGroundSegments}
                 onZoomChange={onPreviewZoomChange}
@@ -6884,10 +6880,8 @@ export default function App() {
               />
             </div>
             <div className="exploration-recap__headline" data-testid="guide-recap">
-              {Math.round(explorationSummary.newGroundKm * 1000) > 0
-                ? <Trans i18nKey="app.newGroundRecap" values={{ distance: formatDistance(explorationSummary.newGroundKm) }}
-                  components={{ distance: <strong />, caption: <span /> }} />
-                : <><strong>{formatDistance(explorationSummary.travelledKm)}</strong><span>{t("No new ground on this journey.")}</span></>}
+              <div><strong>{formatDistance(explorationSummary.newGroundKm)}</strong><span>{t("New ground")}</span></div>
+              <div><strong>{formatDistance(explorationSummary.travelledKm)}</strong><span>{t("Travelled")}</span></div>
             </div>
             <ContextualGuide topic="recap" />
             <div className="exploration-recap__insights">
@@ -6898,18 +6892,13 @@ export default function App() {
                       100,
                 ) })}</span>
               )}
-              {explorationSummary.cityName &&
-                explorationSummary.cityPercentageAdded !== undefined && explorationSummary.cityPercentageAdded > 0 && (
-                <span>{t("+ {{value0}}{{value1}} of {{value2}}", { value0: formatRecapPercentage(
-                  explorationSummary.cityPercentageAdded,
-                ), value1: " ", value2: explorationSummary.cityName })}</span>
-              )}
-              {explorationSummary.cells.length > 0 && <span>{t("recapNewAreas", { count: explorationSummary.cells.length })}</span>}
-              <span>{t("{{value0}}{{value1}} · {{value2}} travelled", { value0: formatDuration(
-                explorationSummary.startedAt,
-                explorationSummary.finishedAt,
-              ), value1: " ", value2: formatDistance(explorationSummary.travelledKm) })}</span>
+              <span className="exploration-recap__date">{formatJourneyPeriod(explorationSummary.startedAt, explorationSummary.finishedAt)}</span>
             </div>
+            <dl className="exploration-recap__details">
+              <div><dt>{t("Duration")}</dt><dd>{formatElapsedDuration(explorationSummary.finishedAt - explorationSummary.startedAt)}</dd></div>
+              <div><dt>{t("Active time")}</dt><dd>{formatElapsedDuration(explorationSummary.elapsedMs)}</dd></div>
+              {explorationSummary.finishedAt - explorationSummary.startedAt > explorationSummary.elapsedMs && <div><dt>{t("Paused")}</dt><dd>{formatElapsedDuration(explorationSummary.finishedAt - explorationSummary.startedAt - explorationSummary.elapsedMs)}</dd></div>}
+            </dl>
             <div className="exploration-recap__actions">
               <button type="button" data-testid="recap-close" onClick={() => setExplorationSummary(null)}>{t("Done")}</button>
               <button

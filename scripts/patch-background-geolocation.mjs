@@ -479,3 +479,16 @@ if (!source.includes("private var journeyPauseObserver")) {
         }`);
   writeFileSync(pluginPath, source);
 }
+
+// Use the instance authorization API supported by every deployment target in this app.
+source = readFileSync(pluginPath, "utf8");
+for (const [original, replacement] of [
+  ["let status = CLLocationManager.authorizationStatus()", "let status = manager.authorizationStatus"],
+  ["switch CLLocationManager.authorizationStatus()", "switch CLLocationManager().authorizationStatus"],
+]) {
+  if (!source.includes(original) && !source.includes(replacement)) {
+    throw new Error("Background geolocation plugin changed; review the iOS authorization API patch before building.");
+  }
+  source = source.replaceAll(original, replacement);
+}
+writeFileSync(pluginPath, source);

@@ -231,7 +231,7 @@ class NativeLocationTracker implements LocationTracker {
       journeyId: string | null;
       motionGated: boolean;
     } = {
-      showsBackgroundLocationIndicator: this.mode === "walk" || this.mode === "candidate" || this.mode === "automatic",
+      showsBackgroundLocationIndicator: this.mode === "walk" || this.mode === "automatic",
       journeyId: this.journeyId,
       motionGated: this.mode === "reminder" || this.mode === "automatic-monitor",
       ...(this.mode === "walk" || this.mode === "automatic"

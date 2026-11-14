@@ -4,7 +4,7 @@ import { Trans } from "react-i18next";
 import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { t } from "../i18n";
-import { JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
+import { JOURNEY_START_DURATIONS, JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, JourneyMotionMonitor, defaultJourneyPreferences, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
 import { openLocationSettings, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, reminderMotionPermissionLabel, type LocationAuthorization, type ReminderMotionAuthorization } from "../location";
 import { ArrowLeftIcon, XIcon, WarningIcon, ChevronIcon } from "./Icons";
 import { ReminderDuration } from "./ReminderDuration";
@@ -20,7 +20,7 @@ type Props = {
 export function JourneySettings({ preferences, onChange, onBack, onClose }: Props) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [permissions, setPermissions] = useState<{ location: LocationAuthorization; motion: ReminderMotionAuthorization } | null>(null);
+  const [permissions, setPermissions] = useState<{ location: LocationAuthorization; motion: ReminderMotionAuthorization; available: boolean } | null>(null);
   const [permissionError, setPermissionError] = useState("");
   const panel = useRef<HTMLElement>(null);
   const native = Capacitor.isNativePlatform();
@@ -44,9 +44,9 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
     if (!native) return;
     let active = true;
     const refresh = (): void => {
-      void Promise.all([readLocationAuthorization(), readReminderMotionAuthorization()]).then(([location, motion]) => {
+      void Promise.all([readLocationAuthorization(), readReminderMotionAuthorization(), JourneyMotionMonitor.getAvailability()]).then(([location, motion, { available }]) => {
         if (!active) return;
-        setPermissions({ location, motion });
+        setPermissions({ location, motion, available });
         setPermissionError("");
       }).catch((failure: Error) => {
         if (active) { setPermissions(null); setPermissionError(failure.message); }
@@ -68,11 +68,12 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
     setError("");
     try {
       await requestReminderMotionPermission();
-      const [location, motion] = await Promise.all([readLocationAuthorization(), readReminderMotionAuthorization()]);
-      setPermissions({ location, motion });
+      const [location, motion, { available }] = await Promise.all([readLocationAuthorization(), readReminderMotionAuthorization(), JourneyMotionMonitor.getAvailability()]);
+      setPermissions({ location, motion, available });
     } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not request motion access. Please try again.")); }
     finally { setPending(false); }
   }
+  const automaticAvailable = native && permissions?.motion === "authorized" && permissions.available && permissions.location === "always";
   const choices: { mode: JourneyStartMode; title: string; description: string; icon: string }[] = [
     { mode: "manual", icon: mdiGestureTap, title: t("Manual"), description: t("You start each journey.") },
     { mode: "automatic", icon: mdiAutoMode, title: t("Automatic"), description: t("Hecate starts journeys for you when it detects walking.") },
@@ -93,30 +94,36 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
           <button className="notification-permission-notice__action" type="button" data-testid="journey-permission-settings" disabled={pending} onClick={() => { if (permissions.motion === "notDetermined") void enableMotion(); else void openLocationSettings().catch(failure => setError(failure instanceof Error ? failure.message : t("Could not open device Settings."))); }}>{permissions.motion === "notDetermined" ? t("Allow {{value0}}", { value0: reminderMotionPermissionLabel() }) : t("Open Settings")} <ChevronIcon size={14} /></button>
         </div>
       </div>}
+      {native && permissions && !permissions.available && <p role="status">{t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.")}</p>}
       {!native && <p role="status">{t("Automatic journeys require the iOS or Android app.")}</p>}
       <fieldset className="language-options journey-mode-options" disabled={pending}>
         <legend className="account-settings-panel__header">{t("Start journeys")}</legend>
         {choices.map(choice => <label key={choice.mode}>
           <svg className="journey-mode-symbol" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={choice.icon} /></svg>
           <span className="journey-mode-copy"><strong>{choice.title}</strong><small>{choice.description}</small></span>
-          <input type="radio" name="journey-start-mode" checked={(native && permissions?.motion !== "authorized" ? "manual" : preferences.mode) === choice.mode} disabled={choice.mode !== "manual" && (!native || permissions?.motion !== "authorized")} data-testid={`journey-mode-${choice.mode}`} onChange={() => void save({ ...preferences, mode: choice.mode })} />
+          <input type="radio" name="journey-start-mode" checked={(native && !automaticAvailable ? "manual" : preferences.mode) === choice.mode} disabled={choice.mode !== "manual" && !automaticAvailable} data-testid={`journey-mode-${choice.mode}`} onChange={() => void save({ ...preferences, mode: choice.mode })} />
         </label>)}
       </fieldset>
-      {preferences.mode !== "manual" && <p className="journey-settings-note">{t("After five continuous minutes of walking, Hecate saves a journey including those first five minutes. Shorter walks are discarded. Automatic starts wait 30 minutes after you stop a journey manually.")}</p>}
+      {preferences.mode !== "manual" && <p className="journey-settings-note"><Trans i18nKey="settings.journeyStartTiming" components={{ duration: <ReminderDuration title={t("Start journeys")} description={t("Hecate starts journeys for you when it detects walking.")} value={preferences.startMinutes} options={JOURNEY_START_DURATIONS} disabled={pending || !automaticAvailable} onChange={minutes => save({ ...preferences, startMinutes: minutes })} /> }} /></p>}
       <section className="account-settings-panel" aria-label={t("Pause and resume")}>
         <div className="account-setting">
-          <div><strong id="journey-auto-pause-label">{t("Pause automatically")}</strong><p id="journey-auto-pause-description"><Trans i18nKey="settings.journeyPauseTiming" components={{ duration: <ReminderDuration title={t("Pause automatically")} description={t("Pause after staying in one place for this long. Resume the same journey when you move again.")} value={preferences.pauseMinutes} options={JOURNEY_PAUSE_DURATIONS} disabled={pending || !native || permissions?.motion !== "authorized" || !preferences.autoPause} onChange={minutes => save({ ...preferences, pauseMinutes: minutes })} /> }} /></p></div>
-          <button type="button" role="switch" aria-labelledby="journey-auto-pause-label" aria-describedby="journey-auto-pause-description" aria-checked={preferences.autoPause && permissions?.motion === "authorized"} disabled={pending || !native || permissions?.motion !== "authorized"} data-testid="journey-auto-pause" onClick={() => void save({ ...preferences, autoPause: !preferences.autoPause })}>{preferences.autoPause && permissions?.motion === "authorized" ? t("On") : t("Off")}</button>
+          <div><strong id="journey-auto-pause-label">{t("Pause automatically")}</strong><p id="journey-auto-pause-description"><Trans i18nKey="settings.journeyPauseTiming" components={{ duration: <ReminderDuration title={t("Pause automatically")} description={t("Pause after staying in one place for this long. Resume the same journey when you move again.")} value={preferences.pauseMinutes} options={JOURNEY_PAUSE_DURATIONS} disabled={pending || !native || (permissions?.motion !== "authorized" || !permissions.available) || !preferences.autoPause} onChange={minutes => save({ ...preferences, pauseMinutes: minutes })} /> }} /></p></div>
+          <button type="button" role="switch" aria-labelledby="journey-auto-pause-label" aria-describedby="journey-auto-pause-description" aria-checked={preferences.autoPause && (permissions?.motion === "authorized" && permissions.available)} disabled={pending || !native || (permissions?.motion !== "authorized" || !permissions.available)} data-testid="journey-auto-pause" onClick={() => void save({ ...preferences, autoPause: !preferences.autoPause })}>{preferences.autoPause && (permissions?.motion === "authorized" && permissions.available) ? t("On") : t("Off")}</button>
         </div>
       </section>
       {preferences.mode !== "manual" && <section className="account-settings-panel" aria-labelledby="journey-end-title">
         <div className="account-setting">
           <div>
             <strong id="journey-end-title">{t("End automatic journeys")}</strong>
-            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End automatic journeys")} description={t("Finish after staying in one place for this long. Journeys you start manually only end when you stop them.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending || !native || permissions?.motion !== "authorized"} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
+            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End automatic journeys")} description={t("Finish after staying in one place for this long. Journeys you start manually only end when you stop them.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending || !automaticAvailable} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
           </div>
         </div>
       </section>}
+      <div className="account-settings-panel">
+        <div className="account-setting">
+          <button type="button" data-testid="journey-reset-defaults" disabled={pending} onClick={() => void save({ ...defaultJourneyPreferences(), autoPause: native && permissions?.motion === "authorized" && permissions.available && (permissions.location === "always" || permissions.location === "whenInUse") })}>{t("Reset to defaults")}</button>
+        </div>
+      </div>
       {(error || permissionError) && <p role="alert">{error || permissionError}</p>}
     </section>
   </div>, document.body);

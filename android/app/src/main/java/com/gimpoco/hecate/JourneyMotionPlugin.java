@@ -64,6 +64,13 @@ public class JourneyMotionPlugin extends Plugin {
         });
     }
 
+    @PluginMethod public void getAvailability(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("available", com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(getContext())
+            == com.google.android.gms.common.ConnectionResult.SUCCESS);
+        call.resolve(result);
+    }
+
     @PluginMethod public void start(PluginCall call) {
         if (!permitted()) { call.reject("Allow Physical activity in Hecate's device settings.", "MOTION_NOT_AUTHORIZED"); return; }
         instance = new WeakReference<>(this);

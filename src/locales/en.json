@@ -1245,5 +1245,9 @@
   "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.",
   "Allow {{value0}}": "Allow {{value0}}",
   "Your explored map could not be loaded. Check your connection and retry.": "Your explored map could not be loaded. Check your connection and retry.",
-  "Loading your explored map…": "Loading your explored map…"
+  "Loading your explored map…": "Loading your explored map…",
+  "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.": "Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.",
+  "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.": "Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.",
+  "settings.journeyStartTiming": "After <duration/> of continuous walking, Hecate saves a journey including that initial walking time. Shorter walks are discarded. Automatic starts wait 30 minutes after you stop a journey manually.",
+  "Reset to defaults": "Reset to defaults"
 }

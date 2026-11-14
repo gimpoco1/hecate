@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { AUTO_RESTART_COOLDOWN_MS, AUTO_START_MS, JourneyMotionMonitor, defaultJourneyPreferences, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { AUTO_RESTART_COOLDOWN_MS, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -58,6 +58,7 @@ export function useJourneyAutomation(options: Options) {
   useEffect(() => { setErrorDismissed(false); }, [error]);
   function dismissError(): void { setErrorDismissed(true); }
   const [settingsReady, setSettingsReady] = useState(false);
+  const [motionAllowed, setMotionAllowed] = useState<boolean | null>(null);
   const [paused, setPaused] = useState(false);
   const [pausedMs, setPausedMs] = useState(0);
   const [pausedAt, setPausedAt] = useState<number | null>(null);
@@ -110,6 +111,7 @@ export function useJourneyAutomation(options: Options) {
     session.current = emptySession();
     setPreferences(defaultJourneyPreferences());
     setSettingsReady(false);
+    setMotionAllowed(null);
     setPaused(false);
     setPausedMs(0);
     setPausedAt(null);
@@ -144,21 +146,28 @@ export function useJourneyAutomation(options: Options) {
     const ownerId = options.ownerId;
     let active = true;
     const refresh = (): void => {
-      void readReminderMotionAuthorization().then(status => {
+      void Promise.all([readReminderMotionAuthorization(), JourneyMotionMonitor.getAvailability(), readLocationAuthorization()]).then(([status, { available }, location]) => {
         if (!active || latest.current.ownerId !== ownerId) return;
-        const message = t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself.");
-        if (status === "authorized") {
-          setError(current => current === message ? "" : current);
+        setMotionAllowed(status === "authorized" && available);
+        const motionMessage = t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself.");
+        const locationMessage = t("Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.");
+        const current = preferencesRef.current;
+        const motionUnavailable = !available || (status !== "authorized" && status !== "notDetermined");
+        const locationUnavailable = location !== "always" && current.mode !== "manual";
+        if (motionUnavailable || locationUnavailable) {
+          const manual: JourneyPreferences = { ...current, mode: "manual", autoPause: !motionUnavailable && location === "whenInUse" && current.autoPause };
+          if (current.mode !== manual.mode || current.autoPause !== manual.autoPause) {
+            saveJourneyPreferences(ownerId, manual);
+            preferencesRef.current = manual;
+            motion.current = null;
+            setPreferences(manual);
+            setError(!available ? t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.")
+              : motionUnavailable ? motionMessage : locationMessage);
+          }
           return;
         }
-        const current = preferencesRef.current;
-        if (status !== "notDetermined" && (current.mode !== "manual" || current.autoPause)) {
-          const manual: JourneyPreferences = { ...current, mode: "manual", autoPause: false };
-          saveJourneyPreferences(ownerId, manual);
-          preferencesRef.current = manual;
-          motion.current = null;
-          setPreferences(manual);
-          setError(message);
+        if (status === "authorized" && available) {
+          setError(currentError => currentError === motionMessage || (location === "always" && currentError === locationMessage) ? "" : currentError);
         }
       }).catch((failure: Error) => { if (active) setError(failure.message); });
     };
@@ -175,12 +184,15 @@ export function useJourneyAutomation(options: Options) {
     }
     const previous = preferencesRef.current;
     if (next.mode !== "manual" || next.autoPause) {
+      const { available } = await JourneyMotionMonitor.getAvailability();
+      if (!available) throw new Error(t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android."));
       let motion = await readReminderMotionAuthorization();
       if (motion === "notDetermined") {
         if (!await requestReminderMotionPermission()) throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
         motion = await readReminderMotionAuthorization();
       }
       if (motion !== "authorized") throw new Error(t("Allow motion access in Settings to detect walking and cycling."));
+      setMotionAllowed(true);
     }
     if (next.mode !== "manual" && next.mode !== previous.mode && await readLocationAuthorization() !== "always") {
       throw new Error(t("Allow Always location access in Settings to start journeys in the background."));
@@ -209,6 +221,7 @@ export function useJourneyAutomation(options: Options) {
     const ownerId = options.ownerId;
     let disposed = false;
     let listener: PluginListenerHandle | null = null;
+    let errorListener: PluginListenerHandle | null = null;
     let failed = false;
     let started = false;
     const valid = (): boolean => !disposed && !failed && latest.current.ownerId === ownerId;
@@ -225,7 +238,7 @@ export function useJourneyAutomation(options: Options) {
       const now = Date.now();
       const activeId = latest.current.walkId;
       if (activeId) {
-        if (!motion.current) return;
+        if (!motion.current || motion.current.activity === "unknown") return;
         if (session.current.id !== activeId) {
           session.current = { ...emptySession(), id: activeId };
           persist();
@@ -267,7 +280,7 @@ export function useJourneyAutomation(options: Options) {
         }, (failure) => fail(new Error(failure.message)));
       }
       const buffer = candidate.current;
-      if (!buffer || buffer.points.length < 2 || now - buffer.startedAt < AUTO_START_MS
+      if (!buffer || buffer.points.length < 2 || now - buffer.startedAt < preferencesRef.current.startMinutes * 60_000
         || now - buffer.points[buffer.points.length - 1].recordedAt > 30_000) return;
       busy.current = true;
       try {
@@ -281,29 +294,38 @@ export function useJourneyAutomation(options: Options) {
       if (!valid()) return;
       const next = parseJourneyMotion(sample);
       if (motion.current && next.since < motion.current.since) return;
+      const inactiveEnd = session.current.source === "automatic"
+        ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.stopMinutes)
+        : null;
+      if (latest.current.walkId && inactiveEnd !== null) {
+        motion.current = next;
+        busy.current = true;
+        try { await latest.current.onStop(inactiveEnd); }
+        finally { busy.current = false; }
+        return;
+      }
       motion.current = next;
       if (next.activity !== "walking") await discardCandidate();
       if (!valid()) return;
       if (latest.current.walkId) {
         if (isJourneyMovement(next)) {
-          const wasPaused = session.current.pausedAt !== null;
+          const pausedAt = session.current.pausedAt ?? (preferencesRef.current.autoPause
+            ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.pauseMinutes) : null);
+          const wasPaused = pausedAt !== null;
           if (session.current.pauseMode === "manual" && wasPaused) {
             session.current = { ...session.current, idleSince: null };
             persist();
             return;
           }
           session.current = { ...session.current, idleSince: null, pausedAt: null,
-            pausedMs: session.current.pausedMs + (wasPaused ? Math.max(0, next.since - session.current.pausedAt!) : 0), pauseMode: null };
+            pausedMs: session.current.pausedMs + (wasPaused ? Math.max(0, next.since - pausedAt!) : 0), pauseMode: null };
           persist();
           setPaused(false);
           pausedRecorderId.current = null;
           setPausedMs(session.current.pausedMs);
           setPausedAt(null);
           if (wasPaused) latest.current.onResume();
-        } else if (next.activity === "unknown") {
-          session.current = { ...session.current, idleSince: null };
-          persist();
-        } else if (session.current.idleSince === null) {
+        } else if (next.activity !== "unknown" && session.current.idleSince === null) {
           const startedAt = latest.current.startedAt;
           if (startedAt === null) throw new Error("An active journey is missing its start time.");
           session.current = { ...session.current, idleSince: Math.max(next.since, startedAt, session.current.resumedAt ?? startedAt) };
@@ -345,6 +367,10 @@ export function useJourneyAutomation(options: Options) {
         throw new Error(t("Allow Always location access in Settings to start journeys in the background."));
       }
       if (!valid()) return;
+      if (Capacitor.getPlatform() === "ios") {
+        errorListener = await JourneyMotionMonitor.addListener("monitorError", failure => fail(new Error(`Journey background location failed (${failure.code}): ${failure.message}`)));
+      }
+      if (!valid()) { await errorListener?.remove(); return; }
       listener = await JourneyMotionMonitor.addListener("motion", queueObservation);
       if (!valid()) { await listener.remove(); return; }
       await JourneyMotionMonitor.start();
@@ -366,6 +392,7 @@ export function useJourneyAutomation(options: Options) {
         console.error("Journey motion setup did not complete", { error: errorDiagnostic(cause) });
       }).then(async () => {
         await listener?.remove();
+        await errorListener?.remove();
         await discardCandidate();
         if (started) await JourneyMotionMonitor.stop();
       }).catch((cause) => {
@@ -443,6 +470,7 @@ export function useJourneyAutomation(options: Options) {
 
   return {
     preferences,
+    motionAllowed,
     applyWidgetPause,
     activityState,
     isManualPause,
