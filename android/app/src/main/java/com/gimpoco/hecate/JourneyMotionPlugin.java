@@ -127,6 +127,7 @@ public class JourneyMotionPlugin extends Plugin {
         JSObject sample = new JSObject();
         sample.put("activity", activity);
         sample.put("since", since);
+        sample.put("observedAt", result.getTime());
         latest = sample;
         notifyListeners("motion", sample, true);
     }

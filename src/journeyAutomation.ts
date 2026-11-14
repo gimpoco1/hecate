@@ -5,6 +5,7 @@ export type JourneyStartMode = "manual" | "automatic";
 export type JourneySource = "manual" | "automatic";
 export type JourneyPreferences = { mode: JourneyStartMode; autoPause: boolean; startMinutes: number; restartMinutes: number; pauseMinutes: number; stopMinutes: number };
 export type JourneyMotion = { activity: "walking" | "cycling" | "stationary" | "other" | "unknown"; since: number };
+export type JourneyMotionObservation = JourneyMotion & { observedAt: number };
 export type JourneySeed = { source: JourneySource; startedAt: number; pausedMs: number; points: Coordinate[] };
 export const JOURNEY_START_DURATIONS: readonly number[] = [1, 2, 3, 5, 7, 10, 15];
 export const JOURNEY_PAUSE_DURATIONS: readonly number[] = [1, 2, 3, 5, 10, 15];
@@ -16,9 +17,9 @@ interface JourneyMotionPlugin {
   getAvailability(): Promise<{ available: boolean }>;
   start(): Promise<void>;
   stop(): Promise<void>;
-  getState(): Promise<{ motion: JourneyMotion | null }>;
+  getState(): Promise<{ motion: JourneyMotionObservation | null }>;
   addListener(event: "monitorError", callback: (error: { code: number; message: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: "motion", callback: (motion: JourneyMotion) => void): Promise<PluginListenerHandle>;
+  addListener(event: "motion", callback: (motion: JourneyMotionObservation) => void): Promise<PluginListenerHandle>;
 }
 export const JourneyMotionMonitor = registerPlugin<JourneyMotionPlugin>("JourneyMotion");
 
@@ -26,12 +27,13 @@ export function defaultJourneyPreferences(): JourneyPreferences {
   return { mode: "manual", autoPause: true, startMinutes: 5, restartMinutes: 30, pauseMinutes: 2, stopMinutes: 7 };
 }
 
-export function parseJourneyMotion(value: JourneyMotion): JourneyMotion {
+export function parseJourneyMotion(value: JourneyMotionObservation): JourneyMotionObservation {
   if (!value || !["walking", "cycling", "stationary", "other", "unknown"].includes(value.activity)
-    || !Number.isFinite(value.since) || value.since <= 0 || value.since > Date.now() + 10_000) {
+    || !Number.isFinite(value.since) || value.since <= 0 || value.since > Date.now() + 10_000
+    || !Number.isFinite(value.observedAt) || value.observedAt <= 0 || value.observedAt > Date.now() + 10_000) {
     throw new TypeError("Native journey motion has an invalid activity or timestamp.");
   }
-  return { activity: value.activity, since: value.since };
+  return { activity: value.activity, since: value.since, observedAt: value.observedAt };
 }
 
 export function loadJourneyPreferences(ownerId: string): JourneyPreferences {
@@ -92,4 +94,10 @@ export function advanceCandidateWalkingClock(clock: CandidateWalkingClock, motio
 
 export function candidateWalkingDuration(clock: CandidateWalkingClock, now: number): number {
   return clock.walkingMs + (clock.walkingSince === null ? 0 : Math.max(0, now - clock.walkingSince));
+}
+
+/** Activity onset can precede the previous classification; only observation order determines freshness. */
+export function reconcileJourneyMotion(current: JourneyMotionObservation | null, incoming: JourneyMotionObservation): JourneyMotionObservation {
+  const next = parseJourneyMotion(incoming);
+  return current !== null && next.observedAt < current.observedAt ? current : next;
 }

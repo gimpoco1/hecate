@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
+import { reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
 
 const idle = 1700000000000;
 describe("inactivity after an adaptive location suspension", () => {
@@ -56,5 +56,27 @@ describe("automatic start grace period", () => {
   });
   it("discards a walking candidate when switching to cycling or driving", () => {
     for (const activity of ["cycling", "other"] as const) expect(advanceCandidateWalkingClock(clock, { activity, since: idle + 180000 })).toBeNull();
+  });
+});
+
+describe("native motion observation ordering", () => {
+  it("accepts newly confirmed walking with an onset before a newer unknown classification", () => {
+    const uncertain = { activity: "unknown" as const, since: idle + 60000, observedAt: idle + 60000 };
+    const walking = reconcileJourneyMotion(uncertain, { activity: "walking", since: idle, observedAt: idle + 90000 });
+    expect(walking.activity).toBe("walking");
+    expect(walking.since).toBe(idle);
+    const clock: CandidateWalkingClock = { walkingMs: 0, walkingSince: idle + 90000, interruptedAt: null };
+    const stopped = advanceCandidateWalkingClock(clock, { activity: "stationary", since: idle + 270000 });
+    const resumed = reconcileJourneyMotion(walking, { activity: "walking", since: idle + 330000, observedAt: idle + 350000 });
+    const resumedClock = advanceCandidateWalkingClock(stopped!, resumed);
+    expect(candidateWalkingDuration(resumedClock!, idle + 450000)).toBe(300000);
+  });
+  it("rejects a stale cached observation without rejecting backdated activity onset", () => {
+    const walking = { activity: "walking" as const, since: idle, observedAt: idle + 90000 };
+    expect(reconcileJourneyMotion(walking, { activity: "unknown", since: idle + 60000, observedAt: idle + 60000 })).toBe(walking);
+    expect(reconcileJourneyMotion(walking, walking)).toEqual(walking);
+  });
+  it("reports an invalid native observation timestamp instead of silently freezing detection", () => {
+    expect(() => reconcileJourneyMotion(null, { activity: "walking", since: idle, observedAt: Number.NaN })).toThrow(TypeError);
   });
 });

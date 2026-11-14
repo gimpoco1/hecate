@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { CANDIDATE_STOP_GRACE_MS, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, parseJourneyMotion, saveJourneyPreferences, type JourneyMotion, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { CANDIDATE_STOP_GRACE_MS, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -65,7 +65,7 @@ export function useJourneyAutomation(options: Options) {
   const [revision, setRevision] = useState(0);
   const previousWalkId = useRef<string | null>(options.walkId);
   const session = useRef<Session>(emptySession());
-  const motion = useRef<JourneyMotion | null>(null);
+  const motion = useRef<JourneyMotionObservation | null>(null);
   const candidate = useRef<{ startedAt: number; clock: CandidateWalkingClock; startsNewSegment: boolean; points: Coordinate[] } | null>(null);
   const candidateTracker = useRef<LocationTracker | null>(null);
   const busy = useRef(false);
@@ -299,10 +299,10 @@ export function useJourneyAutomation(options: Options) {
       } finally { busy.current = false; }
     };
 
-    const observe = async (sample: JourneyMotion): Promise<void> => {
+    const observe = async (sample: JourneyMotionObservation): Promise<void> => {
       if (!valid()) return;
-      const next = parseJourneyMotion(sample);
-      if (motion.current && next.since < motion.current.since) return;
+      const next = reconcileJourneyMotion(motion.current, sample);
+      if (next === motion.current) return;
       const inactiveEnd = session.current.source === "automatic"
         ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.stopMinutes)
         : null;
@@ -348,7 +348,7 @@ export function useJourneyAutomation(options: Options) {
       }
       await tick();
     };
-    const queueObservation = (sample: JourneyMotion): void => {
+    const queueObservation = (sample: JourneyMotionObservation): void => {
       motionQueue.current = motionQueue.current.then(() => observe(sample)).catch(fail);
     };
     const refresh = (): void => {
