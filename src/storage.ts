@@ -125,15 +125,17 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
   if (error) throw error;
 }
 
-export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
+export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortSignal): Promise<SyncedDiscovery> {
+  if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (!supabase) throw new Error("Cannot load discovery history: Supabase is not configured.");
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error) throw error;
+  if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (session?.user.id !== expectedUserId)
     throw new Error("Cannot load discovery history: the signed-in session does not match the requested account.");
   const [walkPoints, cells] = await Promise.all([
-    loadStoredWalkPoints(supabase),
-    loadStoredCells(supabase),
+    loadStoredWalkPoints(supabase, signal),
+    loadStoredCells(supabase, signal),
   ]);
   rememberSyncedCells(expectedUserId, cells);
   return {

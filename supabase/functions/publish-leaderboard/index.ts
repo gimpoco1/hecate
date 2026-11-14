@@ -65,7 +65,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   if (quota.error) return databaseFailure(quota.error, headers);
   try {
     // Every read uses the caller's JWT and RLS. The request never supplies scores or achievements.
-    const stored = await loadStoredDiscovery(client);
+    const stored = await loadStoredDiscovery(client, request.signal);
     const cities = await Promise.all(stored.cities.map(canonicalCityForStoredBoundary));
     const uniqueCities = [...new Map(cities.map(city => [city.id, city])).values()];
     if (submission.cityIds.some(id => !uniqueCities.some(city => city.id === id))) {

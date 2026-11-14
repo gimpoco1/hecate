@@ -185,7 +185,7 @@ export async function loadMyLeaderboardProfile(): Promise<LeaderboardProfile | n
 
 export async function buildLeaderboardSnapshot(userId: string): Promise<LeaderboardSnapshot> {
   const [{ points, cells }, cities] = await Promise.all([
-    loadSyncedDiscovery(userId),
+    loadSyncedDiscovery(userId, new AbortController().signal),
     loadDiscoveredCities(userId),
   ]);
   const canonicalCities = new Map<string, CityBoundary>();

@@ -98,3 +98,15 @@ describe("live fog after a pause", () => {
     expect(centers.size).toBe(2);
   });
 });
+
+describe("large discovery histories", () => {
+  it("appends large route histories without spreading them into function arguments", () => {
+    const segment = Array.from({ length: 150000 }, (_, index) => ({
+      lng: 2 + index * 0.0000001, lat: 41, recordedAt: index,
+    }));
+    const appended = appendedFogRouteCoordinates([], [segment]);
+    expect(appended).toHaveLength(segment.length);
+    expect(appended?.[0]).toEqual([segment[0].lng, segment[0].lat]);
+    expect(appended?.at(-1)).toEqual([segment.at(-1)!.lng, segment.at(-1)!.lat]);
+  });
+});

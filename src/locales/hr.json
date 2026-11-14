@@ -1258,5 +1258,7 @@
   "Automatic": "Automatski",
   "You start each journey.": "Svako istraživanje pokrećeš samostalno.",
   "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "Snimanje istraživanja prebačeno je na ručno jer je pristup kretanju isključen. I dalje možeš samostalno pokretati istraživanja.",
-  "Allow {{value0}}": "Dopusti {{value0}}"
+  "Allow {{value0}}": "Dopusti {{value0}}",
+  "Your explored map could not be loaded. Check your connection and retry.": "Nije moguće učitati tvoju istraženu kartu. Provjeri vezu i pokušaj ponovno.",
+  "Loading your explored map…": "Učitavanje istražene karte…"
 }

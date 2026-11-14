@@ -1243,5 +1243,7 @@
   "Automatic": "Automático",
   "You start each journey.": "Tu inicias cada percurso.",
   "Journey recording switched to Manual because motion access is off. You can still start journeys yourself.": "A gravação de percursos mudou para Manual porque o acesso ao movimento está desativado. Podes continuar a iniciar percursos manualmente.",
-  "Allow {{value0}}": "Permitir {{value0}}"
+  "Allow {{value0}}": "Permitir {{value0}}",
+  "Your explored map could not be loaded. Check your connection and retry.": "Não foi possível carregar o teu mapa explorado. Verifica a ligação e tenta novamente.",
+  "Loading your explored map…": "A carregar o teu mapa explorado…"
 }

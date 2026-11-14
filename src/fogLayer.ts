@@ -182,16 +182,12 @@ export function appendedFogRouteCoordinates(
     )
       return null;
     if (canExtend && nextSegment.length > previousSegment.length) {
-      appended.push(
-        ...revealCoordinatesBetween(
-          previousSegment.at(-1) ?? null,
-          nextSegment.slice(previousSegment.length),
-        ),
-      );
+      for (const coordinate of revealCoordinatesBetween(previousSegment.at(-1) ?? null, nextSegment.slice(previousSegment.length)))
+        appended.push(coordinate);
     }
   }
   next.slice(previous.length).forEach((segment) => {
-    appended.push(...revealCoordinatesBetween(null, segment));
+    for (const coordinate of revealCoordinatesBetween(null, segment)) appended.push(coordinate);
   });
   return appended;
 }
@@ -950,8 +946,9 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     const signature = `${range.west}:${range.east}:${range.north}:${range.south}:${range.wraps}`;
     if (!this.visibleCentersDirty && signature === this.visibleBucketSignature)
       return;
-    const centers: number[] = [];
+    let coordinateCount = 0;
     const visibleBuckets: VisibleFogBucket[] = [];
+    const visibleCenters: number[][] = [];
     this.revealBuckets.forEach((bucket) => {
       const insideLongitude = range.wraps
         ? bucket.x >= range.west - FOG_BUCKET_MARGIN ||
@@ -966,17 +963,24 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
         visibleBuckets.push({
           x: bucket.x,
           y: bucket.y,
-          offset: centers.length * Float32Array.BYTES_PER_ELEMENT,
+          offset: coordinateCount * Float32Array.BYTES_PER_ELEMENT,
           count: bucket.centers.length / 2,
         });
-        centers.push(...bucket.centers);
+        visibleCenters.push(bucket.centers);
+        coordinateCount += bucket.centers.length;
       }
     });
+    const centers = new Float32Array(coordinateCount);
+    let offset = 0;
+    for (const coordinates of visibleCenters) {
+      centers.set(coordinates, offset);
+      offset += coordinates.length;
+    }
     this.visibleBuckets = visibleBuckets;
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.centerBuffer);
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
-      new Float32Array(centers),
+      centers,
       this.gl.DYNAMIC_DRAW,
     );
     this.visibleBucketSignature = signature;

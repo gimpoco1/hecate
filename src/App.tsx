@@ -934,6 +934,8 @@ export default function App() {
   >("signin");
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryHistoryError, setDiscoveryHistoryError] = useState("");
+  const retryDiscoveryHistoryRef = useRef<(() => void) | null>(null);
   const [perspectiveView, setPerspectiveView] = useState(false);
   const plannedJourneyRouteRef = useRef<PlannedRoute | null>(null);
   const [activeNavigationRoute, setActiveNavigationRoute] = useState<PlannedRoute | null>(null);
@@ -2710,6 +2712,8 @@ export default function App() {
     let active = true;
     let retryTimer: number | null = null;
     let finishFrame: number | null = null;
+    let historyRequest: AbortController | null = null;
+    setDiscoveryHistoryError("");
     const activeWalkOwner = trackingUserRef.current;
     const activeWalk = activeWalkRef.current;
     if (activeWalkOwner && activeWalkOwner !== accountUserId) {
@@ -2796,10 +2800,24 @@ export default function App() {
     setPoints(pointsRef.current);
     setCells(cellsRef.current);
 
-    const loadRemote = () =>
-      void loadSyncedDiscovery(accountUserId)
+    const loadRemote = (): void => {
+      if (!active || discoveryHistoryReadyRef.current) return;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      retryTimer = null;
+      historyRequest?.abort();
+      const request = new AbortController();
+      historyRequest = request;
+      let deadline: number | null = null;
+      const timeout = new Promise<never>((_, reject) => {
+        deadline = window.setTimeout(() => {
+          request.abort();
+          reject(new Error("Discovery history request exceeded 45 seconds."));
+        }, 45_000);
+      });
+      void Promise.race([loadSyncedDiscovery(accountUserId, request.signal), timeout])
         .then((remote) => {
-          if (!active || accountUserIdRef.current !== accountUserId) return;
+          if (!active || historyRequest !== request || accountUserIdRef.current !== accountUserId) return;
+          setDiscoveryHistoryError("");
           const persistedWalkIds = new Set(
             remote.points.flatMap((point) =>
               point.walkId ? [point.walkId] : [],
@@ -2863,16 +2881,32 @@ export default function App() {
           });
         })
         .catch((error) => {
-          if (!active) return;
-          console.warn("Could not load discovery history; retrying", errorDiagnostic(error));
+          if (!active || historyRequest !== request) return;
+          console.warn("Could not load discovery history; retrying", { userId: accountUserId, error: errorDiagnostic(error) });
+          setDiscoveryHistoryError(t("Your explored map could not be loaded. Check your connection and retry."));
           // Keep recording available offline. Upload/reconciliation remains
           // gated by discoveryHistoryReadyRef until a later retry succeeds.
           setDiscoveryLoading(false);
           retryTimer = window.setTimeout(loadRemote, 15_000);
-        });
+        }).finally(() => { if (deadline !== null) window.clearTimeout(deadline); });
+    };
+    const resumeHistory = (): void => {
+      if (document.visibilityState === "visible" && !discoveryHistoryReadyRef.current) loadRemote();
+    };
+    retryDiscoveryHistoryRef.current = loadRemote;
+    document.addEventListener("visibilitychange", resumeHistory);
+    window.addEventListener("online", resumeHistory);
+    const nativeResume = Capacitor.isNativePlatform()
+      ? CapacitorApp.addListener("appStateChange", ({ isActive }) => { if (isActive) resumeHistory(); })
+      : null;
     loadRemote();
     return () => {
       active = false;
+      historyRequest?.abort();
+      if (retryDiscoveryHistoryRef.current === loadRemote) retryDiscoveryHistoryRef.current = null;
+      document.removeEventListener("visibilitychange", resumeHistory);
+      window.removeEventListener("online", resumeHistory);
+      if (nativeResume) void nativeResume.then(handle => handle.remove());
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
@@ -6214,6 +6248,11 @@ export default function App() {
       )}
 
       <div className="app-error-stack" data-testid="app-error-stack">
+        {discoveryHistoryError && <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="discovery-history-error">
+          <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
+          <div className="account-toast__message"><p>{discoveryHistoryError}</p><button type="button" className="app-error-toast__action" data-testid="retry-discovery-history" onClick={() => retryDiscoveryHistoryRef.current?.()}>{t("Retry")}</button></div>
+        </aside>}
+        {discoveryLoading && accountUserId && !discoveryHistoryError && <aside className="account-toast account-toast--info app-error-toast" role="status" data-testid="discovery-history-loading">{t("Loading your explored map…")}</aside>}
         {automation.error && !automation.errorDismissed && !syncOpen && <aside className="account-toast app-error-toast journey-permission-toast" role="alert" data-testid="journey-automation-error"><span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span><div className="account-toast__message"><p>{automation.error}</p><button className="app-error-toast__action" type="button" onClick={() => { setOpenJourneySettings(true); setSyncOpen(true); }}>{t("Journey recording")}</button></div><button type="button" className="app-error-toast__dismiss" data-testid="journey-automation-dismiss" aria-label={t("Close")} onClick={automation.dismissError}><XIcon /></button></aside>}
         {(journeyStopMessage || (tracking === "unavailable" && !locationErrorDismissed)) && (
           <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-error-toast">

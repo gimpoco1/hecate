@@ -1,5 +1,7 @@
+import { createServer } from "node:http";
+import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import { parseStoredCell, parseStoredWalk } from "./discoveryStorage";
+import { loadStoredCells, loadStoredWalkPoints, parseStoredCell, parseStoredWalk } from "./discoveryStorage";
 
 import { routeDistanceKm, splitRoute } from "./geo";
 
@@ -38,4 +40,29 @@ describe("stored discovery validation", () => {
     }
   });
 
+});
+
+describe("discovery history cancellation", () => {
+  it.each([loadStoredWalkPoints, loadStoredCells])("cancels a stalled HTTP history request", async (load) => {
+    const controller = new AbortController();
+    let received = false;
+    const server = createServer(() => { received = true; controller.abort(); });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("History test server did not bind to a TCP port.");
+    const client = createClient(`http://127.0.0.1:${address.port}`, "test-public-key", {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    try {
+      await expect(load(client, controller.signal)).rejects.toHaveProperty("message", expect.stringContaining("AbortError"));
+      expect(received).toBe(true);
+    } finally {
+      await client.auth.dispose();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
 });
