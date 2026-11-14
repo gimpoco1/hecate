@@ -45,13 +45,25 @@ struct JourneyActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         let distanceKm: Double
         let newGroundMeters: Double?
-        let updatedAt: Date
-        let finishedAt: Date?
+        var paused: Bool = false
+        var activeStartedAt: Date = .now
+        var updatedAt: Date
+        var finishedAt: Date?
         var navigation: JourneyNavigation? = nil
         var navigationRemaining: JourneyNavigationRemaining? = nil
         var appearance: JourneyAppearance? = nil
         var colorTheme: JourneyColorTheme? = nil
         var language: String? = nil
+
+        func ending(at date: Date) -> Self {
+            var finished = self
+            if paused { finished.activeStartedAt = activeStartedAt.addingTimeInterval(max(0, date.timeIntervalSince(updatedAt))) }
+            finished.updatedAt = date
+            finished.finishedAt = date
+            finished.navigation = nil
+            finished.navigationRemaining = nil
+            return finished
+        }
     }
 
     let walkId: String
@@ -128,12 +140,106 @@ struct StopJourneyIntent: LiveActivityIntent {
         let finishedAt = Date(timeIntervalSince1970: request.finishedAt / 1000)
         let state = activity.content.state
         await activity.end(
-            ActivityContent(state: JourneyActivityAttributes.ContentState(
-                distanceKm: state.distanceKm, newGroundMeters: state.newGroundMeters,
-                updatedAt: finishedAt, finishedAt: finishedAt, appearance: state.appearance, colorTheme: state.colorTheme, language: state.language
-            ), staleDate: nil),
+            ActivityContent(state: state.ending(at: finishedAt), staleDate: nil),
             dismissalPolicy: .after(finishedAt.addingTimeInterval(5))
         )
+        return .result()
+    }
+}
+
+struct JourneyPauseRequest: Codable {
+    let id: String
+    let walkId: String
+    let ownerId: String
+    let paused: Bool
+    let requestedAt: Double
+    let activeStartedAt: Double
+}
+
+enum JourneyPauseError: LocalizedError {
+    case invalidStoredRequest
+    var errorDescription: String? { "The saved Lock Screen pause request contains invalid journey details." }
+}
+
+enum JourneyPauseStore {
+    static let notification = Notification.Name("HecateJourneyPauseRequested")
+
+    static func read(walkId: String) throws -> JourneyPauseRequest? {
+        guard let data = UserDefaults.standard.data(forKey: "hecate.journey.pause." + walkId) else { return nil }
+        let request = try JSONDecoder().decode(JourneyPauseRequest.self, from: data)
+        guard request.walkId == walkId, UUID(uuidString: request.id) != nil, !request.ownerId.isEmpty,
+              request.requestedAt.isFinite, request.requestedAt > 0,
+              request.activeStartedAt.isFinite, request.activeStartedAt > 0 else {
+            throw JourneyPauseError.invalidStoredRequest
+        }
+        return request
+    }
+
+    static func save(_ request: JourneyPauseRequest) throws {
+        UserDefaults.standard.set(try JSONEncoder().encode(request), forKey: "hecate.journey.pause." + request.walkId)
+        UserDefaults.standard.set(request.paused, forKey: "hecate.journey.gps-paused." + request.walkId)
+        NotificationCenter.default.post(name: notification, object: request,
+            userInfo: ["walkId": request.walkId, "paused": request.paused])
+    }
+
+    static func remove(walkId: String) {
+        UserDefaults.standard.removeObject(forKey: "hecate.journey.pause." + walkId)
+    }
+}
+
+@available(iOS 17.0, *)
+struct PauseJourneyIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Pause discovering"
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = false
+    @Parameter(title: "Journey ID") var walkId: String
+    init() {}
+    init(walkId: String) { self.walkId = walkId }
+
+    func perform() async throws -> some IntentResult {
+        guard let activity = Activity<JourneyActivityAttributes>.activities.first(where: {
+            $0.attributes.walkId == walkId && $0.content.state.finishedAt == nil &&
+                ($0.activityState == .active || $0.activityState == .stale)
+        }) else { return .result() }
+        var state = activity.content.state
+        guard !state.paused else { return .result() }
+        let now = Date()
+        let request = JourneyPauseRequest(id: UUID().uuidString, walkId: walkId, ownerId: activity.attributes.ownerId,
+            paused: true, requestedAt: now.timeIntervalSince1970 * 1000,
+            activeStartedAt: state.activeStartedAt.timeIntervalSince1970 * 1000)
+        try await MainActor.run { try JourneyPauseStore.save(request) }
+        state.paused = true
+        state.updatedAt = now
+        await activity.update(ActivityContent(state: state, staleDate: now.addingTimeInterval(300)))
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct ResumeJourneyIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "Resume discovering"
+    static var openAppWhenRun: Bool = false
+    static var isDiscoverable: Bool = false
+    @Parameter(title: "Journey ID") var walkId: String
+    init() {}
+    init(walkId: String) { self.walkId = walkId }
+
+    func perform() async throws -> some IntentResult {
+        guard let activity = Activity<JourneyActivityAttributes>.activities.first(where: {
+            $0.attributes.walkId == walkId && $0.content.state.finishedAt == nil &&
+                ($0.activityState == .active || $0.activityState == .stale)
+        }) else { return .result() }
+        var state = activity.content.state
+        guard state.paused else { return .result() }
+        let now = Date()
+        state.activeStartedAt = state.activeStartedAt.addingTimeInterval(max(0, now.timeIntervalSince(state.updatedAt)))
+        let request = JourneyPauseRequest(id: UUID().uuidString, walkId: walkId, ownerId: activity.attributes.ownerId,
+            paused: false, requestedAt: now.timeIntervalSince1970 * 1000,
+            activeStartedAt: state.activeStartedAt.timeIntervalSince1970 * 1000)
+        try await MainActor.run { try JourneyPauseStore.save(request) }
+        state.paused = false
+        state.updatedAt = now
+        await activity.update(ActivityContent(state: state, staleDate: now.addingTimeInterval(300)))
         return .result()
     }
 }
@@ -151,6 +257,10 @@ enum JourneyLocalization {
             "Journey complete": "Journey complete",
             "Stop journey": "Stop journey",
             "Open Hecate to stop journey": "Open Hecate to stop journey",
+            "Paused": "Paused",
+            "Pause discovering": "Pause discovering",
+            "Resume discovering": "Resume discovering",
+            "End": "End",
             "this walk": "this journey",
             "walked": "travelled",
             "new area": "new area",
@@ -170,6 +280,10 @@ enum JourneyLocalization {
             "Journey complete": "Recorrido completado",
             "Stop journey": "Terminar recorrido",
             "Open Hecate to stop journey": "Abre Hecate para terminar el recorrido",
+            "Paused": "En pausa",
+            "Pause discovering": "Pausar recorrido",
+            "Resume discovering": "Reanudar recorrido",
+            "End": "Fin",
             "this walk": "este recorrido",
             "walked": "recorridos",
             "new area": "tramos nuevos",
@@ -189,6 +303,10 @@ enum JourneyLocalization {
             "Journey complete": "Tragitto completato",
             "Stop journey": "Termina tragitto",
             "Open Hecate to stop journey": "Apri Hecate per terminare il tragitto",
+            "Paused": "In pausa",
+            "Pause discovering": "Metti in pausa il percorso",
+            "Resume discovering": "Riprendi il percorso",
+            "End": "Fine",
             "this walk": "questo tragitto",
             "walked": "percorsi",
             "new area": "nuovi tratti",
@@ -208,6 +326,10 @@ enum JourneyLocalization {
             "Journey complete": "Ruta završena",
             "Stop journey": "Završi rutu",
             "Open Hecate to stop journey": "Otvori Hecate za završetak rute",
+            "Paused": "Pauzirano",
+            "Pause discovering": "Pauziraj istraživanje",
+            "Resume discovering": "Nastavi istraživanje",
+            "End": "Kraj",
             "this walk": "ova ruta",
             "walked": "prijeđeno",
             "new area": "nove dionice",
@@ -227,6 +349,10 @@ enum JourneyLocalization {
             "Journey complete": "Percurso concluído",
             "Stop journey": "Terminar percurso",
             "Open Hecate to stop journey": "Abre o Hecate para terminar o percurso",
+            "Paused": "Em pausa",
+            "Pause discovering": "Pausar percurso",
+            "Resume discovering": "Retomar percurso",
+            "End": "Fim",
             "this walk": "este percurso",
             "walked": "percorridos",
             "new area": "novos caminhos",

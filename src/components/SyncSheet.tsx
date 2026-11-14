@@ -9,14 +9,17 @@ import { errorDiagnostic } from "../diagnostics";
 import { notificationSettingsWarning } from "../notificationPermissions";
 import { ReminderDuration } from "./ReminderDuration";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { JourneySettings } from "./JourneySettings";
+import type { JourneyPreferences } from "../journeyAutomation";
 import { useAppearance } from "../appearance";
-import { mdiHistory, mdiPaletteOutline } from "@mdi/js";
+import { mdiHistory, mdiPaletteOutline, mdiRecordCircleOutline } from "@mdi/js";
 import { DISCOVERY_REMINDER_DURATIONS, INACTIVITY_REMINDER_DURATIONS } from "../reminderDurations";
 import { ReminderTime } from "./ReminderTime";
 import { useEffect, useRef, useState } from "react";
 import { Browser } from "@capacitor/browser";
 import { App as CapacitorApp } from "@capacitor/app";
 import { Capacitor } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
 import type { User } from "@supabase/supabase-js";
 import { authRedirectUrl } from "../auth";
 import { observeAuthSession } from "../authSession";
@@ -54,6 +57,8 @@ import type {
 } from "../activityNotifications";
 
 type Props = {
+  journeyPreferences: JourneyPreferences;
+  onJourneyPreferencesChange: (preferences: JourneyPreferences) => Promise<void>;
   mapRewards: RewardState;
   highlightedMapReward: MapReward | null;
   onRequiredAchievementOpen: (id: PersonalAchievementId) => void;
@@ -62,6 +67,7 @@ type Props = {
   open: boolean;
   returnHighlight: "history" | "stats" | null;
   onReturnHighlightEnd: () => void;
+  initialJourneySettingsOpen: boolean;
   initialAuthIntent?: PasswordIntent;
   onClose: () => void;
   onFeedbackOpen: () => void;
@@ -70,6 +76,7 @@ type Props = {
   reminderMotionError: string;
   reminderMotionAllowed: boolean | null;
   notificationPermissionReady: boolean | null;
+  onNotificationPermissionRequest: () => Promise<boolean>;
   keyboardInset: number;
   travelledDistance: number;
   discoveredCityCount: number;
@@ -170,6 +177,8 @@ function writeGpxImportHistory(userId: string, routes: GpxImportedRoute[]) {
 }
 
 export function SyncSheet({
+  journeyPreferences,
+  onJourneyPreferencesChange,
   mapRewards,
   highlightedMapReward,
   onRequiredAchievementOpen,
@@ -178,6 +187,7 @@ export function SyncSheet({
   open,
   returnHighlight,
   onReturnHighlightEnd,
+  initialJourneySettingsOpen,
   initialAuthIntent = "signin",
   onClose,
   onFeedbackOpen,
@@ -186,6 +196,7 @@ export function SyncSheet({
   reminderMotionError,
   reminderMotionAllowed,
   notificationPermissionReady,
+  onNotificationPermissionRequest,
   keyboardInset,
   travelledDistance,
   discoveredCityCount,
@@ -229,6 +240,10 @@ export function SyncSheet({
   const [gpxImportPending, setGpxImportPending] = useState(false);
   const [gpxImportSheetOpen, setGpxImportSheetOpen] = useState(false);
   const [appearanceSheetOpen, setAppearanceSheetOpen] = useState(false);
+  const [journeySettingsOpen, setJourneySettingsOpen] = useState(false);
+  useEffect(() => {
+    if (open && initialJourneySettingsOpen) setJourneySettingsOpen(true);
+  }, [open, initialJourneySettingsOpen]);
   useEffect(() => {
     if (highlightedMapReward !== null) setAppearanceSheetOpen(true);
   }, [highlightedMapReward]);
@@ -238,6 +253,7 @@ export function SyncSheet({
     useState(false);
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState("");
+  const [notificationPermissionRequestable, setNotificationPermissionRequestable] = useState<boolean | null>(null);
   const [locationAuthorization, setLocationAuthorization] =
     useState<LocationAuthorization | null>(null);
   const [locationAuthorizationError, setLocationAuthorizationError] = useState("");
@@ -253,6 +269,11 @@ export function SyncSheet({
     if (!notificationSettingsSheetOpen || !Capacitor.isNativePlatform()) return;
     let active = true;
     const refresh = (): void => {
+      void LocalNotifications.checkPermissions().then(({ display }) => {
+        if (active) setNotificationPermissionRequestable(display === "prompt" || display === "prompt-with-rationale");
+      }).catch((failure: Error) => {
+        if (active) setNotificationError(failure.message);
+      });
       void readLocationAuthorization().then((status) => {
         if (active) {
           setLocationAuthorization(status);
@@ -355,6 +376,7 @@ export function SyncSheet({
       setNotificationSettingsSheetOpen(false);
       setAppearanceSheetOpen(false);
       setLanguageSheetOpen(false);
+      setJourneySettingsOpen(false);
       return;
     }
     if (!supabase) {
@@ -860,6 +882,11 @@ export function SyncSheet({
                   <ChevronIcon size={16} strokeWidth={2.3} />
                 </button>
                 <LanguageButton onClick={() => setLanguageSheetOpen(true)} />
+                <button type="button" className="account-settings-link" data-testid="journey-settings-open" onClick={() => setJourneySettingsOpen(true)}>
+                  <span className="account-settings-link__mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d={mdiRecordCircleOutline} /></svg></span>
+                  <span><strong>{t("Journey recording")}</strong><small>{t("Automatic starts, pauses and stops")}</small></span>
+                  <ChevronIcon size={16} strokeWidth={2.3} />
+                </button>
                 <button
                   type="button"
                   className="account-settings-link"
@@ -976,6 +1003,7 @@ export function SyncSheet({
                 </section>
               </div>
             )}
+            {journeySettingsOpen && <JourneySettings preferences={journeyPreferences} onChange={onJourneyPreferencesChange} onBack={() => setJourneySettingsOpen(false)} onClose={() => { setJourneySettingsOpen(false); onClose(); }} />}
             {gpxImportSheetOpen && (
               <div
                 className="sheet-backdrop gpx-import-backdrop"
@@ -1128,26 +1156,34 @@ export function SyncSheet({
                           <WarningIcon size={22} />
                         </span>
                         <div>
-                          <strong>{t("Notifications are off")}</strong>
-                          <p>{t("Enable Hecate notifications in Settings.")}</p>
+                          <strong>{notificationPermissionRequestable ? t("Enable notifications") : t("Notifications are off")}</strong>
+                          <p>{notificationPermissionRequestable ? t("Notifications are optional. The system prompt opens only when you tap Enable notifications.") : t("Enable Hecate notifications in Settings.")}</p>
                           <button
                             type="button"
                             className="notification-permission-notice__action"
-                            disabled={notificationPending}
+                            disabled={notificationPending || notificationPermissionRequestable === null}
                             onClick={() => {
                               setNotificationPending(true);
                               setNotificationError("");
-                              void openLocationSettings()
+                              const enable = async (): Promise<void> => {
+                                const permission = await LocalNotifications.checkPermissions();
+                                if (permission.display === "prompt" || permission.display === "prompt-with-rationale") {
+                                  await onNotificationPermissionRequest();
+                                  const updated = await LocalNotifications.checkPermissions();
+                                  setNotificationPermissionRequestable(updated.display === "prompt" || updated.display === "prompt-with-rationale");
+                                } else if (permission.display !== "granted") {
+                                  await openLocationSettings();
+                                }
+                              };
+                              void enable()
                                 .catch((error: Error) => {
-                                  console.warn("Could not open device settings", { error: errorDiagnostic(error) });
-                                  setNotificationError(
-                                    t("Could not open Settings. Open your device Settings and enable notifications for Hecate."),
-                                  );
+                                  console.warn("Could not enable notification permission", { error: errorDiagnostic(error) });
+                                  setNotificationError(error.message);
                                 })
                                 .finally(() => setNotificationPending(false));
                             }}
                           >
-                            {t("Open Settings")} <ChevronIcon size={14} strokeWidth={2} />
+                            {notificationPermissionRequestable ? t("Enable notifications") : t("Open Settings")} <ChevronIcon size={14} strokeWidth={2} />
                           </button>
                         </div>
                       </div>
@@ -1183,7 +1219,7 @@ export function SyncSheet({
                               : t("Turn all notifications on")
                           }
                           disabled={
-                            notificationPermissionReady !== true ||
+                            (notificationPermissionReady !== true && notificationPermissionRequestable !== true) ||
                             reminderPending || notificationPending
                           }
                           onClick={() => {
@@ -1212,6 +1248,7 @@ export function SyncSheet({
                               <Trans i18nKey="settings.reminderTiming" components={{
                                 discovery: <ReminderDuration
                                   title={t("Discovery reminder delay")}
+                                  description={t("Choose how long Hecate waits before reminding you.")}
                                   value={activityNotificationPreferences.discoveryReminderMinutes}
                                   options={DISCOVERY_REMINDER_DURATIONS}
                                   disabled={notificationPending || reminderPending}
@@ -1219,6 +1256,7 @@ export function SyncSheet({
                                 />,
                                 inactivity: <ReminderDuration
                                   title={t("Inactivity reminder delay")}
+                                  description={t("Choose how long Hecate waits before reminding you.")}
                                   value={activityNotificationPreferences.inactivityReminderMinutes}
                                   options={INACTIVITY_REMINDER_DURATIONS}
                                   disabled={notificationPending || reminderPending}

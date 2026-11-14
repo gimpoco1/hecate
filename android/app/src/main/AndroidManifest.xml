@@ -8,6 +8,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <receiver android:name=".JourneyActionReceiver" android:exported="false" />
+        <receiver android:name=".JourneyMotionReceiver" android:exported="false" />
         <receiver android:name="com.equimaps.capacitor_background_geolocation.AndroidReminderMotionReceiver" android:exported="false" />
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"

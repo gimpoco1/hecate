@@ -59,9 +59,22 @@ export function parseStoredWalk(value: unknown): { points: Coordinate[]; cursor:
   const walkId = value.walk_id;
   const eligible = value.achievement_eligible;
   const count = value.coordinates.length;
+  const metadata = value.point_metadata;
+  if (metadata !== null && metadata !== undefined && (!Array.isArray(metadata) || metadata.length !== count)) {
+    throw new TypeError(t("Discovery history contains an invalid walk."));
+  }
+  let previousTime = startedAt;
   const points = value.coordinates.map((point: unknown, index: number): Coordinate => {
     const [lng, lat] = position(point);
-    return { lng, lat, recordedAt: startedAt + (finishedAt - startedAt) * index / (count - 1), walkId, achievementEligible: eligible };
+    const sample = Array.isArray(metadata) ? metadata[index] : null;
+    if (Array.isArray(metadata) && (!Array.isArray(sample) || sample.length !== 2 || typeof sample[0] !== "number" ||
+        !Number.isFinite(sample[0]) || sample[0] < previousTime || sample[0] > finishedAt || typeof sample[1] !== "boolean")) {
+      throw new TypeError(t("Discovery history contains an invalid walk."));
+    }
+    const recordedAt: number = sample === null ? startedAt + (finishedAt - startedAt) * index / (count - 1) : sample[0];
+    previousTime = recordedAt;
+    return { lng, lat, recordedAt, walkId, achievementEligible: eligible,
+      ...(sample !== null && sample[1] ? { segmentBreakBefore: true } : {}) };
   });
   return { points, cursor: { startedAt: value.started_at as string, id: walkId } };
 }
@@ -76,13 +89,13 @@ export function parseStoredCell(value: unknown): DiscoveryCell {
 }
 
 /** Stable pages avoid the hosted API's implicit row cap without truncating an account's history. */
-export async function loadStoredWalkPoints(client: SupabaseClient): Promise<Coordinate[]> {
+export async function loadStoredWalkPoints(client: SupabaseClient, signal: AbortSignal): Promise<Coordinate[]> {
   const points: Coordinate[] = [];
   let cursor: WalkCursor | null = null;
   for (;;) {
     const { data, error } = await client.rpc("get_walk_routes_page", {
       p_after_started_at: cursor?.startedAt ?? null, p_after_id: cursor?.id ?? null, p_limit: 20,
-    });
+    }).abortSignal(signal);
     if (error) throw error;
     if (!Array.isArray(data)) throw new TypeError(t("The walk-history page response must be an array."));
     for (const row of data) {
@@ -94,12 +107,12 @@ export async function loadStoredWalkPoints(client: SupabaseClient): Promise<Coor
   }
 }
 
-export async function loadStoredCells(client: SupabaseClient): Promise<DiscoveryCell[]> {
+export async function loadStoredCells(client: SupabaseClient, signal: AbortSignal): Promise<DiscoveryCell[]> {
   const cells: DiscoveryCell[] = [];
   for (let offset = 0; ; offset += 1000) {
     const { data, error } = await client.from("discovery_cells")
       .select("cell_z,cell_x,cell_y,first_discovered_at")
-      .order("cell_z").order("cell_x").order("cell_y").range(offset, offset + 999);
+      .order("cell_z").order("cell_x").order("cell_y").range(offset, offset + 999).abortSignal(signal);
     if (error) throw error;
     if (!Array.isArray(data)) throw new TypeError(t("The discovery-cell page response must be an array."));
     cells.push(...data.map(parseStoredCell));
@@ -120,7 +133,7 @@ export async function loadStoredCities(client: SupabaseClient): Promise<CityBoun
   }
 }
 
-export async function loadStoredDiscovery(client: SupabaseClient): Promise<StoredDiscovery> {
-  const [points, cells, cities] = await Promise.all([loadStoredWalkPoints(client), loadStoredCells(client), loadStoredCities(client)]);
+export async function loadStoredDiscovery(client: SupabaseClient, signal: AbortSignal): Promise<StoredDiscovery> {
+  const [points, cells, cities] = await Promise.all([loadStoredWalkPoints(client, signal), loadStoredCells(client, signal), loadStoredCities(client)]);
   return { points, cells, cities };
 }

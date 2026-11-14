@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { discoveryJourneyMetrics, mergeRoutePoints } from "./geo";
+import { discoveryJourneyMetrics, mergeRoutePoints, splitRoute } from "./geo";
 import { createJourneyRecapRoute } from "./journeyRecap";
 import type { PendingWalk } from "./types";
 
@@ -28,5 +28,20 @@ describe("recap geometry", () => {
 
   it("rejects incomplete recaps before they are placed in UI state", () => {
     expect(() => createJourneyRecapRoute([], { ...completed, points: [] })).toThrow(RangeError);
+  });
+
+  it("keeps a visual gap when a resumed journey restarts elsewhere", () => {
+    const pausedResume: PendingWalk = {
+      ...completed,
+      points: [
+        { lng: 2.17, lat: 41.38, recordedAt: 1000 },
+        { lng: 2.171, lat: 41.38, recordedAt: 61000 },
+        { lng: 2.175, lat: 41.381, recordedAt: 121000, segmentBreakBefore: true },
+        { lng: 2.176, lat: 41.381, recordedAt: 181000 },
+      ],
+    };
+    const route = createJourneyRecapRoute([], pausedResume);
+
+    expect(splitRoute(route.points)).toHaveLength(2);
   });
 });

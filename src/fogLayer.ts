@@ -182,16 +182,12 @@ export function appendedFogRouteCoordinates(
     )
       return null;
     if (canExtend && nextSegment.length > previousSegment.length) {
-      appended.push(
-        ...revealCoordinatesBetween(
-          previousSegment.at(-1) ?? null,
-          nextSegment.slice(previousSegment.length),
-        ),
-      );
+      for (const coordinate of revealCoordinatesBetween(previousSegment.at(-1) ?? null, nextSegment.slice(previousSegment.length)))
+        appended.push(coordinate);
     }
   }
   next.slice(previous.length).forEach((segment) => {
-    appended.push(...revealCoordinatesBetween(null, segment));
+    for (const coordinate of revealCoordinatesBetween(null, segment)) appended.push(coordinate);
   });
   return appended;
 }
@@ -422,6 +418,18 @@ float noise(vec2 p, vec2 origin) {
     mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0, 1.0)), f.x), f.y);
 }
 
+float fogElevation(vec2 p, vec2 origin) {
+  vec2 warp = vec2(noise(p * 0.5, origin * 0.5), noise(p * 0.5 + vec2(19.1, 7.3), origin * 0.5));
+  return noise(p + warp * 1.4, origin) * 0.76 + noise(p * 2.0, origin * 2.0) * 0.24;
+}
+
+float fogContour(float elevation, float count) {
+  float levels = elevation * count;
+  float lineDistance = abs(fract(levels + 0.5) - 0.5);
+  float lineWidth = max(fwidth(levels), 0.006);
+  return 1.0 - smoothstep(lineWidth, lineWidth * 3.0, lineDistance);
+}
+
 void main() {
   vec2 mask = texture(u_mask, v_uv).rg;
   float proximity = mask.r;
@@ -465,16 +473,14 @@ void main() {
   // A homogeneous plane transform avoids subtracting distant camera-ray endpoints.
   vec3 groundPoint = u_ground_matrix * vec3(v_uv * 2.0 - 1.0, 1.0);
   vec2 ground = groundPoint.xy / groundPoint.z;
-  float patternScale = exp2(min(u_zoom - 13.0, 0.0));
-  vec2 p = ground * (8.0 / 4096.0) * patternScale;
-  vec2 origin = u_pattern_origin * patternScale;
-  vec2 warp = vec2(noise(p * 0.5, origin * 0.5), noise(p * 0.5 + vec2(19.1, 7.3), origin * 0.5));
-  float elevation = noise(p + warp * 1.4, origin) * 0.76 + noise(p * 2.0, origin * 2.0) * 0.24;
-  float levels = elevation * mix(4.0, 7.0, smoothstep(11.0, 14.0, u_zoom));
-  float lineDistance = abs(fract(levels + 0.5) - 0.5);
-  float lineWidth = max(fwidth(levels), 0.006);
+  // Both fields use fixed world scales; zoom changes their opacity, never their phase.
+  vec2 p = ground * (8.0 / 4096.0);
+  float detail = smoothstep(12.0, 14.0, u_zoom);
+  float coarseElevation = fogElevation(p * 0.125, u_pattern_origin * 0.125);
+  float fineElevation = fogElevation(p, u_pattern_origin);
+  float elevation = mix(coarseElevation, fineElevation, detail);
   float patternVisibility = mix(0.45, 1.0, smoothstep(11.0, 14.0, u_zoom)) * (1.0 - smoothstep(16.5, 18.0, u_zoom));
-  float terrainLine = 1.0 - smoothstep(lineWidth, lineWidth * 3.0, lineDistance);
+  float terrainLine = mix(fogContour(coarseElevation, 4.0), fogContour(fineElevation, 7.0), detail);
   fogColor = mix(fogColor, contourColor, terrainLine * patternVisibility * 0.07);
   fogColor += (elevation - 0.5) * 0.035 * smoothstep(10.0, 13.0, u_zoom);
   vec3 color = fogColor * fogAlpha;
@@ -602,7 +608,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   }
 
   appendRoutePoint(previous: Coordinate | null, point: Coordinate): void {
-    this.appendRevealCoordinates(revealCoordinatesBetween(previous, [point]));
+    this.appendRevealCoordinates(revealCoordinatesBetween(point.segmentBreakBefore ? null : previous, [point]));
     const liquidHead = MercatorCoordinate.fromLngLat(point, 0);
     this.liquidHead = [liquidHead.x, liquidHead.y];
     if (this.map && previous && !coordinatesMatch(previous, point))
@@ -940,8 +946,9 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
     const signature = `${range.west}:${range.east}:${range.north}:${range.south}:${range.wraps}`;
     if (!this.visibleCentersDirty && signature === this.visibleBucketSignature)
       return;
-    const centers: number[] = [];
+    let coordinateCount = 0;
     const visibleBuckets: VisibleFogBucket[] = [];
+    const visibleCenters: number[][] = [];
     this.revealBuckets.forEach((bucket) => {
       const insideLongitude = range.wraps
         ? bucket.x >= range.west - FOG_BUCKET_MARGIN ||
@@ -956,17 +963,24 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
         visibleBuckets.push({
           x: bucket.x,
           y: bucket.y,
-          offset: centers.length * Float32Array.BYTES_PER_ELEMENT,
+          offset: coordinateCount * Float32Array.BYTES_PER_ELEMENT,
           count: bucket.centers.length / 2,
         });
-        centers.push(...bucket.centers);
+        visibleCenters.push(bucket.centers);
+        coordinateCount += bucket.centers.length;
       }
     });
+    const centers = new Float32Array(coordinateCount);
+    let offset = 0;
+    for (const coordinates of visibleCenters) {
+      centers.set(coordinates, offset);
+      offset += coordinates.length;
+    }
     this.visibleBuckets = visibleBuckets;
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.centerBuffer);
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
-      new Float32Array(centers),
+      centers,
       this.gl.DYNAMIC_DRAW,
     );
     this.visibleBucketSignature = signature;
