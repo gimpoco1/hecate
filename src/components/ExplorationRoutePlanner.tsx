@@ -890,7 +890,7 @@ export function ExplorationRoutePlanner({
             </button>
           )}
           {previewEnabled && selected && (budget === 0 || hasExploration) && (
-            <button className="exploration-route-preview" type="button" aria-label={t("Preview selected navigation route")} onClick={() => onPreview(selected)}>{t("Preview navigation")}</button>
+            <button className="exploration-route-preview" type="button" aria-label="Preview selected navigation route" onClick={() => onPreview(selected)}>Preview navigation</button>
           )}
         </>
       )}

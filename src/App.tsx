@@ -26,6 +26,8 @@ import type { JourneySeed } from "./journeyAutomation";
 import { errorHaptic, journeyStartHaptic, selectionHaptic, successHaptic } from "./haptics";
 import { hasReachedRouteDestination, navigationCue, navigationRemaining, type NavigationCue, type NavigationRemaining } from "./navigationGuidance";
 import { advanceRouteProgress, type RouteProgress } from "./routeProgress";
+import mockJourneyRoute from "./devMockJourney.json";
+import { simulationHeading, simulationPosition } from "./navigationSimulation";
 import { prepareRouteGeometry, type RouteGeometry } from "./routeGeometry";
 import { calculateNavigationRoute, type PlannedRoute, type TransportMode } from "./explorationRouting";
 import {
@@ -273,6 +275,16 @@ import {
   walkIsAlreadyStored,
 } from "./gpx";
 import { observeAuthSession } from "./authSession";
+
+function createMockJourneyPoints(startedAt: number): Coordinate[] {
+  return mockJourneyRoute.map((position, index) => {
+    const [lng, lat] = position;
+    if (position.length !== 2 || !Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 90) {
+      throw new RangeError(`Mock journey coordinate ${index} is invalid.`);
+    }
+    return { lng, lat, walkId: "dev-journey-preview", recordedAt: startedAt + index / (mockJourneyRoute.length - 1) * 60 * 60_000 };
+  });
+}
 
 type ActiveWalk = Omit<PendingWalk, "finishedAt">;
 type ExplorationSummary = {
@@ -835,6 +847,10 @@ export default function App() {
   const [mode, setMode] = useState<MapMode>("discover");
   const [points, setPoints] = useState<Coordinate[]>([]);
   const [cells, setCells] = useState<DiscoveryCell[]>([]);
+  const [mockJourneyPlayback, setMockJourneyPlayback] = useState<Coordinate[] | null>(null);
+  const [mockJourneyPoints, setMockJourneyPoints] = useState<Coordinate[]>([]);
+  const displayedDiscoveryPoints = useMemo(() => mockJourneyPoints.length > 0
+    ? mergeRoutePoints(points, mockJourneyPoints) : points, [points, mockJourneyPoints]);
   const initialLocation = useContext(OnboardingLocationContext);
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>(initialLocation);
   const [mapReadyGeneration, setMapReadyGeneration] = useState(0);
@@ -891,6 +907,40 @@ export default function App() {
 
   const tour = useOnboardingTour();
   const [tracking, setTracking] = useState<TrackingState>("idle");
+  useEffect(() => { setMockJourneyPlayback(null); setMockJourneyPoints([]); }, [accountUserId, tracking]);
+  useEffect(() => {
+    if (!mockJourneyPlayback) return;
+    const geometry = prepareRouteGeometry(mockJourneyPlayback);
+    const first = mockJourneyPlayback[0];
+    const last = mockJourneyPlayback[mockJourneyPlayback.length - 1];
+    let elapsedMs = 0;
+    let previous = performance.now();
+    const update = (): void => {
+      const now = performance.now();
+      if (document.visibilityState !== "visible") { previous = now; return; }
+      elapsedMs = Math.min(60_000, elapsedMs + now - previous);
+      previous = now;
+      const progress = elapsedMs / 60_000;
+      const travelledKm = geometry.distanceKm * progress;
+      const completed = geometry.segments.filter(segment => segment.endKm <= travelledKm).map(segment => ({
+        ...segment.end, walkId: first.walkId,
+        recordedAt: first.recordedAt + segment.endKm / geometry.distanceKm * (last.recordedAt - first.recordedAt),
+      }));
+      const marker = { ...simulationPosition(geometry, progress), walkId: first.walkId,
+        recordedAt: first.recordedAt + progress * (last.recordedAt - first.recordedAt),
+        heading: simulationHeading(geometry, progress), accuracy: 5 };
+      setMockJourneyPoints([first, ...completed, marker]);
+      if (progress === 1) window.clearInterval(timer);
+    };
+    const timer = window.setInterval(update, 100);
+    const resetClock = (): void => { previous = performance.now(); };
+    document.addEventListener("visibilitychange", resetClock);
+    update();
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", resetClock);
+    };
+  }, [mockJourneyPlayback]);
   useEffect(() => setLocationErrorDismissed(false), [tracking]);
   const [locationPermissionToastVisible, setLocationPermissionToastVisible] =
     useState(false);
@@ -4080,7 +4130,7 @@ export default function App() {
     const controller = new AbortController();
     rerouteControllerRef.current = controller;
     setNavigationRequestPending(true);
-    setNavigationTestMessage(t("Calculating sample route…"));
+    setNavigationTestMessage("Calculating sample route…");
     const origin = { lat: 41.3874, lng: 2.1686 };
     const destination = { lat: 41.4036, lng: 2.1744 };
     try {
@@ -4095,14 +4145,14 @@ export default function App() {
       setSimulationRoute(route);
       setSimulationPlayback(playback);
       setActiveNavigationRoute(route);
-      setRouteDestination({ ...destination, name: t("Mock navigation destination") });
+      setRouteDestination({ ...destination, name: "Mock navigation destination" });
       setNavigationTestMessage("");
       setDevToolsOpen(false);
       focusOnUserPoint({ ...route.points[0], recordedAt: Date.now() });
     } catch (cause) {
       if (controller.signal.aborted) return;
       console.error("Could not prepare route recalculation preview", { cause: errorDiagnostic(cause) });
-      setNavigationTestMessage(cause instanceof Error ? cause.message : t("Could not calculate the sample route."));
+      setNavigationTestMessage(cause instanceof Error ? cause.message : "Could not calculate the sample route.");
     } finally {
       if (rerouteControllerRef.current === controller) {
         rerouteControllerRef.current = null;
@@ -4421,20 +4471,20 @@ export default function App() {
   ): Promise<void> => {
     if (!nativeApp) {
       setActivityNotificationTestMessage(
-        t("{{value0}} is only available in the native app.", { value0: notificationName }),
+        `${notificationName} is only available in the native app.`,
       );
       return;
     }
     if (!accountUserId) {
       setActivityNotificationTestMessage(
-        t("Sign in before testing {{value0}}.", { value0: notificationName.toLowerCase() }),
+        `Sign in before testing ${notificationName.toLowerCase()}.`,
       );
       return;
     }
     try {
       if (!(await ensureNotificationPermission())) {
         setActivityNotificationTestMessage(
-          t("Allow notifications in your device settings, then try again."),
+          "Allow notifications in your device settings, then try again.",
         );
         return;
       }
@@ -4449,12 +4499,12 @@ export default function App() {
         ],
       });
       setActivityNotificationTestMessage(
-        t("{{value0}} will appear in 5 seconds.", { value0: notificationName }),
+        `${notificationName} will appear in 5 seconds.`,
       );
     } catch (error) {
       console.warn("Could not schedule activity notification test", { notificationName, error: errorDiagnostic(error) });
       setActivityNotificationTestMessage(
-        t("Could not schedule {{value0}}.", { value0: notificationName.toLowerCase() }),
+        `Could not schedule ${notificationName.toLowerCase()}.`,
       );
     }
   };
@@ -4478,7 +4528,7 @@ export default function App() {
         actionTypeId: MORNING_INVITE_ACTION_TYPE_ID,
         extra: { kind: "morning-invite", userId: accountUserId },
       },
-      t("Daily walking reminder"),
+      "Daily walking reminder",
     );
   };
 
@@ -4493,7 +4543,7 @@ export default function App() {
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "test-unmapped", userId: accountUserId },
       },
-      t("Unmapped area reminder"),
+      "Unmapped area reminder",
     );
   };
 
@@ -4506,7 +4556,7 @@ export default function App() {
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "weekly-recap-test", userId: accountUserId },
       },
-      t("Weekly progress summary"),
+      "Weekly progress summary",
     );
   };
 
@@ -4521,29 +4571,15 @@ export default function App() {
         schedule: { at: new Date(Date.now() + 5_000) },
         extra: { kind: "streak-reminder-test", userId: accountUserId },
       },
-      t("Streak reminder"),
+      "Streak reminder",
     );
   };
 
   const simulateJourneyRecap = (): void => {
     const finishedAt = Date.now();
-    const startedAt = finishedAt - 18 * 60_000;
+    const startedAt = finishedAt - 60 * 60_000;
     const walkId = "dev-journey-recap";
-    const route: [number, number][] = [
-      [2.1604, 41.3902],
-      [2.1624, 41.3917],
-      [2.1644, 41.3932],
-      [2.1664, 41.3917],
-      [2.1684, 41.3902],
-      [2.1664, 41.3887],
-      [2.1644, 41.3872],
-    ];
-    const points: Coordinate[] = route.map(([lng, lat], index) => ({
-      lng,
-      lat,
-      walkId,
-      recordedAt: startedAt + index * 3 * 60_000,
-    }));
+    const points = createMockJourneyPoints(startedAt).map(point => ({ ...point, walkId }));
     const previousPoints = points.slice(0, 3);
     const previousCells = new Set(
       discoveryCellsFromPoints(previousPoints).map(discoveryCellKey),
@@ -4576,7 +4612,7 @@ export default function App() {
     setAchievementTestPreview(achievement.id);
     if (!nativeApp) {
       setAchievementTestMessage(
-        t("Showing {{value0}}. Native notifications are only available in the iPhone app.", { value0: achievement.title }),
+        `Showing ${achievement.title}. Native notifications are only available in the iPhone app.`,
       );
       return;
     }
@@ -4588,12 +4624,12 @@ export default function App() {
       );
       setAchievementTestMessage(
         scheduled
-          ? t("{{value0}} notification scheduled. The next test uses another badge.", { value0: achievement.title })
-          : t("Celebration shown. Allow notifications in iPhone Settings to test the notification too."),
+          ? `${achievement.title} notification scheduled. The next test uses another badge.`
+          : "Celebration shown. Allow notifications in iPhone Settings to test the notification too.",
       );
     } catch {
       setAchievementTestMessage(
-        t("Celebration shown, but the test notification could not be scheduled."),
+        "Celebration shown, but the test notification could not be scheduled.",
       );
     }
   };
@@ -5883,12 +5919,12 @@ export default function App() {
         initialZoom={initialLocation ? 14 : undefined}
         reward={mapRewards.selected}
         mode={mode}
-        points={points}
+        points={displayedDiscoveryPoints}
         cells={cells}
-        highlightedPoints={highlightedRoutePoints}
-        highlightedNewGroundSegments={highlightedNewGroundSegments}
+        highlightedPoints={mockJourneyPoints.length > 0 ? mockJourneyPoints : highlightedRoutePoints}
+        highlightedNewGroundSegments={mockJourneyPoints.length > 0 ? [mockJourneyPoints] : highlightedNewGroundSegments}
         currentPoint={
-          simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
+          mockJourneyPoints.at(-1) ?? simulationPoint ?? (locationIsCurrent ? currentPoint : undefined)
         }
         navigationFollowing={Boolean(
           (simulationRoute ||
@@ -5897,7 +5933,7 @@ export default function App() {
         )}
         onUserMarkerChange={onUserMarkerChange}
         locationState={
-          tracking === "tracking"
+          mockJourneyPoints.length > 0 || tracking === "tracking"
             ? "tracking"
             : locationIsCurrent
               ? "located"
@@ -6044,20 +6080,19 @@ export default function App() {
         </NavigationSimulation>
       )}
       {devToolsEnabled && devToolsVisible && (
-        <aside className="dev-tools" aria-label={t("Development test tools")}>
+        <aside className="dev-tools" aria-label="Development tools">
           <div className="dev-tools__heading">
-            <strong>{t("Dev tools")}</strong>
+            <strong>Dev tools</strong>
             <button
               type="button"
               onClick={() => setDevToolsOpen(false)}
-              aria-label={t("Hide development test tools")}
-              title={t("Hide development test tools")}
+              aria-label="Close dev tools"
+              title="Close dev tools"
             >
               <XIcon size={14} />
             </button>
           </div>
-          <strong>{t("Onboarding")}</strong>
-          <small>{t("Replay the intro and all guide tips from the beginning.")}</small>
+          <strong>App</strong>
           <button
             type="button"
             data-testid="restart-onboarding"
@@ -6066,56 +6101,59 @@ export default function App() {
               setDevToolsOpen(false);
               restartOnboarding();
             }}
-          >{t("Restart onboarding")}</button>
+          >Replay onboarding</button>
           <button
             type="button"
             data-testid="preview-error-toast"
             onClick={() => setJourneyStopMessage(t(JOURNEY_SPEED_STOP_MESSAGE))}
-          >{t("Show mock error message")}</button>
-          <strong>{t("Notifications")}</strong>
-          <small>{t("Schedules each notification in 5 seconds using your current progress. These tests work even when the notification category is switched off.")}</small>
+          >Error banner</button>
+          <strong>Notifications · 5s delay</strong>
           <button
             type="button"
             onClick={() => void testUnmappedAreaNotification()}
-          >{t("Test unmapped area reminder")}</button>
+          >New-area reminder</button>
           <button
             type="button"
             onClick={() => void testMorningInviteNotification()}
-          >{t("Test daily reminder")}</button>
+          >Daily reminder</button>
           <button
             type="button"
             onClick={() => void testWeeklyRecapNotification()}
-          >{t("Test weekly summary")}</button>
+          >Weekly summary</button>
           <button
             type="button"
             onClick={() => void testStreakReminderNotification()}
-          >{t("Test streak reminder")}</button>
+          >Streak reminder</button>
           {activityNotificationTestMessage && (
             <small role="status">{activityNotificationTestMessage}</small>
           )}
-          <strong>{t("Navigation")}</strong>
-          <small>{t("Simulates a wrong turn, recalculates the route, then follows it to the destination. Uses the routing service; saves no progress.")}</small>
+          <strong>Navigation</strong>
           <button
             type="button"
             data-testid="preview-route-recalculation"
             disabled={tracking === "tracking" || tracking === "requesting" || navigationRequestPending}
             onClick={() => void previewRouteRecalculation()}
-          >{t("Test route recalculation")}</button>
+          >Reroute</button>
           {navigationTestMessage && <small role="status">{navigationTestMessage}</small>}
-          <strong>{t("Journey recap")}</strong>
-          <small>{t("Previews a sample journey without saving progress.")}</small>
+          <strong>Journey previews</strong>
+          <button type="button" data-testid="preview-map-discovery" disabled={tracking === "tracking" || tracking === "requesting" || walkFinalizing} onClick={() => {
+            const preview = createMockJourneyPoints(Date.now() - 60 * 60_000);
+            setMockJourneyPoints([preview[0]]);
+            setMockJourneyPlayback(preview);
+            setMode("discover");
+            focusMapOnCoordinates(preview.map(point => [point.lng, point.lat]));
+          }}>Play journey</button>
+          {mockJourneyPoints.length > 0 && <button type="button" data-testid="clear-map-discovery-preview" onClick={() => { setMockJourneyPlayback(null); setMockJourneyPoints([]); }}>Clear preview</button>}
           <button
             type="button"
             data-testid="preview-journey-recap"
             onClick={simulateJourneyRecap}
-          >{t("Show mock journey recap")}</button>
-          <strong>{t("Achievements")}</strong>
-          <small>{t("Opens the real celebration and, in the native app, schedules the same local notification. Each press cycles to another badge.")}</small>
+          >Recap</button>
           <button
             type="button"
             data-testid="preview-achievement"
             onClick={() => void simulateAchievementUnlock()}
-          >{t("Test achievement unlock")}</button>
+          >Unlock achievement</button>
           {achievementTestMessage && (
             <small role="status">{achievementTestMessage}</small>
           )}
@@ -6127,7 +6165,7 @@ export default function App() {
           data-testid="dev-tools-open"
           type="button"
           onClick={() => setDevToolsOpen(true)}
-        >{t("Dev tools")}</button>
+        >Dev tools</button>
       )}
 
       <header className="topbar" ref={topbarRef}>
