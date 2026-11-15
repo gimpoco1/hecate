@@ -1540,6 +1540,8 @@ export default function App() {
     startedAt: activeWalkRef.current?.startedAt ?? null,
     ready: authReady && !discoveryLoading && !walkFinalizing && !journeySaveError &&
       (discoveryHistoryReadyRef.current || Boolean(activeWalkRef.current && trackingUserRef.current === accountUserId)),
+    readiness: { authReady, discoveryLoading, historyReady: discoveryHistoryReadyRef.current,
+      walkFinalizing, saveFailed: Boolean(journeySaveError) },
     cities: progressCities,
     onStart: (seed) => startRecordedJourney(seed),
     onPause: async () => {

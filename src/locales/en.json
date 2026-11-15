@@ -1224,5 +1224,11 @@
   "settings.journeyStartTiming": "After <duration/> of walking, Hecate saves the journey from the beginning. Stops of up to 2 minutes keep your progress but do not count toward the timer. Longer stops reset it.",
   "settings.journeyRestartTiming": "After you end a journey manually, wait <duration/> before detecting a new walk.",
   "settings.journeyRestartTitle": "Restart automatic recording",
-  "settings.journeyRestartDescription": "Once this wait ends, the walking timer starts again. You can still start a journey manually at any time."
+  "settings.journeyRestartDescription": "Once this wait ends, the walking timer starts again. You can still start a journey manually at any time.",
+  "Journey diagnostics": "Journey diagnostics",
+  "After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.": "After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.",
+  "Copy diagnostic report": "Copy diagnostic report",
+  "Diagnostic report copied.": "Diagnostic report copied.",
+  "Could not copy journey diagnostics. Please try again.": "Could not copy journey diagnostics. Please try again.",
+  "Could not save journey diagnostics.": "Could not save journey diagnostics."
 }

@@ -4,11 +4,14 @@ import { App as CapacitorApp } from "@capacitor/app";
 import type { CityBoundary } from "./city";
 import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
-import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker } from "./location";
+import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker, type LocationAuthorization, type ReminderMotionAuthorization } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
 import { CANDIDATE_STOP_GRACE_MS, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
+
+import { saveJourneyDiagnostic, type JourneyDiagnosticStatus, type JourneyDiagnosticReadiness } from "./journeyDiagnostics";
+import { isUsableGpsPoint } from "./geo";
 
 import type { JourneyPauseRequest } from "./journeyActivity";
 
@@ -19,6 +22,7 @@ type Options = {
   walkId: string | null;
   startedAt: number | null;
   ready: boolean;
+  readiness: JourneyDiagnosticReadiness;
   cities: CityBoundary[];
   onStart: (seed: JourneySeed) => Promise<void>;
   onPause: () => Promise<void>;
@@ -74,6 +78,43 @@ export function useJourneyAutomation(options: Options) {
   const pausedRecorderId = useRef<string | null>(null);
   const locationTick = useRef<(() => void) | null>(null);
 
+  const diagnostic = useRef({ status: "settings" as JourneyDiagnosticStatus, savedAt: 0,
+    rawPoints: 0, rejectedGpsPoints: 0, lastRawPointAt: null as number | null,
+    lastAcceptedPointAt: null as number | null, lastAccuracy: null as number | null,
+    locationAuthorization: null as LocationAuthorization | null, motionAuthorization: null as ReminderMotionAuthorization | null,
+    motionAvailable: null as boolean | null });
+
+  function report(status: JourneyDiagnosticStatus, failureCode: string | null): void {
+    const now = Date.now();
+    const state = diagnostic.current;
+    if (state.status === status && now - state.savedAt < 15_000 && failureCode === null) return;
+    diagnostic.current = { ...state, status, savedAt: now };
+    const currentMotion = motion.current;
+    const currentPreferences = preferencesRef.current;
+    try {
+      saveJourneyDiagnostic(localStorage, {
+        at: now, status, visible: document.visibilityState === "visible", ready: latest.current.ready,
+        readiness: latest.current.readiness, signedIn: latest.current.ownerId !== null,
+        settingsReady, mode: currentPreferences.mode, autoPause: currentPreferences.autoPause,
+        startMinutes: currentPreferences.startMinutes, pauseMinutes: currentPreferences.pauseMinutes,
+        stopMinutes: currentPreferences.stopMinutes, cooldownUntil: session.current.cooldownUntil,
+        motion: currentMotion?.activity ?? null, motionSince: currentMotion?.since ?? null,
+        motionObservedAt: currentMotion?.observedAt ?? null,
+        locationAuthorization: state.locationAuthorization, motionAuthorization: state.motionAuthorization,
+        motionAvailable: state.motionAvailable,
+        walkingMs: candidate.current ? candidateWalkingDuration(candidate.current.clock, now) : 0,
+        bufferedPoints: candidate.current?.points.length ?? 0,
+        rawPoints: state.rawPoints, rejectedGpsPoints: state.rejectedGpsPoints,
+        lastRawPointAt: state.lastRawPointAt, lastAcceptedPointAt: state.lastAcceptedPointAt,
+        lastAccuracy: state.lastAccuracy, journeyActive: latest.current.walkId !== null,
+        idleSince: session.current.idleSince, pausedAt: session.current.pausedAt, failureCode,
+      });
+    } catch (failure) {
+      console.error("Could not save journey diagnostics", { error: errorDiagnostic(failure) });
+      setError(t("Could not save journey diagnostics."));
+    }
+  }
+
   function persist(): void {
     const ownerId = latest.current.ownerId;
     if (ownerId) localStorage.setItem(sessionKey(ownerId), JSON.stringify(session.current));
@@ -93,6 +134,7 @@ export function useJourneyAutomation(options: Options) {
     setPausedAt(null);
     pausedRecorderId.current = null;
     persist();
+    report("journey-started", null);
     void discardCandidate().catch((failure) => {
       console.error("Could not release temporary journey tracking", { error: errorDiagnostic(failure) });
       setError(failure instanceof Error ? failure.message : t("Could not stop temporary journey tracking."));
@@ -148,6 +190,8 @@ export function useJourneyAutomation(options: Options) {
     const refresh = (): void => {
       void Promise.all([readReminderMotionAuthorization(), JourneyMotionMonitor.getAvailability(), readLocationAuthorization()]).then(([status, { available }, location]) => {
         if (!active || latest.current.ownerId !== ownerId) return;
+        diagnostic.current = { ...diagnostic.current, locationAuthorization: location, motionAuthorization: status, motionAvailable: available };
+        report("settings", null);
         setMotionAllowed(status === "authorized" && available);
         const motionMessage = t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself.");
         const locationMessage = t("Journey recording switched to Manual because Always location access is off. You can still start journeys yourself.");
@@ -221,7 +265,12 @@ export function useJourneyAutomation(options: Options) {
 
   const monitorNeeded = Boolean(settingsReady && options.ownerId && options.ready && (preferences.mode !== "manual" || (preferences.autoPause && options.walkId)));
   useEffect(() => {
-    if (!Capacitor.isNativePlatform() || !monitorNeeded) return;
+    if (!Capacitor.isNativePlatform()) return;
+    if (!monitorNeeded) {
+      report(options.ready ? "monitor-not-needed" : "waiting-for-readiness", null);
+      return;
+    }
+    report("starting-monitor", null);
     const ownerId = options.ownerId;
     let disposed = false;
     let listener: PluginListenerHandle | null = null;
@@ -232,6 +281,7 @@ export function useJourneyAutomation(options: Options) {
     const fail = (failure: Error): void => {
       if (disposed) return;
       failed = true;
+      report("monitor-failed", errorDiagnostic(failure).code ?? failure.name);
       console.error("Automatic journey monitoring failed", { ownerId, error: errorDiagnostic(failure) });
       setError(failure.message);
       void discardCandidate().catch((cause) => console.error("Could not discard automatic journey buffer", { error: errorDiagnostic(cause) }));
@@ -242,6 +292,7 @@ export function useJourneyAutomation(options: Options) {
       const now = Date.now();
       const activeId = latest.current.walkId;
       if (activeId) {
+        report("journey-active", null);
         if (!motion.current || motion.current.activity === "unknown") return;
         if (session.current.id !== activeId) {
           session.current = { ...emptySession(), id: activeId };
@@ -251,6 +302,7 @@ export function useJourneyAutomation(options: Options) {
         if (idleSince === null) return;
         if (session.current.source === "automatic" && now - idleSince >= preferencesRef.current.stopMinutes * 60_000) {
           busy.current = true;
+          report("stopping-journey", null);
           try { await latest.current.onStop(idleSince); }
           finally { busy.current = false; }
           return;
@@ -266,6 +318,7 @@ export function useJourneyAutomation(options: Options) {
           if (pausedRecorderId.current !== activeId) {
             pausedRecorderId.current = activeId;
             busy.current = true;
+            report("pausing-journey", null);
             try { await latest.current.onPause(); }
             finally { busy.current = false; }
           }
@@ -276,21 +329,47 @@ export function useJourneyAutomation(options: Options) {
       if (interruptedAt !== undefined && interruptedAt !== null && now - interruptedAt > CANDIDATE_STOP_GRACE_MS) {
         await discardCandidate();
       }
-      if (preferencesRef.current.mode === "manual" || now < session.current.cooldownUntil || motion.current?.activity !== "walking") return;
+      if (preferencesRef.current.mode === "manual") { report("monitor-not-needed", null); return; }
+      if (now < session.current.cooldownUntil) { report("cooldown", null); return; }
+      if (motion.current?.activity !== "walking") { report("waiting-for-motion", null); return; }
       if (!candidateTracker.current) {
         candidate.current = { startedAt: now, clock: { walkingMs: 0, walkingSince: now, interruptedAt: null }, startsNewSegment: false, points: [] };
-        const tracker = createJourneyRecordingTracker(createCandidateLocationTracker(), latest.current.cities);
+        diagnostic.current = { ...diagnostic.current, rawPoints: 0, rejectedGpsPoints: 0,
+          lastRawPointAt: null, lastAcceptedPointAt: null, lastAccuracy: null };
+        report("collecting-gps", null);
+        const rawTracker = createCandidateLocationTracker();
+        const observedTracker: LocationTracker = {
+          start: (onPoint, onError) => rawTracker.start(point => {
+            diagnostic.current = { ...diagnostic.current, rawPoints: diagnostic.current.rawPoints + 1,
+              rejectedGpsPoints: diagnostic.current.rejectedGpsPoints + (isUsableGpsPoint(point) ? 0 : 1),
+              lastRawPointAt: point.recordedAt, lastAccuracy: point.accuracy ?? null };
+            onPoint(point);
+          }, onError),
+          stop: () => rawTracker.stop(),
+        };
+        const tracker = createJourneyRecordingTracker(observedTracker, latest.current.cities);
         candidateTracker.current = tracker;
         await tracker.start((point) => {
           if (!valid() || candidateTracker.current !== tracker || !candidate.current || latest.current.walkId || motion.current?.activity !== "walking") return;
+          diagnostic.current = { ...diagnostic.current, lastAcceptedPointAt: point.recordedAt };
           const recordedPoint = candidate.current.startsNewSegment ? { ...point, segmentBreakBefore: true } : point;
           candidate.current = { ...candidate.current, startsNewSegment: false, points: [...candidate.current.points, recordedPoint] };
           void tick().catch(fail);
-        }, (failure) => fail(new Error(failure.message)));
+        }, (failure) => {
+          report("candidate-failed", failure.code);
+          fail(new Error(failure.message));
+        });
       }
       const buffer = candidate.current;
-      if (!buffer || buffer.points.length < 2 || candidateWalkingDuration(buffer.clock, now) < preferencesRef.current.startMinutes * 60_000
-        || now - buffer.points[buffer.points.length - 1].recordedAt > 30_000) return;
+      if (!buffer || buffer.points.length < 2 || now - buffer.points[buffer.points.length - 1].recordedAt > 30_000) {
+        report("waiting-for-gps", null);
+        return;
+      }
+      if (candidateWalkingDuration(buffer.clock, now) < preferencesRef.current.startMinutes * 60_000) {
+        report("waiting-for-walking-duration", null);
+        return;
+      }
+      report("starting-journey", null);
       busy.current = true;
       try {
         await discardCandidate();
@@ -309,11 +388,13 @@ export function useJourneyAutomation(options: Options) {
       if (latest.current.walkId && inactiveEnd !== null) {
         motion.current = next;
         busy.current = true;
+        report("stopping-journey", null);
         try { await latest.current.onStop(inactiveEnd); }
         finally { busy.current = false; }
         return;
       }
       motion.current = next;
+      report("motion-observed", null);
       if (candidate.current) {
         const clock = advanceCandidateWalkingClock(candidate.current.clock, next);
         if (clock === null) await discardCandidate();
@@ -338,7 +419,7 @@ export function useJourneyAutomation(options: Options) {
           pausedRecorderId.current = null;
           setPausedMs(session.current.pausedMs);
           setPausedAt(null);
-          if (wasPaused) latest.current.onResume();
+          if (wasPaused) { report("resuming-journey", null); latest.current.onResume(); }
         } else if (next.activity !== "unknown" && session.current.idleSince === null) {
           const startedAt = latest.current.startedAt;
           if (startedAt === null) throw new Error("An active journey is missing its start time.");
@@ -382,13 +463,17 @@ export function useJourneyAutomation(options: Options) {
       }
       if (!valid()) return;
       if (Capacitor.getPlatform() === "ios") {
-        errorListener = await JourneyMotionMonitor.addListener("monitorError", failure => fail(new Error(`Journey background location failed (${failure.code}): ${failure.message}`)));
+        errorListener = await JourneyMotionMonitor.addListener("monitorError", failure => {
+          report("monitor-failed", `native-location:${failure.code}`);
+          fail(new Error(`Journey background location failed (${failure.code}): ${failure.message}`));
+        });
       }
       if (!valid()) { await errorListener?.remove(); return; }
       listener = await JourneyMotionMonitor.addListener("motion", queueObservation);
       if (!valid()) { await listener.remove(); return; }
       await JourneyMotionMonitor.start();
       started = true;
+      report("monitor-started", null);
       if (!valid()) { await JourneyMotionMonitor.stop(); return; }
       setError("");
       refresh();
@@ -398,6 +483,7 @@ export function useJourneyAutomation(options: Options) {
     const timer = window.setInterval(() => { void tick().catch(fail); }, 1_000);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      report("monitor-stopped", null);
       disposed = true;
       if (locationTick.current === checkTime) locationTick.current = null;
       window.clearInterval(timer);

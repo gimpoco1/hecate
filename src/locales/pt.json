@@ -1224,5 +1224,11 @@
   "settings.journeyStartTiming": "Após <duration/> a caminhar, a Hecate guarda o percurso desde o início. Paragens de até 2 minutos mantêm o progresso, mas não contam para o temporizador. Paragens mais longas reiniciam-no.",
   "settings.journeyRestartTiming": "Após terminares um percurso manualmente, aguarda <duration/> antes de detetar outra caminhada.",
   "settings.journeyRestartTitle": "Retomar gravação automática",
-  "settings.journeyRestartDescription": "Quando a espera terminar, o temporizador de caminhada recomeça. Podes iniciar um percurso manualmente a qualquer momento."
+  "settings.journeyRestartDescription": "Quando a espera terminar, o temporizador de caminhada recomeça. Podes iniciar um percurso manualmente a qualquer momento.",
+  "Journey diagnostics": "Diagnóstico de percursos",
+  "After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.": "Após um teste a caminhar, copia este relatório para ajudar a diagnosticar a gravação automática. Inclui os estados recentes do acompanhamento e a qualidade do GPS, sem coordenadas nem dados da conta.",
+  "Copy diagnostic report": "Copiar relatório de diagnóstico",
+  "Diagnostic report copied.": "Relatório de diagnóstico copiado.",
+  "Could not copy journey diagnostics. Please try again.": "Não foi possível copiar o diagnóstico de percursos. Tenta novamente.",
+  "Could not save journey diagnostics.": "Não foi possível guardar o diagnóstico de percursos."
 }

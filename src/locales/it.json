@@ -1224,5 +1224,11 @@
   "settings.journeyStartTiming": "Dopo <duration/> di cammino, Hecate salva il percorso dall’inizio. Le soste fino a 2 minuti mantengono i progressi ma non contano nel timer. Le soste più lunghe lo azzerano.",
   "settings.journeyRestartTiming": "Dopo aver terminato un percorso manualmente, attendi <duration/> prima di rilevare una nuova passeggiata.",
   "settings.journeyRestartTitle": "Riavvio della registrazione automatica",
-  "settings.journeyRestartDescription": "Al termine dell’attesa, il timer di cammino riparte. Puoi avviare un percorso manualmente in qualsiasi momento."
+  "settings.journeyRestartDescription": "Al termine dell’attesa, il timer di cammino riparte. Puoi avviare un percorso manualmente in qualsiasi momento.",
+  "Journey diagnostics": "Diagnostica dei percorsi",
+  "After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.": "Dopo una prova camminando, copia questo rapporto per diagnosticare la registrazione automatica. Include gli stati recenti del tracciamento e la qualità del GPS, senza coordinate o dati dell’account.",
+  "Copy diagnostic report": "Copia rapporto diagnostico",
+  "Diagnostic report copied.": "Rapporto diagnostico copiato.",
+  "Could not copy journey diagnostics. Please try again.": "Impossibile copiare la diagnostica dei percorsi. Riprova.",
+  "Could not save journey diagnostics.": "Impossibile salvare la diagnostica dei percorsi."
 }

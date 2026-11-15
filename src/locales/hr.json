@@ -1239,5 +1239,11 @@
   "settings.journeyStartTiming": "Nakon <duration/> hodanja, Hecate sprema putovanje od početka. Stanke do 2 minute čuvaju napredak, ali se ne broje u mjeraču vremena. Dulje stanke ga poništavaju.",
   "settings.journeyRestartTiming": "Nakon ručnog završetka putovanja, pričekaj <duration/> prije prepoznavanja nove šetnje.",
   "settings.journeyRestartTitle": "Ponovno automatsko snimanje",
-  "settings.journeyRestartDescription": "Nakon isteka čekanja, mjerač hodanja počinje iznova. Putovanje možeš pokrenuti ručno u bilo kojem trenutku."
+  "settings.journeyRestartDescription": "Nakon isteka čekanja, mjerač hodanja počinje iznova. Putovanje možeš pokrenuti ručno u bilo kojem trenutku.",
+  "Journey diagnostics": "Dijagnostika putovanja",
+  "After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.": "Nakon probne šetnje kopiraj ovo izvješće za dijagnostiku automatskog snimanja. Sadrži nedavna stanja praćenja i kvalitetu GPS-a, bez koordinata ili podataka o računu.",
+  "Copy diagnostic report": "Kopiraj dijagnostičko izvješće",
+  "Diagnostic report copied.": "Dijagnostičko izvješće je kopirano.",
+  "Could not copy journey diagnostics. Please try again.": "Dijagnostika putovanja nije se mogla kopirati. Pokušaj ponovno.",
+  "Could not save journey diagnostics.": "Dijagnostika putovanja nije se mogla spremiti."
 }
