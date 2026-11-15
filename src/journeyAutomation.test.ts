@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
+import { automaticJourneyFinishedAt, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
 
 const idle = 1700000000000;
 describe("inactivity after an adaptive location suspension", () => {
@@ -78,5 +78,29 @@ describe("native motion observation ordering", () => {
   });
   it("reports an invalid native observation timestamp instead of silently freezing detection", () => {
     expect(() => reconcileJourneyMotion(null, { activity: "walking", since: idle, observedAt: Number.NaN })).toThrow(TypeError);
+  });
+});
+
+
+describe("completed automatic journey timing", () => {
+  it("keeps the final ten-minute pause in the recap without counting it as active walking", () => {
+    const startedAt = 1794742473910;
+    const pausedAt = 1794743224268;
+    const finishedAt = automaticJourneyFinishedAt(pausedAt, 10);
+    const elapsedMs = journeyElapsedMs(startedAt, 5000, pausedAt, finishedAt);
+    expect(finishedAt).toBe(pausedAt + 600000);
+    expect(elapsedMs).toBe(pausedAt - startedAt - 5000);
+    expect(finishedAt - startedAt - elapsedMs).toBe(605000);
+  });
+
+  it("ends at the inactivity deadline when renewed walking is delivered later", () => {
+    const motion = { activity: "walking" as const, since: idle + 15 * 60000 };
+    const idleSince = inactivityDeadlineBeforeMovement(idle, motion, 10);
+    expect(idleSince).toBe(idle);
+    expect(automaticJourneyFinishedAt(idleSince!, 10)).toBe(idle + 10 * 60000);
+  });
+
+  it("preserves earlier pauses when finishing an active journey", () => {
+    expect(journeyElapsedMs(idle, 120000, null, idle + 600000)).toBe(480000);
   });
 });

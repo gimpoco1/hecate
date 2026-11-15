@@ -1175,9 +1175,9 @@
   "Automatic recording needs Always location and motion access. A temporary route is collected while walking is being detected. Background detection may be delayed by your phone.": "La registrazione automatica richiede l’accesso Sempre alla posizione e al movimento. Durante il rilevamento si raccoglie un percorso temporaneo. Il telefono può ritardare il rilevamento in background.",
   "Journey paused · resume walking or cycling to continue": "Percorso in pausa · riprendi a camminare o pedalare per continuare",
   "Your journey started automatically": "Il percorso è iniziato automaticamente",
-  "Five minutes of walking detected. Your route includes the beginning of your walk.": "Rilevati cinque minuti a piedi. Il percorso include l’inizio della passeggiata.",
+  "Walking detected. Your route includes the beginning of your walk.": "Camminata rilevata. Il percorso include l’inizio della passeggiata.",
   "Hecate is detecting a journey": "Hecate sta rilevando un percorso",
-  "Your route is buffered until five minutes of walking qualify.": "Il percorso viene conservato temporaneamente fino a cinque minuti a piedi.",
+  "Your route is buffered while walking is being detected.": "Il percorso viene conservato temporaneamente mentre viene rilevata la camminata.",
   "Allow Always location access in Settings to start journeys in the background.": "Consenti l’accesso Sempre alla posizione nelle Impostazioni per avviare percorsi in background.",
   "Allow motion access in Settings to detect walking and cycling.": "Consenti l’accesso al movimento nelle Impostazioni per rilevare camminate e pedalate.",
   "Sign in before changing journey settings.": "Accedi prima di modificare le impostazioni dei percorsi.",
@@ -1230,5 +1230,13 @@
   "Copy diagnostic report": "Copia rapporto diagnostico",
   "Diagnostic report copied.": "Rapporto diagnostico copiato.",
   "Could not copy journey diagnostics. Please try again.": "Impossibile copiare la diagnostica dei percorsi. Riprova.",
-  "Could not save journey diagnostics.": "Impossibile salvare la diagnostica dei percorsi."
+  "Could not save journey diagnostics.": "Impossibile salvare la diagnostica dei percorsi.",
+  "Walking detected. Your route includes the beginning of your walk. Open Hecate to show your journey on the Lock Screen.": "Camminata rilevata. Il percorso include l’inizio della passeggiata. Apri Hecate per mostrare il percorso sulla schermata di blocco.",
+  "Could not start the journey Live Activity.": "Impossibile avviare l’attività in tempo reale del percorso.",
+  "Your journey paused automatically": "Il tragitto è stato messo in pausa automaticamente",
+  "No movement detected. Recording will resume when you move again.": "Nessun movimento rilevato. La registrazione riprenderà quando tornerai a muoverti.",
+  "Your journey ended automatically": "Il tragitto è terminato automaticamente",
+  "Your journey ended after a period of inactivity. Your progress has been saved.": "Il tragitto è terminato dopo un periodo di inattività. I tuoi progressi sono stati salvati.",
+  "Journey paused": "Tragitto in pausa",
+  "Journey resumed": "Tragitto ripreso"
 }

@@ -230,9 +230,11 @@ class NativeLocationTracker implements LocationTracker {
       showsBackgroundLocationIndicator?: boolean;
       journeyId: string | null;
       motionGated: boolean;
+      journeyCandidate: boolean;
     } = {
       showsBackgroundLocationIndicator: this.mode === "walk" || this.mode === "automatic",
       journeyId: this.journeyId,
+      journeyCandidate: this.mode === "candidate",
       motionGated: this.mode === "reminder" || this.mode === "automatic-monitor",
       ...(this.mode === "walk" || this.mode === "automatic"
         ? {
@@ -243,7 +245,7 @@ class NativeLocationTracker implements LocationTracker {
         : this.mode === "candidate" || this.mode === "automatic-monitor"
           ? {
             backgroundTitle: t("Hecate is detecting a journey"),
-            backgroundMessage: t("Your route is buffered until five minutes of walking qualify."),
+            backgroundMessage: t("Your route is buffered while walking is being detected."),
           }
           : this.mode === "reminder"
             ? {
@@ -258,7 +260,7 @@ class NativeLocationTracker implements LocationTracker {
       // to require fresh locations.
       stale: this.mode === "foreground",
       distanceFilter:
-        this.mode === "automatic" ? 0 : this.mode === "walk" || this.mode === "candidate" ? 8 : this.mode === "reminder" ? 30 : 20,
+        this.mode === "automatic" || this.mode === "candidate" ? 0 : this.mode === "walk" ? 8 : this.mode === "reminder" ? 30 : 20,
     };
     const watcherId = await BackgroundGeolocation.addWatcher(
       options,

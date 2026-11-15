@@ -380,6 +380,15 @@ if (!source.includes("manager.activityType = journeyId")) {
             manager.activityType = journeyId == nil ? .other : .fitness
             manager.allowsBackgroundLocationUpdates = background`);
 }
+// Walking candidates need the same GPS accuracy as a confirmed journey.
+if (!source.includes('let journeyCandidate = call.getBool("journeyCandidate")')) {
+  const original = `            if journeyId == nil { manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters }
+            manager.activityType = journeyId == nil ? .other : .fitness`;
+  if (!source.includes(original)) throw new Error("Background geolocation plugin changed; review candidate GPS accuracy configuration.");
+  source = source.replace(original, `            let journeyCandidate = call.getBool("journeyCandidate") == true
+            if journeyId == nil && !journeyCandidate { manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters }
+            manager.activityType = journeyId != nil || journeyCandidate ? .fitness : .other`);
+}
 if (!source.includes("@objc func requestMotionPermission")) {
   source = source.replace("    private var watchers = [Watcher]()", "    private var watchers = [Watcher]()\n    private let motionPermissionManager = CMMotionActivityManager()");
   source = source.replace('CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)', 'CAPPluginMethod(name: "requestMotionPermission", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)');

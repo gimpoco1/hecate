@@ -245,7 +245,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            call.resolve()
+            call.reject("Live Activities are disabled for Hecate. Enable them in Settings to see your journey on the Lock Screen.", "LIVE_ACTIVITIES_DISABLED")
             return
         }
         guard let walkId = call.getString("walkId"),
@@ -290,7 +290,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 call.resolve()
             } catch {
-                call.reject("Could not start the journey Live Activity.", nil, error)
+                call.reject("Could not start the journey Live Activity: " + error.localizedDescription, "LIVE_ACTIVITY_START_FAILED", error)
             }
         }
     }

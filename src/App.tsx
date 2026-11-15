@@ -85,6 +85,10 @@ import { cityMilestoneProgress } from "./badges";
 import { createJourneyRecordingTracker } from "./journeyRecording";
 import {
   JOURNEY_AUTO_START_NOTIFICATION_ID,
+  JOURNEY_AUTO_PAUSE_NOTIFICATION_ID,
+  JOURNEY_AUTO_END_NOTIFICATION_ID,
+  sendJourneyAutoPauseNotification,
+  sendJourneyAutoEndNotification,
   sendJourneyAutoStartNotification,
   JOURNEY_SPEED_STOP_MESSAGE,
   JOURNEY_SPEED_STOP_NOTIFICATION_ID,
@@ -1555,6 +1559,13 @@ export default function App() {
       trackerRef.current = null;
       await tracker?.stop();
     },
+    onAutomaticPause: async (walkId) => {
+      const ownerId = accountUserIdRef.current;
+      if (!Capacitor.isNativePlatform() || !ownerId || activeWalkRef.current?.id !== walkId || trackingUserRef.current !== ownerId) return;
+      await sendJourneyAutoPauseNotification(LocalNotifications, ownerId, walkId,
+        () => accountUserIdRef.current === ownerId && activeWalkRef.current?.id === walkId && automation.activityState(Date.now()).paused,
+      ).catch(error => console.error("Could not notify automatic journey pause", { walkId, error: errorDiagnostic(error) }));
+    },
     onResume: () => {
       if (activeWalkRef.current) nextRecordedPointStartsNewSegmentRef.current = true;
       const walk = activeWalkRef.current;
@@ -1569,8 +1580,14 @@ export default function App() {
       selectionHaptic();
     },
     onStop: async (finishedAt) => {
+      const walkId = activeWalkRef.current?.id;
+      const ownerId = trackingUserRef.current;
       journeyFinishedAtRef.current = finishedAt;
       await stopRecordedJourney();
+      if (!Capacitor.isNativePlatform() || !ownerId || !walkId) return;
+      await sendJourneyAutoEndNotification(LocalNotifications, ownerId, walkId,
+        () => accountUserIdRef.current === ownerId && activeWalkRef.current === null,
+      ).catch(error => console.error("Could not notify automatic journey end", { walkId, error: errorDiagnostic(error) }));
     },
   });
   const activeWalkElapsedMs = activeWalkRef.current
@@ -1810,11 +1827,7 @@ export default function App() {
       enqueueJourneyActivity(() => JourneyActivity.clear());
       return;
     }
-    if (
-      !Capacitor.isNativePlatform() ||
-      (Capacitor.getPlatform() === "ios" && !iosAppActive)
-    )
-      return;
+    if (!Capacitor.isNativePlatform()) return;
     if (
       !accountUserId ||
       tracking !== "tracking" ||
@@ -1823,6 +1836,10 @@ export default function App() {
       trackingUserRef.current !== accountUserId
     )
       return;
+    if (Capacitor.getPlatform() === "ios" && !iosAppActive) {
+      automation.recordLiveActivityStatus("deferred", null);
+      return;
+    }
     const snapshot = journeyActivitySnapshot(
       walk,
       started.discoveryDistance,
@@ -1834,13 +1851,20 @@ export default function App() {
         trackingUserRef.current !== accountUserId
       )
         return;
-      await JourneyActivity.start({
-        ...snapshot,
-        ...automation.activityState(Date.now()),
-        navigation: guidanceRef.current?.cue ?? null,
-        navigationRemaining: guidanceRef.current?.remaining ?? null,
-        ownerId: accountUserId,
-      });
+      try {
+        await JourneyActivity.start({
+          ...snapshot,
+          ...automation.activityState(Date.now()),
+          navigation: guidanceRef.current?.cue ?? null,
+          navigationRemaining: guidanceRef.current?.remaining ?? null,
+          ownerId: accountUserId,
+        });
+        automation.recordLiveActivityStatus("started", null);
+      } catch (error) {
+        automation.recordLiveActivityStatus("failed", errorDiagnostic(error).code ?? "LIVE_ACTIVITY_START_FAILED");
+        setJourneyStopMessage(error instanceof Error ? error.message : t("Could not start the journey Live Activity."));
+        throw error;
+      }
     });
   }, [accountUserId, tracking, iosAppActive]);
 
@@ -2587,6 +2611,8 @@ export default function App() {
             REMINDER_TEST_NOTIFICATION_ID,
             JOURNEY_SPEED_STOP_NOTIFICATION_ID,
             JOURNEY_AUTO_START_NOTIFICATION_ID,
+            JOURNEY_AUTO_PAUSE_NOTIFICATION_ID,
+            JOURNEY_AUTO_END_NOTIFICATION_ID,
             MORNING_INVITE_TEST_NOTIFICATION_ID,
             WEEKLY_RECAP_TEST_NOTIFICATION_ID,
             STREAK_REMINDER_TEST_NOTIFICATION_ID,
@@ -3947,6 +3973,7 @@ export default function App() {
       active?.points.at(-1)?.recordedAt ?? 0,
       widgetStop?.finishedAt ?? journeyFinishedAtRef.current ?? Date.now(),
     );
+    const finalActivityState = automation.activityState(finishedAt);
     if (active && walkOwner) journeyFinishedAtRef.current = finishedAt;
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && active && liveStart) {
@@ -3955,7 +3982,7 @@ export default function App() {
         liveStart.discoveryDistance,
         pointsRef.current,
       );
-      const elapsedMs = automation.activityState(finishedAt).elapsedMs;
+      const elapsedMs = finalActivityState.elapsedMs;
       enqueueJourneyActivity(() =>
         JourneyActivity.end({ ...snapshot, paused: false, elapsedMs, finishedAt }),
       );
@@ -4002,7 +4029,7 @@ export default function App() {
           discoveredDistanceKm(pointsRef.current) - started.discoveryDistance,
         );
         const summary: ExplorationSummary = {
-          elapsedMs: automation.activityState(finishedAt).elapsedMs,
+          elapsedMs: finalActivityState.elapsedMs,
           walkId: active.id,
           route: createJourneyRecapRoute(pointsRef.current, completed),
           cells: newCells,

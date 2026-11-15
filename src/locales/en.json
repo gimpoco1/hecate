@@ -1175,9 +1175,9 @@
   "Automatic recording needs Always location and motion access. A temporary route is collected while walking is being detected. Background detection may be delayed by your phone.": "Automatic recording needs Always location and motion access. A temporary route is collected while walking is being detected. Background detection may be delayed by your phone.",
   "Journey paused · resume walking or cycling to continue": "Journey paused · resume walking or cycling to continue",
   "Your journey started automatically": "Your journey started automatically",
-  "Five minutes of walking detected. Your route includes the beginning of your walk.": "Five minutes of walking detected. Your route includes the beginning of your walk.",
+  "Walking detected. Your route includes the beginning of your walk.": "Walking detected. Your route includes the beginning of your walk.",
   "Hecate is detecting a journey": "Hecate is detecting a journey",
-  "Your route is buffered until five minutes of walking qualify.": "Your route is buffered until five minutes of walking qualify.",
+  "Your route is buffered while walking is being detected.": "Your route is buffered while walking is being detected.",
   "Allow Always location access in Settings to start journeys in the background.": "Allow Always location access in Settings to start journeys in the background.",
   "Allow motion access in Settings to detect walking and cycling.": "Allow motion access in Settings to detect walking and cycling.",
   "Sign in before changing journey settings.": "Sign in before changing journey settings.",
@@ -1230,5 +1230,13 @@
   "Copy diagnostic report": "Copy diagnostic report",
   "Diagnostic report copied.": "Diagnostic report copied.",
   "Could not copy journey diagnostics. Please try again.": "Could not copy journey diagnostics. Please try again.",
-  "Could not save journey diagnostics.": "Could not save journey diagnostics."
+  "Could not save journey diagnostics.": "Could not save journey diagnostics.",
+  "Walking detected. Your route includes the beginning of your walk. Open Hecate to show your journey on the Lock Screen.": "Walking detected. Your route includes the beginning of your walk. Open Hecate to show your journey on the Lock Screen.",
+  "Could not start the journey Live Activity.": "Could not start the journey Live Activity.",
+  "Your journey paused automatically": "Your journey paused automatically",
+  "No movement detected. Recording will resume when you move again.": "No movement detected. Recording will resume when you move again.",
+  "Your journey ended automatically": "Your journey ended automatically",
+  "Your journey ended after a period of inactivity. Your progress has been saved.": "Your journey ended after a period of inactivity. Your progress has been saved.",
+  "Journey paused": "Journey paused",
+  "Journey resumed": "Journey resumed"
 }

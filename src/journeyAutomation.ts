@@ -101,3 +101,13 @@ export function reconcileJourneyMotion(current: JourneyMotionObservation | null,
   const next = parseJourneyMotion(incoming);
   return current !== null && next.observedAt < current.observedAt ? current : next;
 }
+
+/** Automatic completion includes the final inactivity interval as paused time. */
+export function automaticJourneyFinishedAt(idleSince: number, stopMinutes: number): number {
+  return idleSince + stopMinutes * 60_000;
+}
+
+/** Use an explicit start time so finalization cannot depend on a cleared React session. */
+export function journeyElapsedMs(startedAt: number, pausedMs: number, pausedAt: number | null, now: number): number {
+  return Math.max(0, now - startedAt - pausedMs - (pausedAt === null ? 0 : Math.max(0, now - pausedAt)));
+}

@@ -5,7 +5,7 @@ import type { LocationAuthorization, ReminderMotionAuthorization } from "./locat
 const STORAGE_KEY = "hecate:journey-diagnostics:v1";
 const MAX_ENTRIES = 240;
 
-export type JourneyDiagnosticStatus = "settings" | "waiting-for-readiness" | "monitor-not-needed" | "starting-monitor" | "monitor-started" | "monitor-stopped" | "monitor-failed" | "waiting-for-motion" | "cooldown" | "collecting-gps" | "waiting-for-gps" | "waiting-for-walking-duration" | "starting-journey" | "journey-started" | "journey-active" | "pausing-journey" | "resuming-journey" | "stopping-journey" | "candidate-failed" | "motion-observed";
+export type JourneyDiagnosticStatus = "settings" | "waiting-for-readiness" | "monitor-not-needed" | "starting-monitor" | "monitor-started" | "monitor-stopped" | "monitor-failed" | "waiting-for-motion" | "cooldown" | "collecting-gps" | "waiting-for-gps" | "waiting-for-walking-duration" | "starting-journey" | "journey-started" | "journey-active" | "pausing-journey" | "resuming-journey" | "stopping-journey" | "candidate-failed" | "motion-observed" | "live-activity-deferred" | "live-activity-started" | "live-activity-failed";
 
 export type JourneyDiagnosticReadiness = {
   authReady: boolean;

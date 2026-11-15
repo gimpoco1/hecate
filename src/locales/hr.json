@@ -1190,9 +1190,9 @@
   "Automatic recording needs Always location and motion access. A temporary route is collected while walking is being detected. Background detection may be delayed by your phone.": "Automatsko snimanje zahtijeva stalni pristup lokaciji i podacima o kretanju. Tijekom prepoznavanja hodanja prikuplja se privremena ruta. Telefon može odgoditi prepoznavanje u pozadini.",
   "Journey paused · resume walking or cycling to continue": "Istraživanje je pauzirano · nastavi hodati ili voziti bicikl",
   "Your journey started automatically": "Istraživanje je automatski pokrenuto",
-  "Five minutes of walking detected. Your route includes the beginning of your walk.": "Prepoznato je pet minuta hodanja. Ruta uključuje početak šetnje.",
+  "Walking detected. Your route includes the beginning of your walk.": "Hodanje je prepoznato. Ruta uključuje početak tvoje šetnje.",
   "Hecate is detecting a journey": "Hecate prepoznaje istraživanje",
-  "Your route is buffered until five minutes of walking qualify.": "Ruta se privremeno čuva do pet minuta hodanja.",
+  "Your route is buffered while walking is being detected.": "Ruta se privremeno pohranjuje dok se prepoznaje hodanje.",
   "Allow Always location access in Settings to start journeys in the background.": "U postavkama dopusti stalan pristup lokaciji za pokretanje istraživanja u pozadini.",
   "Allow motion access in Settings to detect walking and cycling.": "U postavkama dopusti pristup kretanju za prepoznavanje hodanja i vožnje biciklom.",
   "Sign in before changing journey settings.": "Prijavi se prije promjene postavki istraživanja.",
@@ -1245,5 +1245,13 @@
   "Copy diagnostic report": "Kopiraj dijagnostičko izvješće",
   "Diagnostic report copied.": "Dijagnostičko izvješće je kopirano.",
   "Could not copy journey diagnostics. Please try again.": "Dijagnostika putovanja nije se mogla kopirati. Pokušaj ponovno.",
-  "Could not save journey diagnostics.": "Dijagnostika putovanja nije se mogla spremiti."
+  "Could not save journey diagnostics.": "Dijagnostika putovanja nije se mogla spremiti.",
+  "Walking detected. Your route includes the beginning of your walk. Open Hecate to show your journey on the Lock Screen.": "Hodanje je prepoznato. Ruta uključuje početak tvoje šetnje. Otvori Hecate za prikaz putovanja na zaključanom zaslonu.",
+  "Could not start the journey Live Activity.": "Aktivnost putovanja uživo nije se mogla pokrenuti.",
+  "Your journey paused automatically": "Putovanje je automatski pauzirano",
+  "No movement detected. Recording will resume when you move again.": "Nije prepoznato kretanje. Snimanje će se nastaviti kada se ponovno pokreneš.",
+  "Your journey ended automatically": "Putovanje je automatski završeno",
+  "Your journey ended after a period of inactivity. Your progress has been saved.": "Putovanje je završeno nakon razdoblja neaktivnosti. Tvoj je napredak spremljen.",
+  "Journey paused": "Putovanje pauzirano",
+  "Journey resumed": "Putovanje nastavljeno"
 }

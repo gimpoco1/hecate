@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker, type LocationAuthorization, type ReminderMotionAuthorization } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { CANDIDATE_STOP_GRACE_MS, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { CANDIDATE_STOP_GRACE_MS, automaticJourneyFinishedAt, journeyElapsedMs, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -26,6 +26,7 @@ type Options = {
   cities: CityBoundary[];
   onStart: (seed: JourneySeed) => Promise<void>;
   onPause: () => Promise<void>;
+  onAutomaticPause: (walkId: string) => Promise<void>;
   onResume: () => void;
   onStop: (finishedAt: number) => Promise<void>;
 };
@@ -287,6 +288,23 @@ export function useJourneyAutomation(options: Options) {
       void discardCandidate().catch((cause) => console.error("Could not discard automatic journey buffer", { error: errorDiagnostic(cause) }));
     };
 
+    const finishAutomaticJourney = async (idleSince: number): Promise<void> => {
+      const preferences = preferencesRef.current;
+      const finishedAt = automaticJourneyFinishedAt(idleSince, preferences.stopMinutes);
+      // A suspended app may receive its first idle callback after both deadlines.
+      if (preferences.autoPause && session.current.pausedAt === null &&
+        finishedAt - idleSince >= preferences.pauseMinutes * 60_000) {
+        session.current = { ...session.current, pausedAt: idleSince, pauseMode: "automatic" };
+        persist();
+        setPaused(true);
+        setPausedAt(idleSince);
+      }
+      busy.current = true;
+      report("stopping-journey", null);
+      try { await latest.current.onStop(finishedAt); }
+      finally { busy.current = false; }
+    };
+
     const tick = async (): Promise<void> => {
       if (!started || !valid() || busy.current || !latest.current.ready) return;
       const now = Date.now();
@@ -301,15 +319,13 @@ export function useJourneyAutomation(options: Options) {
         const idleSince = session.current.idleSince;
         if (idleSince === null) return;
         if (session.current.source === "automatic" && now - idleSince >= preferencesRef.current.stopMinutes * 60_000) {
-          busy.current = true;
-          report("stopping-journey", null);
-          try { await latest.current.onStop(idleSince); }
-          finally { busy.current = false; }
+          await finishAutomaticJourney(idleSince);
           return;
         }
         if (session.current.pauseMode === "manual" && session.current.pausedAt !== null) return;
         if (preferencesRef.current.autoPause && now - idleSince >= preferencesRef.current.pauseMinutes * 60_000) {
-          if (session.current.pausedAt === null) {
+          const newlyPaused = session.current.pausedAt === null;
+          if (newlyPaused) {
             session.current = { ...session.current, pausedAt: idleSince, pauseMode: "automatic" };
             persist();
             setPausedAt(idleSince);
@@ -319,8 +335,10 @@ export function useJourneyAutomation(options: Options) {
             pausedRecorderId.current = activeId;
             busy.current = true;
             report("pausing-journey", null);
-            try { await latest.current.onPause(); }
-            finally { busy.current = false; }
+            try {
+              await latest.current.onPause();
+              if (newlyPaused) await latest.current.onAutomaticPause(activeId);
+            } finally { busy.current = false; }
           }
         }
         return;
@@ -387,10 +405,7 @@ export function useJourneyAutomation(options: Options) {
         : null;
       if (latest.current.walkId && inactiveEnd !== null) {
         motion.current = next;
-        busy.current = true;
-        report("stopping-journey", null);
-        try { await latest.current.onStop(inactiveEnd); }
-        finally { busy.current = false; }
+        await finishAutomaticJourney(inactiveEnd);
         return;
       }
       motion.current = next;
@@ -561,7 +576,11 @@ export function useJourneyAutomation(options: Options) {
 
   function activityState(now: number): { paused: boolean; elapsedMs: number } {
     const current = session.current;
-    return { paused: current.pausedAt !== null, elapsedMs: Math.max(0, now - (latest.current.startedAt ?? now) - current.pausedMs - (current.pausedAt === null ? 0 : Math.max(0, now - current.pausedAt))) };
+    return { paused: current.pausedAt !== null, elapsedMs: journeyElapsedMs(latest.current.startedAt ?? now, current.pausedMs, current.pausedAt, now) };
+  }
+
+  function recordLiveActivityStatus(status: "deferred" | "started" | "failed", failureCode: string | null): void {
+    report(`live-activity-${status}`, failureCode);
   }
 
   function isManualPause(): boolean { return session.current.pauseMode === "manual"; }
@@ -570,6 +589,7 @@ export function useJourneyAutomation(options: Options) {
 
   return {
     preferences,
+    recordLiveActivityStatus,
     motionAllowed,
     applyWidgetPause,
     activityState,
