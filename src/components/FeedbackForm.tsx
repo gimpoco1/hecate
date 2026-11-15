@@ -62,7 +62,7 @@ export function FeedbackForm({ onClose, keyboardInset, userId, accountEmail }: P
     <header className="feedback-header">
       <span className="feedback-header__icon"><FeedbackIcon path={mdiMessageTextOutline} size={22} /></span>
       <h2 id="feedback-title">{sent ? t("Thanks for telling us") : t("Share feedback")}</h2>
-      <button type="button" className="icon-button" aria-label={t("Close feedback")} data-testid="feedback-close" disabled={sending} onClick={onClose}><XIcon /></button>
+      <button type="button" className="icon-button" aria-label={t("Close feedback")} data-swipe-back data-testid="feedback-close" disabled={sending} onClick={onClose}><XIcon /></button>
     </header>
     {sent ? <div className="feedback-success" role="status">
       <FeedbackIcon path={mdiCheckCircleOutline} size={44} />

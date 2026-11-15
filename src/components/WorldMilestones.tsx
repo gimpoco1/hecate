@@ -303,7 +303,7 @@ export function GlobalMilestonesSheet({
         aria-labelledby="walking-stats-title"
       >
         <button
-          className="icon-button walking-stats-back"
+          data-swipe-back className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
           aria-label={backLabel}

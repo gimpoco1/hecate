@@ -185,7 +185,7 @@ export function SavedPlacesSheet({
         aria-labelledby="saved-places-title"
       >
         <button
-          className="icon-button walking-stats-back"
+          data-swipe-back className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
           aria-label={t("Back to profile")}

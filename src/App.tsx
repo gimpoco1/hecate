@@ -18,6 +18,7 @@ import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigati
 import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { useNavigationScreen } from "./navigationScreen";
+import { useEdgeSwipeBack } from "./edgeSwipeBack";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
@@ -823,6 +824,7 @@ async function retryGpxImportOperation(
 }
 
 export default function App() {
+  useEdgeSwipeBack();
   useAppTranslation();
   const { preference: appearancePreference, theme: appearanceTheme } = useAppearance();
   const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(

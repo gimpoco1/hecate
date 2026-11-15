@@ -543,6 +543,7 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
   private maskHeight = 0;
   private maskPrograms = new Map<string, MaskProgram>();
   private compositeProgram: CompositeProgram | null = null;
+  private readonly groundMatrix = new Float32Array(9);
   private waterBuffer: WebGLBuffer | null = null;
   private waterPrograms = new Map<string, ProjectionProgram>();
   private waterBuckets: VisibleFogBucket[] = [];
@@ -779,15 +780,14 @@ export class DiscoveryFogLayer implements CustomLayerInterface {
       .fallbackMatrix.forEach((value, index) => { inverseGroundMatrix[index] = value; });
     inverseGroundMatrix.inverse();
     // Solve world Z = 0 in double precision before uploading the screen-to-ground transform.
-    const groundMatrix = [0, 4, 12].flatMap((column) => {
+    for (let index = 0; index < 3; index++) {
+      const column = index === 2 ? 12 : index * 4;
       const depth = inverseGroundMatrix[column + 2] / inverseGroundMatrix[10];
-      return [
-        inverseGroundMatrix[column] - inverseGroundMatrix[8] * depth,
-        inverseGroundMatrix[column + 1] - inverseGroundMatrix[9] * depth,
-        inverseGroundMatrix[column + 3] - inverseGroundMatrix[11] * depth,
-      ];
-    });
-    gl.uniformMatrix3fv(this.compositeProgram.groundMatrix, false, groundMatrix);
+      this.groundMatrix[index * 3] = inverseGroundMatrix[column] - inverseGroundMatrix[8] * depth;
+      this.groundMatrix[index * 3 + 1] = inverseGroundMatrix[column + 1] - inverseGroundMatrix[9] * depth;
+      this.groundMatrix[index * 3 + 2] = inverseGroundMatrix[column + 3] - inverseGroundMatrix[11] * depth;
+    }
+    gl.uniformMatrix3fv(this.compositeProgram.groundMatrix, false, this.groundMatrix);
     gl.uniform1f(this.compositeProgram.zoom, this.map.getZoom());
     gl.uniform2f(this.compositeProgram.patternOrigin, x * 16, y * 16);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
