@@ -222,7 +222,7 @@ export function CityKeepsake({ city, cells, map, discoveredKm, percentage, onClo
       }} />
     <header className="city-keepsake__header">
       <div><span className="city-keepsake__eyebrow">{t("Your city, as artwork")}</span><h2 id="keepsake-title">{city.name}</h2></div>
-      <button ref={closeButton} type="button" className="icon-button" data-testid="keepsake-close" aria-label={t("Close 3D map")} disabled={saving} onClick={onClose}><XIcon /></button>
+      <button ref={closeButton} type="button" className="icon-button" data-swipe-back data-testid="keepsake-close" aria-label={t("Close 3D map")} disabled={saving} onClick={onClose}><XIcon /></button>
     </header>
     <div className="city-keepsake__tools" role="group" aria-label={t("Artwork controls")}>
       <button type="button" data-testid="keepsake-move" aria-pressed={interaction === "move"}

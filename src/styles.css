@@ -628,7 +628,7 @@ button {
 
 .journey-card__handle {
   position: absolute;
-  top: -6px;
+  top: -14px;
   left: 50%;
   width: 86px;
   height: 30px;
@@ -7019,6 +7019,17 @@ button {
 .journey-history-tools__clear:focus-visible { outline: 2px solid var(--theme-text-accent, #78903b); outline-offset: 2px; }
 
 .exploration-recap__map .map-highlight-legend { display: none; }
+.exploration-recap > .map-highlight-legend {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  width: auto;
+  max-width: none;
+  margin-top: 10px;
+  padding: 0;
+  background: none;
+  backdrop-filter: none;
+}
 .exploration-recap__map .maplibregl-ctrl-bottom-right { bottom: 3px; right: 3px; }
 
 @media (max-width: 360px) {

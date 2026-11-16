@@ -75,7 +75,7 @@ export function CitiesSheet({
 
       >
         <button
-          className="icon-button walking-stats-back"
+          data-swipe-back className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
           aria-label={t("Back to profile")}
@@ -197,7 +197,7 @@ export function AchievementsSheet({
         data-testid="achievements-panel"
       >
         <button
-          className="icon-button walking-stats-back"
+          data-swipe-back className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
           aria-label={backLabel}

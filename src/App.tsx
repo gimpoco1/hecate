@@ -12,12 +12,14 @@ import { createJourneyRecapRoute, type JourneyRecapRoute } from "./journeyRecap"
 import { journeyWeekStart, type JourneyHistoryEntry, type JourneyHistoryFilters } from "./journeyHistory";
 import { formatElapsedDuration } from "./durationFormat";
 import { JourneyHistory } from "./components/JourneyHistory";
+import { MapHighlightLegend } from "./components/MapHighlightLegend";
 import { formatNumber, t, useAppTranslation, currentLanguage, languagePreference, setLanguagePreference } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
 import { deviatingNavigationPlayback, type NavigationPlayback } from "./navigationSimulation";
 import { cameraNeedsUpdate, mapCameraBearing, navigationCameraStep, type MapOrientation } from "./routeCamera";
 import { NavigationSimulation } from "./components/NavigationSimulation";
 import { useNavigationScreen } from "./navigationScreen";
+import { useEdgeSwipeBack } from "./edgeSwipeBack";
 import { NavigationTurn } from "./components/NavigationTurn";
 import { FeedbackForm } from "./components/FeedbackForm";
 import { setAppearancePreference, useAppearance } from "./appearance";
@@ -840,6 +842,7 @@ async function retryGpxImportOperation(
 }
 
 export default function App() {
+  useEdgeSwipeBack();
   useAppTranslation();
   const { preference: appearancePreference, theme: appearanceTheme } = useAppearance();
   const [journeyStopMessage, setJourneyStopMessage] = useState<string | null>(
@@ -6932,6 +6935,7 @@ export default function App() {
             <h2 id="exploration-recap-title">{t(Math.round(explorationSummary.newGroundKm * 1000) > 0 ? "You made new ground yours." : "Journey recap")}</h2>
             <div className="exploration-recap__map">
               <DiscoveryMap
+                reward={mapRewards.selected}
                 navigationFollowing={false}
                 mode="discover"
                 points={recapDiscoveryPoints}
@@ -6946,6 +6950,7 @@ export default function App() {
                 ]}
               />
             </div>
+            <MapHighlightLegend reward={mapRewards.selected} points={explorationSummary.route.points} newGroundSegments={explorationSummary.route.newGroundSegments} />
             <div className="exploration-recap__headline" data-testid="guide-recap">
               <div><strong>{formatDistance(explorationSummary.newGroundKm)}</strong><span>{t("New ground")}</span></div>
               <div><strong>{formatDistance(explorationSummary.travelledKm)}</strong><span>{t("Travelled")}</span></div>
