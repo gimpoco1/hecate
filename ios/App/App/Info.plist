@@ -42,7 +42,7 @@
 	<key>NSMotionUsageDescription</key>
 	<string>Hecate uses motion to detect walking and cycling for automatic journeys, pauses and discovery reminders. Motion is processed on this device.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Hecate uses background location for journeys you start, optional automatic journeys and discovery reminders. Automatic journeys temporarily buffer your route and save it after five continuous minutes of walking. Shorter buffers and reminder samples are not saved to your account.</string>
+	<string>Hecate uses background location for journeys you start, optional automatic journeys and discovery reminders. Automatic journeys temporarily buffer your route and save it once the walking time set in Journey recording is reached. Shorter buffers and reminder samples are not saved to your account.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Hecate uses your location to show your position, map the places you explore during a journey, and suggest recording when discovery reminders are enabled.</string>
 	<key>NSMotionUsageDescription</key>

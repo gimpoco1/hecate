@@ -7324,4 +7324,3 @@ button {
 .journey-mode-options label:has(input:checked) .journey-mode-symbol { color: var(--forest); }
 .journey-mode-options label:has(input:disabled) { opacity: .5; cursor: default; }
 .journey-settings-note { margin: 12px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-

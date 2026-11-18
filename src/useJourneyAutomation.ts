@@ -206,6 +206,7 @@ export function useJourneyAutomation(options: Options) {
             preferencesRef.current = manual;
             motion.current = null;
             setPreferences(manual);
+            if (!manual.autoPause && session.current.pauseMode === "automatic") resumeJourney();
             setError(!available ? t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.")
               : motionUnavailable ? motionMessage : locationMessage);
           }
@@ -248,15 +249,7 @@ export function useJourneyAutomation(options: Options) {
       session.current = { ...session.current, cooldownUntil: session.current.cooldownUntil + (next.restartMinutes - previous.restartMinutes) * 60_000 };
       persist();
     }
-    if (!next.autoPause && session.current.pauseMode === "automatic" && session.current.pausedAt !== null) {
-      session.current = { ...session.current, pausedMs: session.current.pausedMs + Date.now() - session.current.pausedAt, pausedAt: null, pauseMode: null };
-      pausedRecorderId.current = null;
-      persist();
-      setPaused(false);
-      setPausedMs(session.current.pausedMs);
-      setPausedAt(null);
-      latest.current.onResume();
-    }
+    if (!next.autoPause && session.current.pauseMode === "automatic") resumeJourney();
     setPreferences(next);
     setSettingsReady(true);
     setRevision(value => value + 1);
@@ -428,7 +421,8 @@ export function useJourneyAutomation(options: Options) {
             return;
           }
           session.current = { ...session.current, idleSince: null, pausedAt: null,
-            pausedMs: session.current.pausedMs + (wasPaused ? Math.max(0, next.since - pausedAt!) : 0), pauseMode: null };
+            pausedMs: session.current.pausedMs + (pausedAt === null ? 0 : Math.max(0, next.since - pausedAt)),
+            pauseMode: null, resumedAt: wasPaused ? next.since : session.current.resumedAt };
           persist();
           setPaused(false);
           pausedRecorderId.current = null;
@@ -470,6 +464,7 @@ export function useJourneyAutomation(options: Options) {
         preferencesRef.current = manual;
         motion.current = null;
         setPreferences(manual);
+        if (session.current.pauseMode === "automatic") resumeJourney();
         setError(t("Journey recording switched to Manual because motion access is off. You can still start journeys yourself."));
         return;
       }
@@ -518,7 +513,7 @@ export function useJourneyAutomation(options: Options) {
   }, [monitorNeeded, options.ownerId, preferences.mode, revision]);
 
   function acceptPoint(): boolean {
-    return session.current.pausedAt === null && (!preferencesRef.current.autoPause || !motion.current || isJourneyMovement(motion.current));
+    return session.current.pausedAt === null && (!preferencesRef.current.autoPause || !motion.current || motion.current.activity === "unknown" || isJourneyMovement(motion.current));
   }
 
   async function pauseJourney(): Promise<void> {
@@ -574,6 +569,11 @@ export function useJourneyAutomation(options: Options) {
     pausedRecorderId.current = request.paused ? request.walkId : null;
   }
 
+  function hasPendingSegmentBreak(walkId: string, lastRecordedAt: number | undefined): boolean {
+    const { id, resumedAt } = session.current;
+    return id === walkId && resumedAt !== null && (lastRecordedAt === undefined || lastRecordedAt < resumedAt);
+  }
+
   function activityState(now: number): { paused: boolean; elapsedMs: number } {
     const current = session.current;
     return { paused: current.pausedAt !== null, elapsedMs: journeyElapsedMs(latest.current.startedAt ?? now, current.pausedMs, current.pausedAt, now) };
@@ -604,6 +604,7 @@ export function useJourneyAutomation(options: Options) {
     markStarted,
     manualStop,
     acceptPoint,
+    hasPendingSegmentBreak,
     pauseJourney,
     resumeJourney,
     isAutomaticJourney,

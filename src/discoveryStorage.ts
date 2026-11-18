@@ -73,7 +73,7 @@ export function parseStoredWalk(value: unknown): { points: Coordinate[]; cursor:
     }
     const recordedAt: number = sample === null ? startedAt + (finishedAt - startedAt) * index / (count - 1) : sample[0];
     previousTime = recordedAt;
-    return { lng, lat, recordedAt, walkId, achievementEligible: eligible,
+    return { lng, lat, recordedAt, walkId, achievementEligible: eligible, walkStartedAt: startedAt, walkFinishedAt: finishedAt,
       ...(sample !== null && sample[1] ? { segmentBreakBefore: true } : {}) };
   });
   return { points, cursor: { startedAt: value.started_at as string, id: walkId } };
@@ -88,14 +88,34 @@ export function parseStoredCell(value: unknown): DiscoveryCell {
   return { z: value.cell_z, x: value.cell_x, y: value.cell_y, discoveredAt: timestamp(value.first_discovered_at) };
 }
 
+async function loadHistoryPage<T>(signal: AbortSignal, query: (pageSignal: AbortSignal) => PromiseLike<T>): Promise<T> {
+  const page = new AbortController();
+  const cancel = (): void => page.abort();
+  let expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+    cancel();
+  }, 45_000);
+  if (signal.aborted) cancel();
+  else signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const result = await query(page.signal);
+    if (expired) throw new DOMException("A discovery history page exceeded 45 seconds.", "TimeoutError");
+    return result;
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
 /** Stable pages avoid the hosted API's implicit row cap without truncating an account's history. */
 export async function loadStoredWalkPoints(client: SupabaseClient, signal: AbortSignal): Promise<Coordinate[]> {
   const points: Coordinate[] = [];
   let cursor: WalkCursor | null = null;
   for (;;) {
-    const { data, error } = await client.rpc("get_walk_routes_page", {
+    const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_walk_routes_page", {
       p_after_started_at: cursor?.startedAt ?? null, p_after_id: cursor?.id ?? null, p_limit: 20,
-    }).abortSignal(signal);
+    }).abortSignal(pageSignal));
     if (error) throw error;
     if (!Array.isArray(data)) throw new TypeError(t("The walk-history page response must be an array."));
     for (const row of data) {
@@ -110,9 +130,9 @@ export async function loadStoredWalkPoints(client: SupabaseClient, signal: Abort
 export async function loadStoredCells(client: SupabaseClient, signal: AbortSignal): Promise<DiscoveryCell[]> {
   const cells: DiscoveryCell[] = [];
   for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await client.from("discovery_cells")
+    const { data, error } = await loadHistoryPage(signal, pageSignal => client.from("discovery_cells")
       .select("cell_z,cell_x,cell_y,first_discovered_at")
-      .order("cell_z").order("cell_x").order("cell_y").range(offset, offset + 999).abortSignal(signal);
+      .order("cell_z").order("cell_x").order("cell_y").range(offset, offset + 999).abortSignal(pageSignal));
     if (error) throw error;
     if (!Array.isArray(data)) throw new TypeError(t("The discovery-cell page response must be an array."));
     cells.push(...data.map(parseStoredCell));

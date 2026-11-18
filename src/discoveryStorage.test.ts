@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import { loadStoredCells, loadStoredWalkPoints, parseStoredCell, parseStoredWalk } from "./discoveryStorage";
 
-import { routeDistanceKm, splitRoute } from "./geo";
+import { discoveryJourneyMetrics, routeDistanceKm, splitRoute } from "./geo";
 
 const walk = { walk_id: "walk", started_at: "2026-01-01T12:00:00Z", finished_at: "2026-01-01T12:01:00Z",
   coordinates: [[2, 41], [2.001, 41.001]], achievement_eligible: false };
@@ -23,11 +23,12 @@ describe("stored discovery validation", () => {
   });
   it("preserves pause gaps and exact sample times after a history round trip", () => {
     const start = Date.parse(walk.started_at);
-    const restored = parseStoredWalk({ ...walk, finished_at: new Date(start + 660000).toISOString(),
+    const restored = parseStoredWalk({ ...walk, finished_at: new Date(start + 720000).toISOString(),
       coordinates: [[2, 41], [2.001, 41], [2.01, 41], [2.011, 41]],
       point_metadata: [[start, false], [start + 60000, false], [start + 600000, true], [start + 660000, false]],
     }).points;
     expect(splitRoute(restored)).toHaveLength(2);
+    expect(discoveryJourneyMetrics(restored)[0].finishedAt).toBe(start + 720000);
     expect(restored.map(point => point.recordedAt)).toEqual([start, start + 60000, start + 600000, start + 660000]);
     expect(routeDistanceKm(restored)).toBeCloseTo(routeDistanceKm(restored.slice(0, 2)) + routeDistanceKm(restored.slice(2)));
   });

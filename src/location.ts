@@ -328,7 +328,7 @@ export function createCandidateLocationTracker(): LocationTracker {
   return new NativeLocationTracker("candidate", null);
 }
 
-/** Stationary fixes keep the automatic-end deadline observable while the phone is locked. */
+/** Stationary fixes keep pause and end deadlines observable while the phone is locked. */
 export function createAutomaticJourneyTracker(walkId: string): LocationTracker {
   if (!isNativeApp()) throw new Error("Automatic journeys require the iOS or Android app.");
   return new NativeLocationTracker("automatic", walkId);

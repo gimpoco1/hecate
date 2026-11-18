@@ -246,7 +246,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
                 ? motionResult === false ? "onboarding.motionSettings" : "onboarding.motionNext"
                 : backgroundAllowed !== true
                   ? Capacitor.getPlatform() === "ios" ? "onboarding.alwaysSettingsIOS" : "onboarding.alwaysSettingsAndroid"
-                  : "onboarding.automaticReady",
+                  : "onboarding.automaticSignIn",
             { permission: reminderMotionPermissionLabel() },
           )}</p>}
           {page.kind === "location" && nativeApp && !motionAvailable && <p className="onboarding-caption">{t("Automatic journey detection requires iOS 17 or later on iPhone, and motion support on Android.")}</p>}

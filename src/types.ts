@@ -6,6 +6,8 @@ export type Coordinate = {
   heading?: number
   speed?: number
   walkId?: string
+  walkStartedAt?: number
+  walkFinishedAt?: number
   segmentBreakBefore?: boolean
   achievementEligible?: boolean
 };

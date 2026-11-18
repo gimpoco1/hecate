@@ -1207,7 +1207,7 @@ export default function App() {
   const focusFirstTrackingPointRef = useRef(false);
   const reminderRef = useRef(new ExplorationReminder(0, 0, 5, "unmapped"));
   const inactivityReminderRef = useRef(new InactivityReminder(15));
-  const inactivityDueAtRef = useRef<number | null>(null);
+  const inactivityDueAtRef = useRef<number | null | undefined>(undefined);
   const inactivityTimerRef = useRef<number | null>(null);
   const inactivityGenerationRef = useRef(0);
   const inactivityNotificationQueueRef = useRef<Promise<void>>(
@@ -1593,6 +1593,10 @@ export default function App() {
       ).catch(error => console.error("Could not notify automatic journey end", { walkId, error: errorDiagnostic(error) }));
     },
   });
+  const nativeApp = isNativeApp();
+  const autoPauseEnabled = nativeApp && accountUserId !== null && automation.preferences.autoPause;
+  const autoPauseEnabledRef = useRef(autoPauseEnabled);
+  autoPauseEnabledRef.current = autoPauseEnabled;
   const activeWalkElapsedMs = activeWalkRef.current
     ? Math.max(
       0,
@@ -1614,7 +1618,6 @@ export default function App() {
     activeWalkNewGroundMeters,
   );
   const displayedTimeCounter = journeyTimeCounter(activeWalkElapsedMs);
-  const nativeApp = isNativeApp();
   const appLanguage = currentLanguage();
   const appLanguagePreference = languagePreference();
   const devToolsEnabled = DEV_TOOLS_ENABLED;
@@ -1916,6 +1919,7 @@ export default function App() {
 
   const updateInactivitySchedule = useCallback(
     (dueAt: number | null) => {
+      if (dueAt !== null && autoPauseEnabledRef.current) return;
       if (inactivityDueAtRef.current === dueAt) return;
       inactivityDueAtRef.current = dueAt;
       const generation = ++inactivityGenerationRef.current;
@@ -1926,6 +1930,7 @@ export default function App() {
       const showInAppReminder = () => {
         if (
           generation !== inactivityGenerationRef.current ||
+          autoPauseEnabledRef.current ||
           trackingStateRef.current !== "tracking"
         )
           return;
@@ -1956,7 +1961,7 @@ export default function App() {
             )
               return;
             const notificationAllowed = await hasNotificationPermission(LocalNotifications);
-            if (generation !== inactivityGenerationRef.current) return;
+            if (generation !== inactivityGenerationRef.current || autoPauseEnabledRef.current) return;
             if (!notificationAllowed) {
               inactivityTimerRef.current = window.setTimeout(
                 showInAppReminder,
@@ -2000,6 +2005,10 @@ export default function App() {
     updateInactivitySchedule(null);
     setInactivityPrompt(false);
   }, [updateInactivitySchedule]);
+
+  useEffect(() => {
+    if (autoPauseEnabled) resetInactivityReminder();
+  }, [autoPauseEnabled, resetInactivityReminder]);
 
   useEffect(() => {
     cellsRef.current = cells;
@@ -2742,7 +2751,7 @@ export default function App() {
           return;
         }
         if (event.notification.id === INACTIVITY_NOTIFICATION_ID) {
-          if (trackingStateRef.current === "tracking") {
+          if (!autoPauseEnabledRef.current && trackingStateRef.current === "tracking") {
             inactivityReminderRef.current.markReminded();
             setInactivityPrompt(true);
           }
@@ -2876,20 +2885,12 @@ export default function App() {
     setCells(cellsRef.current);
 
     const loadRemote = (): void => {
-      if (!active || discoveryHistoryReadyRef.current) return;
+      if (!active || discoveryHistoryReadyRef.current || historyRequest) return;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       retryTimer = null;
-      historyRequest?.abort();
       const request = new AbortController();
       historyRequest = request;
-      let deadline: number | null = null;
-      const timeout = new Promise<never>((_, reject) => {
-        deadline = window.setTimeout(() => {
-          request.abort();
-          reject(new Error("Discovery history request exceeded 45 seconds."));
-        }, 45_000);
-      });
-      void Promise.race([loadSyncedDiscovery(accountUserId, request.signal), timeout])
+      void loadSyncedDiscovery(accountUserId, request.signal)
         .then((remote) => {
           if (!active || historyRequest !== request || accountUserIdRef.current !== accountUserId) return;
           setDiscoveryHistoryError("");
@@ -2957,13 +2958,16 @@ export default function App() {
         })
         .catch((error) => {
           if (!active || historyRequest !== request) return;
+          request.abort();
           console.warn("Could not load discovery history; retrying", { userId: accountUserId, error: errorDiagnostic(error) });
           setDiscoveryHistoryError(t("Your explored map could not be loaded. Check your connection and retry."));
           // Keep recording available offline. Upload/reconciliation remains
           // gated by discoveryHistoryReadyRef until a later retry succeeds.
           setDiscoveryLoading(false);
           retryTimer = window.setTimeout(loadRemote, 15_000);
-        }).finally(() => { if (deadline !== null) window.clearTimeout(deadline); });
+        }).finally(() => {
+          if (historyRequest === request) historyRequest = null;
+        });
     };
     const resumeHistory = (): void => {
       if (document.visibilityState === "visible" && !discoveryHistoryReadyRef.current) loadRemote();
@@ -3755,6 +3759,7 @@ export default function App() {
     if (!isUsableGpsPoint(point)) {
       if (
         reminderEnabledRef.current &&
+        !autoPauseEnabledRef.current &&
         trackingUserRef.current &&
         activeWalkRef.current
       ) {
@@ -3782,6 +3787,7 @@ export default function App() {
     const considerStopReminder = () => {
       if (
         !reminderEnabledRef.current ||
+        autoPauseEnabledRef.current ||
         !trackingUserRef.current ||
         !activeWalkRef.current
       )
@@ -3803,7 +3809,7 @@ export default function App() {
         centerMapOnPoint(point);
       }
     }
-    if (!shouldRecordPoint(lastPointRef.current, point)) {
+    if (!nextRecordedPointStartsNewSegmentRef.current && !shouldRecordPoint(lastPointRef.current, point)) {
       considerStopReminder();
       return;
     }
@@ -4735,7 +4741,7 @@ export default function App() {
     });
     setJourneyStopMessage(null);
     const tracker = createJourneyRecordingTracker(
-      seed.source === "automatic" ? createAutomaticJourneyTracker(walkId) : createLocationTracker(walkId),
+      seed.source === "automatic" || autoPauseEnabled ? createAutomaticJourneyTracker(walkId) : createLocationTracker(walkId),
       progressCities,
     );
     trackerRef.current = tracker;
@@ -4995,8 +5001,11 @@ export default function App() {
     )
       return;
     const restoredWalkId = activeWalkRef.current.id;
+    if (automation.hasPendingSegmentBreak(restoredWalkId, activeWalkRef.current.points.at(-1)?.recordedAt)) {
+      nextRecordedPointStartsNewSegmentRef.current = true;
+    }
     const tracker = createJourneyRecordingTracker(
-      automation.isAutomaticJourney() ? createAutomaticJourneyTracker(restoredWalkId) : createLocationTracker(restoredWalkId),
+      automation.isAutomaticJourney() || autoPauseEnabled ? createAutomaticJourneyTracker(restoredWalkId) : createLocationTracker(restoredWalkId),
       progressCities,
     );
     trackerRef.current = tracker;

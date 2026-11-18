@@ -48,7 +48,8 @@ export function loadJourneyPreferences(ownerId: string): JourneyPreferences {
     throw new TypeError("Saved journey settings are invalid. Choose your journey settings again.");
   }
   const preferences: JourneyPreferences = { mode: value.mode === "assisted" ? "automatic" : value.mode, autoPause: value.autoPause, startMinutes: value.startMinutes ?? 5, restartMinutes: value.restartMinutes ?? 30, pauseMinutes: value.pauseMinutes ?? 2, stopMinutes: value.stopMinutes };
-  return applyOnboardingJourneyPreferences(ownerId, preferences);
+  localStorage.removeItem(ONBOARDING_JOURNEY_MODE_KEY);
+  return preferences;
 }
 
 function applyOnboardingJourneyPreferences(ownerId: string, preferences: JourneyPreferences): JourneyPreferences {

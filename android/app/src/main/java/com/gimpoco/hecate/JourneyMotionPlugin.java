@@ -32,6 +32,7 @@ public class JourneyMotionPlugin extends Plugin {
     private volatile boolean active;
     private String latestActivity;
     private long latestSince;
+    private long latestObservedElapsed;
 
     private PendingIntent updatesIntent() {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
@@ -77,6 +78,7 @@ public class JourneyMotionPlugin extends Plugin {
         latest = null;
         latestActivity = null;
         latestSince = 0;
+        latestObservedElapsed = 0;
         active = true;
         List<ActivityTransition> transitions = new ArrayList<>();
         for (int type : new int[] { DetectedActivity.WALKING, DetectedActivity.RUNNING, DetectedActivity.ON_BICYCLE, DetectedActivity.STILL, DetectedActivity.IN_VEHICLE }) {
@@ -108,7 +110,8 @@ public class JourneyMotionPlugin extends Plugin {
     }
 
     private void observe(ActivityRecognitionResult result) {
-        if (result.getTime() < latestSince) return;
+        if (result.getElapsedRealtimeMillis() < latestObservedElapsed) return;
+        latestObservedElapsed = result.getElapsedRealtimeMillis();
         DetectedActivity detected = result.getMostProbableActivity();
         String activity;
         if (detected.getConfidence() < 60) activity = "unknown";

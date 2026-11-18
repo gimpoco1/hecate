@@ -139,12 +139,14 @@ function discoveryJourneyMetricsForFootprints(
       }
     }
 
+    const startedAt = firstPoint.walkStartedAt ?? firstPoint.recordedAt;
+    const finishedAt = firstPoint.walkFinishedAt ?? segment.at(-1)?.recordedAt ?? firstPoint.recordedAt;
     const existing = metrics.get(journeyId);
     metrics.set(journeyId, existing ? {
       ...existing,
       points: [...existing.points, ...segment],
-      startedAt: Math.min(existing.startedAt, firstPoint.recordedAt),
-      finishedAt: Math.max(existing.finishedAt, segment.at(-1)?.recordedAt ?? firstPoint.recordedAt),
+      startedAt: Math.min(existing.startedAt, startedAt),
+      finishedAt: Math.max(existing.finishedAt, finishedAt),
       travelledKm: existing.travelledKm + travelledKm,
       newGroundKm: existing.newGroundKm + newGroundKm,
       newGroundSegments: [...existing.newGroundSegments, ...newGroundSegments],
@@ -158,8 +160,8 @@ function discoveryJourneyMetricsForFootprints(
     } : {
       journeyId,
       points: segment,
-      startedAt: firstPoint.recordedAt,
-      finishedAt: segment.at(-1)?.recordedAt ?? firstPoint.recordedAt,
+      startedAt,
+      finishedAt,
       travelledKm,
       newGroundKm,
       newGroundSegments,
