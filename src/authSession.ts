@@ -8,22 +8,31 @@ export function observeAuthSession(
 ): () => void {
   let active = true;
   let changed = false;
+  let retry: ReturnType<typeof setTimeout> | undefined;
   const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
     // The SDK also emits a null INITIAL_SESSION when its storage/refresh read
     // fails. The explicit getSession below distinguishes that failure from logout.
     if (!active || event === "INITIAL_SESSION") return;
     changed = true;
+    clearTimeout(retry);
     onSession(session, event);
   });
-  void client.auth.getSession().then(({ data, error }) => {
+  const retryRead = (error: Error): void => {
     if (!active || changed) return;
-    if (error) onError(error);
-    else onSession(data.session, "INITIAL_SESSION");
-  }).catch((error: Error) => {
-    if (active && !changed) onError(error);
-  });
+    onError(error);
+    retry = setTimeout(readSession, 15_000);
+  };
+  const readSession = (): void => {
+    void client.auth.getSession().then(({ data, error }) => {
+      if (!active || changed) return;
+      if (error) retryRead(error);
+      else onSession(data.session, "INITIAL_SESSION");
+    }).catch(retryRead);
+  };
+  readSession();
   return () => {
     active = false;
+    clearTimeout(retry);
     subscription.unsubscribe();
   };
 }

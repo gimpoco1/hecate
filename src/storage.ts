@@ -1,5 +1,6 @@
 import { t } from "./i18n";
 import { Capacitor } from "@capacitor/core";
+import { persistentStorage } from "./persistentStorage";
 import { loadStoredWalkPoints, loadStoredCells, loadStoredCities } from "./discoveryStorage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from "./geo";
@@ -63,7 +64,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const isSyncConfigured = Boolean(supabaseUrl && supabaseKey);
 export const supabase: SupabaseClient | null = isSyncConfigured
-  ? createClient(supabaseUrl!, supabaseKey!, { auth: { persistSession: true, autoRefreshToken: !Capacitor.isNativePlatform(), flowType: "pkce", detectSessionInUrl: false } })
+  ? createClient(supabaseUrl!, supabaseKey!, { auth: { persistSession: true, autoRefreshToken: !Capacitor.isNativePlatform(), flowType: "pkce", detectSessionInUrl: false, storage: Capacitor.isNativePlatform() ? persistentStorage : undefined } })
   : null;
 
 async function hasExpectedSession(expectedUserId: string) {

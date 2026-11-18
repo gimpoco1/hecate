@@ -33,6 +33,7 @@
 		A2C4E7A12DB6000100A2C4E7 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C4E7A02DB6000100A2C4E7 /* SceneDelegate.swift */; };
 		B0CF8717134E5F788E967348 /* JourneyActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5CB8A6015E59759735FC04E /* JourneyActivityPlugin.swift */; };
 		C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */; };
+		22CBCD531AD54AC3B1D4FEF0 /* PersistentStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F6318DC3F14A87B8C07727 /* PersistentStoragePlugin.swift */; };
 		D2A7006CED384ED9936ED14A /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A7AF39972CCD41DEBB584977 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
@@ -73,6 +74,7 @@
 		07B20ECB286D77B84C036BC3 /* JourneyWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JourneyWidget.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JourneyBridgeViewController.swift; sourceTree = "<group>"; };
+		E0F6318DC3F14A87B8C07727 /* PersistentStoragePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PersistentStoragePlugin.swift; sourceTree = "<group>"; };
 		489A514BDD91CD85EE689B6A /* JourneyActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JourneyActivityAttributes.swift; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -179,6 +181,7 @@
 				CE2600290000000000000002 /* GoogleSignInPlugin.swift */,
 				CE2600290000000000000004 /* GoogleAuthCallback.swift */,
 				47A9828F47C4E409904FB103 /* JourneyBridgeViewController.swift */,
+				E0F6318DC3F14A87B8C07727 /* PersistentStoragePlugin.swift */,
 				A7AF39972CCD41DEBB584977 /* InfoPlist.strings */,
 			);
 			path = App;
@@ -380,6 +383,7 @@
 				CE2600290000000000000001 /* GoogleSignInPlugin.swift in Sources */,
 				CE2600290000000000000003 /* GoogleAuthCallback.swift in Sources */,
 				C2F4117B18CD9DEBA6EA7ADA /* JourneyBridgeViewController.swift in Sources */,
+				22CBCD531AD54AC3B1D4FEF0 /* PersistentStoragePlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

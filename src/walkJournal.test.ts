@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { completeWalkJournal, loadWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
+import { completeWalkJournal, recoverWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
 import type { PendingWalk } from "./types";
 
 const walk: PendingWalk = {
@@ -22,62 +22,60 @@ beforeEach(() => {
 });
 
 describe("walk recovery journal", () => {
-  it("restores an interrupted active walk and keeps accounts separate", () => {
-    saveWalkJournal("user-a", [], walk);
-    expect(loadWalkJournal("user-a")).toEqual([walk]);
-    expect(loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [] });
-    expect(loadWalkJournal("user-b")).toEqual([]);
+  it("restores an interrupted active walk and keeps accounts separate", async () => {
+    await saveWalkJournal("user-a", [], { ...walk, finishedAt: 90_000 });
+    expect(await recoverWalkJournal("user-b", await loadWalkJournalState("user-b"), null)).toEqual([]);
+    expect(await recoverWalkJournal("user-a", await loadWalkJournalState("user-a"), null)).toEqual([walk]);
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: null, pending: [walk] });
+    expect(await recoverWalkJournal("user-a", await loadWalkJournalState("user-a"), null)).toEqual([walk]);
   });
 
-  it("restores journey ownership from the journal when points have no journey ID", () => {
+  it("restores journey ownership from the journal when points have no journey ID", async () => {
     const legacyWalk = { ...walk, points: walk.points.map(({ lng, lat, recordedAt }) => ({ lng, lat, recordedAt })) };
-    saveWalkJournal("user-a", [legacyWalk], legacyWalk);
-    expect(loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [walk] });
+    await saveWalkJournal("user-a", [legacyWalk], legacyWalk);
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [walk] });
   });
 
-  it("keeps failed uploads until they are confirmed, then clears the journal", () => {
-    saveWalkJournal("user-a", [walk], null);
-    expect(loadWalkJournal("user-a")).toEqual([walk]);
-    saveWalkJournal("user-a", [], null);
-    expect(loadWalkJournal("user-a")).toEqual([]);
+  it("keeps failed uploads until they are confirmed, then clears the journal", async () => {
+    await saveWalkJournal("user-a", [walk], null);
+    expect(await recoverWalkJournal("user-a", await loadWalkJournalState("user-a"), null)).toEqual([walk]);
+    await saveWalkJournal("user-a", [], null);
+    expect(await recoverWalkJournal("user-a", await loadWalkJournalState("user-a"), null)).toEqual([]);
   });
 
-  it("ignores an unfinished walk with too few accepted points", () => {
-    saveWalkJournal("user-a", [], { ...walk, points: walk.points.slice(0, 1) });
-    expect(loadWalkJournal("user-a")).toEqual([]);
-    expect(loadWalkJournalState("user-a").active).toEqual({
-      ...walk,
-      points: walk.points.slice(0, 1),
-    });
+  it("ignores an unfinished walk with too few accepted points", async () => {
+    await saveWalkJournal("user-a", [], { ...walk, points: walk.points.slice(0, 1) });
+    expect(await recoverWalkJournal("user-a", await loadWalkJournalState("user-a"), null)).toEqual([]);
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: null, pending: [] });
   });
 });
 
 describe("journey completion persistence", () => {
-  it("preserves recovery data and pending input when storage fails, then saves once on retry", () => {
-    saveWalkJournal("user-a", [], walk);
+  it("preserves recovery data and pending input when storage fails, then saves once on retry", async () => {
+    await saveWalkJournal("user-a", [], walk);
     const pending: PendingWalk[] = [];
     const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new DOMException("Storage is full", "QuotaExceededError");
     });
-    expect(() => completeWalkJournal("user-a", pending, walk)).toThrow("Free up device storage");
+    await expect(completeWalkJournal("user-a", pending, walk)).rejects.toThrow("Free up device storage");
     expect(pending).toEqual([]);
-    expect(loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [] });
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: walk, pending: [] });
     setItem.mockRestore();
-    const completed = completeWalkJournal("user-a", pending, walk);
+    const completed = await completeWalkJournal("user-a", pending, walk);
     expect(completed).toEqual([walk]);
-    expect(loadWalkJournalState("user-a")).toEqual({ active: null, pending: [walk] });
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: null, pending: [walk] });
   });
 
-  it("retains a short journey when clearing its journal fails", () => {
+  it("retains a short journey when clearing its journal fails", async () => {
     const shortWalk = { ...walk, points: walk.points.slice(0, 1) };
-    saveWalkJournal("user-a", [], shortWalk);
+    await saveWalkJournal("user-a", [], shortWalk);
     const removeItem = vi.spyOn(localStorage, "removeItem").mockImplementation(() => {
       throw new DOMException("Storage is unavailable", "SecurityError");
     });
-    expect(() => completeWalkJournal("user-a", [], shortWalk)).toThrow("retry saving");
-    expect(loadWalkJournalState("user-a").active).toEqual(shortWalk);
+    await expect(completeWalkJournal("user-a", [], shortWalk)).rejects.toThrow("retry saving");
+    expect((await loadWalkJournalState("user-a")).active).toEqual(shortWalk);
     removeItem.mockRestore();
-    expect(completeWalkJournal("user-a", [], shortWalk)).toEqual([]);
-    expect(loadWalkJournalState("user-a")).toEqual({ active: null, pending: [] });
+    expect(await completeWalkJournal("user-a", [], shortWalk)).toEqual([]);
+    expect(await loadWalkJournalState("user-a")).toEqual({ active: null, pending: [] });
   });
 });
