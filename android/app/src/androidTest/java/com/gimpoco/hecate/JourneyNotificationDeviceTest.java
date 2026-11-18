@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.equimaps.capacitor_background_geolocation.BackgroundGeolocationService;
 import com.equimaps.capacitor_background_geolocation.JourneyWatcherFixture;
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -93,7 +94,7 @@ public class JourneyNotificationDeviceTest {
             JourneyState state = new JourneyState(walkId, "device-test", System.currentTimeMillis() - 61_000, 0.12, 0.08, null);
             Notification ongoing = notifications.ongoing(state);
             assertTrue(ongoing.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER));
-            assertEquals("120 m", state.distanceLabel());
+            assertEquals("120 m", state.distanceLabel(Locale.ENGLISH));
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
                 notifications.saveActive(state);
                 JourneyWatcherFixture.registerWalk(service.get(), ongoing, walkId);

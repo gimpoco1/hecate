@@ -269,6 +269,7 @@ import type {
 import {
   completeWalkJournal,
   loadWalkJournalState,
+  recoverWalkJournal,
   saveWalkJournal,
 } from "./walkJournal";
 import {
@@ -1193,6 +1194,7 @@ export default function App() {
   const [walkFinalizing, setWalkFinalizing] = useState(false);
   const [journeySaveError, setJourneySaveError] = useState<string | null>(null);
   const journeyFinishedAtRef = useRef<number | null>(null);
+  const walkFinalizationRef = useRef<Promise<boolean> | null>(null);
   const [achievementTestPreview, setAchievementTestPreview] =
     useState<PersonalAchievementId | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -1223,6 +1225,7 @@ export default function App() {
   const viewCityLookupGenerationRef = useRef(0);
   const lastPointRef = useRef<Coordinate | undefined>(undefined);
   const activeWalkRef = useRef<ActiveWalk | null>(null);
+  const restoredWalkIdRef = useRef<string | null>(null);
   const journeyHistory = useMemo(() => historyEntries.filter(journey => journey.points.length >= 2 && journey.journeyId !== activeWalkRef.current?.id).sort((a, b) => b.startedAt - a.startedAt), [historyEntries, tracking]);
   const journeyActivityQueueRef = useRef<Promise<void>>(Promise.resolve());
   const lastJourneyActivityUpdateRef = useRef(0);
@@ -2364,7 +2367,13 @@ export default function App() {
   useEffect(() => {
     purgeLegacyDiscoveryCache();
     if (!supabase) return;
+    let lastSessionError: string | null = null;
     return observeAuthSession(supabase, (session, event) => {
+      if (lastSessionError) {
+        const message = lastSessionError;
+        setJourneyStopMessage(current => current === message ? null : current);
+        lastSessionError = null;
+      }
       if (event === "SIGNED_OUT") {
         setAppearancePreference("system");
         void setLanguagePreference("system").catch((error: Error) => {
@@ -2380,6 +2389,7 @@ export default function App() {
       setAuthReady(true);
     }, (error) => {
       console.error("Could not read account session", { error: errorDiagnostic(error) });
+      lastSessionError = error.message;
       setJourneyStopMessage(error.message);
     });
   }, []);
@@ -2797,21 +2807,13 @@ export default function App() {
     let retryTimer: number | null = null;
     let finishFrame: number | null = null;
     let historyRequest: AbortController | null = null;
+    let localRestored = false;
+    restoredWalkIdRef.current = null;
     setDiscoveryHistoryError("");
     const activeWalkOwner = trackingUserRef.current;
-    const activeWalk = activeWalkRef.current;
     if (activeWalkOwner && activeWalkOwner !== accountUserId) {
       const tracker = trackerRef.current;
       trackerRef.current = null;
-      if (activeWalk) {
-        saveWalkJournal(activeWalkOwner, pendingWalksRef.current, {
-          ...activeWalk,
-          finishedAt: Math.max(
-            activeWalk.startedAt,
-            activeWalk.points.at(-1)?.recordedAt ?? activeWalk.startedAt,
-          ),
-        });
-      }
       activeWalkRef.current = null;
       trackingUserRef.current = null;
       focusFirstTrackingPointRef.current = false;
@@ -2845,47 +2847,12 @@ export default function App() {
     cellKeysRef.current = new Set();
     discoveryHistoryReadyRef.current = false;
     pointsRef.current = [];
-    const journal = accountUserId
-      ? loadWalkJournalState(accountUserId)
-      : { active: null, pending: [] };
-    pendingWalksRef.current = journal.pending;
+    pendingWalksRef.current = [];
     deferredLocationUiRef.current = false;
     if (!accountUserId) return;
 
-    if (journal.active) {
-      activeWalkRef.current = {
-        id: journal.active.id,
-        startedAt: journal.active.startedAt,
-        points: [...journal.active.points],
-        achievementEligible: journal.active.achievementEligible,
-      };
-      trackingUserRef.current = accountUserId;
-      lastPointRef.current = journal.active.points.at(-1);
-      focusFirstTrackingPointRef.current = journal.active.points.length === 0;
-      setElapsedNow(Date.now());
-      setTracking("requesting");
-    }
-    const recoveredWalks = journal.active
-      ? [...journal.pending, journal.active]
-      : journal.pending;
-    const recoveredPoints = recoveredWalks.flatMap((walk) => walk.points);
-    const baselinePoints = journal.pending.flatMap((walk) => walk.points);
-    const baselineCells = discoveryCellsFromPoints(baselinePoints);
-    explorationStartRef.current = journal.active
-      ? {
-        cells: new Set(baselineCells.map(discoveryCellKey)),
-        points: baselinePoints,
-        discoveryDistance: discoveredDistanceKm(baselinePoints),
-      }
-      : null;
-    pointsRef.current = mergeRoutePoints(recoveredPoints);
-    cellsRef.current = discoveryCellsFromPoints(recoveredPoints);
-    cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey));
-    setPoints(pointsRef.current);
-    setCells(cellsRef.current);
-
     const loadRemote = (): void => {
-      if (!active || discoveryHistoryReadyRef.current || historyRequest) return;
+      if (!active || !localRestored || discoveryHistoryReadyRef.current || historyRequest) return;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       retryTimer = null;
       const request = new AbortController();
@@ -2899,24 +2866,12 @@ export default function App() {
               point.walkId ? [point.walkId] : [],
             ),
           );
-          if (persistedWalkIds.size) {
-            pendingWalksRef.current = pendingWalksRef.current.filter(
-              (walk) => !persistedWalkIds.has(walk.id),
-            );
-            saveWalkJournal(
-              accountUserId,
-              pendingWalksRef.current,
-              activeWalkRef.current
-                ? {
-                  ...activeWalkRef.current,
-                  finishedAt: Math.max(
-                    activeWalkRef.current.startedAt,
-                    activeWalkRef.current.points.at(-1)?.recordedAt ??
-                        activeWalkRef.current.startedAt,
-                  ),
-                }
-                : null,
-            );
+          if (journeyFinishedAtRef.current === null) {
+            const pending = pendingWalksRef.current.filter(walk => !persistedWalkIds.has(walk.id));
+            if (pending.length !== pendingWalksRef.current.length) {
+              pendingWalksRef.current = pending;
+              checkpointWalkJournal(accountUserId);
+            }
           }
           const mergedPoints = mergeRoutePoints(
             pointsRef.current,
@@ -2978,7 +2933,67 @@ export default function App() {
     const nativeResume = Capacitor.isNativePlatform()
       ? CapacitorApp.addListener("appStateChange", ({ isActive }) => { if (isActive) resumeHistory(); })
       : null;
-    loadRemote();
+    const restoreLocal = async (): Promise<void> => {
+      try {
+        const journal = await loadWalkJournalState(accountUserId);
+        const request = journal.active && nativeApp
+          ? (await JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: journal.active.id })).request
+          : null;
+        if (!active || accountUserIdRef.current !== accountUserId) return;
+        const pending = request
+          ? await recoverWalkJournal(accountUserId, journal, request.finishedAt)
+          : journal.pending;
+        if (request) {
+          enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({
+            ownerId: accountUserId,
+            walkId: request.walkId,
+          }));
+        }
+        if (!active || accountUserIdRef.current !== accountUserId) return;
+        pendingWalksRef.current = pending;
+        const activeWalk = request ? null : journal.active;
+        if (activeWalk) {
+          activeWalkRef.current = {
+            id: activeWalk.id,
+            startedAt: activeWalk.startedAt,
+            points: [...activeWalk.points],
+            achievementEligible: activeWalk.achievementEligible,
+          };
+          restoredWalkIdRef.current = activeWalk.id;
+          trackingUserRef.current = accountUserId;
+          lastPointRef.current = activeWalk.points.at(-1);
+          focusFirstTrackingPointRef.current = activeWalk.points.length === 0;
+          setElapsedNow(Date.now());
+          setTracking("requesting");
+        }
+        const recoveredWalks = activeWalk
+          ? [...pending, activeWalk]
+          : pending;
+        const recoveredPoints = recoveredWalks.flatMap((walk) => walk.points);
+        const baselinePoints = pending.flatMap((walk) => walk.points);
+        const baselineCells = discoveryCellsFromPoints(baselinePoints);
+        explorationStartRef.current = activeWalk
+          ? {
+            cells: new Set(baselineCells.map(discoveryCellKey)),
+            points: baselinePoints,
+            discoveryDistance: discoveredDistanceKm(baselinePoints),
+          }
+          : null;
+        pointsRef.current = mergeRoutePoints(recoveredPoints);
+        cellsRef.current = discoveryCellsFromPoints(recoveredPoints);
+        cellKeysRef.current = new Set(cellsRef.current.map(discoveryCellKey));
+        setPoints(pointsRef.current);
+        setCells(cellsRef.current);
+        localRestored = true;
+        loadRemote();
+      } catch (error) {
+        if (!active || accountUserIdRef.current !== accountUserId) return;
+        console.warn("Could not recover the journey journal; retrying", { error: errorDiagnostic(error) });
+        setJourneyStopMessage(error instanceof Error ? error.message : String(error));
+        retryTimer = window.setTimeout(() => void restoreLocal(), 15_000);
+      }
+    };
+    void restoreLocal();
     return () => {
       active = false;
       historyRequest?.abort();
@@ -2989,38 +3004,39 @@ export default function App() {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
-  }, [accountUserId, resetInactivityReminder]);
+  }, [accountUserId, enqueueJourneyActivity, nativeApp, resetInactivityReminder]);
+
+  const checkpointWalkJournal = (userId: string): void => {
+    const walk = activeWalkRef.current;
+    const checkpoint = walk && trackingUserRef.current === userId
+      ? { ...walk, finishedAt: Math.max(walk.startedAt, walk.points.at(-1)?.recordedAt ?? walk.startedAt) }
+      : null;
+    void saveWalkJournal(userId, pendingWalksRef.current, checkpoint).catch(error => {
+      console.error("Could not checkpoint the journey journal", { userId, walkId: checkpoint?.id, error: errorDiagnostic(error) });
+      if (accountUserIdRef.current === userId) {
+        setJourneyStopMessage(t("Could not save this journey. Keep Hecate open and retry saving."));
+      }
+    });
+  };
 
   const flushPendingWalks = async (userId: string) => {
     if (walkUploadPromiseRef.current) await walkUploadPromiseRef.current;
-    if (accountUserIdRef.current !== userId || !pendingWalksRef.current.length)
+    if (accountUserIdRef.current !== userId || !discoveryHistoryReadyRef.current || journeyFinishedAtRef.current !== null || !pendingWalksRef.current.length)
       return;
     const upload = (async () => {
       for (const walk of [...pendingWalksRef.current]) {
         if (accountUserIdRef.current !== userId) break;
         try {
           await saveCompletedWalk(walk, userId);
-        } catch {
+        } catch (error) {
+          console.warn("Could not upload the saved journey", { userId, walkId: walk.id, error: errorDiagnostic(error) });
           break;
         }
-        if (accountUserIdRef.current !== userId) break;
+        if (accountUserIdRef.current !== userId || journeyFinishedAtRef.current !== null) break;
         pendingWalksRef.current = pendingWalksRef.current.filter(
           (item) => item.id !== walk.id,
         );
-        saveWalkJournal(
-          userId,
-          pendingWalksRef.current,
-          activeWalkRef.current
-            ? {
-              ...activeWalkRef.current,
-              finishedAt: Math.max(
-                activeWalkRef.current.startedAt,
-                activeWalkRef.current.points.at(-1)?.recordedAt ??
-                    activeWalkRef.current.startedAt,
-              ),
-            }
-            : null,
-        );
+        checkpointWalkJournal(userId);
       }
     })();
     walkUploadPromiseRef.current = upload;
@@ -3076,19 +3092,17 @@ export default function App() {
         scheduleRetry();
         return;
       }
-      if (!isAutomaticUpdatesEnabled()) {
-        setAutomaticUpdatePending(accountUserId, false);
-        return;
-      }
+      const automatic = isAutomaticUpdatesEnabled();
       const pending = isAutomaticUpdatePending(accountUserId);
-      if (!pending && attemptedInitialSync) return;
+      if (!automatic && pending) setAutomaticUpdatePending(accountUserId, false);
+      if (!pendingWalksRef.current.length && (!automatic || (!pending && attemptedInitialSync))) return;
       if (retrying) return;
       attemptedInitialSync = true;
       retrying = true;
-      if (!pending) setAutomaticUpdatePending(accountUserId, true);
+      if (automatic && !pending) setAutomaticUpdatePending(accountUserId, true);
       void (async () => {
         await flushPendingWalks(accountUserId);
-        if (pendingWalksRef.current.length) return;
+        if (!automatic || pendingWalksRef.current.length || accountUserIdRef.current !== accountUserId) return;
         if (cellsRef.current.length) {
           await syncDiscoveryCells(cellsRef.current, accountUserId);
         }
@@ -3098,7 +3112,7 @@ export default function App() {
         .catch(() => undefined)
         .finally(() => {
           retrying = false;
-          if (isAutomaticUpdatePending(accountUserId)) scheduleRetry();
+          if (accountUserIdRef.current === accountUserId && (pendingWalksRef.current.length || isAutomaticUpdatePending(accountUserId))) scheduleRetry();
         });
     };
     retry();
@@ -3825,13 +3839,7 @@ export default function App() {
     pointsRef.current.push(recordedPoint);
     fogLayerRef.current?.appendRoutePoint(previousRecordedPoint, recordedPoint);
     if (trackingUserRef.current && activeWalkRef.current) {
-      saveWalkJournal(trackingUserRef.current, pendingWalksRef.current, {
-        ...activeWalkRef.current,
-        finishedAt: Math.max(
-          activeWalkRef.current.startedAt,
-          recordedPoint.recordedAt,
-        ),
-      });
+      checkpointWalkJournal(trackingUserRef.current);
     }
     const nextCell = pointToDiscoveryCell(recordedPoint);
     const key = discoveryCellKey(nextCell);
@@ -3984,6 +3992,11 @@ export default function App() {
     );
     const finalActivityState = automation.activityState(finishedAt);
     if (active && walkOwner) journeyFinishedAtRef.current = finishedAt;
+    if (active && walkOwner) {
+      const pending = await completeWalkJournal(walkOwner, pendingWalksRef.current, { ...active, finishedAt });
+      if (activeWalkRef.current !== active || trackingUserRef.current !== walkOwner) return;
+      pendingWalksRef.current = pending;
+    }
     const liveStart = explorationStartRef.current;
     if (Capacitor.isNativePlatform() && active && liveStart) {
       const snapshot = journeyActivitySnapshot(
@@ -3994,13 +4007,6 @@ export default function App() {
       const elapsedMs = finalActivityState.elapsedMs;
       enqueueJourneyActivity(() =>
         JourneyActivity.end({ ...snapshot, paused: false, elapsedMs, finishedAt }),
-      );
-    }
-    if (active && walkOwner) {
-      pendingWalksRef.current = completeWalkJournal(
-        walkOwner,
-        pendingWalksRef.current,
-        { ...active, finishedAt },
       );
     }
     journeyFinishedAtRef.current = null;
@@ -4200,9 +4206,10 @@ export default function App() {
   };
 
   const finalizeRecordedWalk = (): Promise<boolean> => {
+    if (walkFinalizationRef.current) return walkFinalizationRef.current;
     clearPlannedRoute();
     setWalkFinalizing(true);
-    return finishActiveWalk()
+    const finalization = finishActiveWalk()
       .then(() => true)
       .catch((error) => {
         console.error("Could not finalize recorded walk", { error: errorDiagnostic(error) });
@@ -4219,7 +4226,12 @@ export default function App() {
         }
         return false;
       })
-      .finally(() => setWalkFinalizing(false));
+      .finally(() => {
+        walkFinalizationRef.current = null;
+        setWalkFinalizing(false);
+      });
+    walkFinalizationRef.current = finalization;
+    return finalization;
   };
 
   const saveJourneyWithFeedback = async (): Promise<void> => {
@@ -4731,14 +4743,25 @@ export default function App() {
       discoveryDistance,
     };
     const startedAt = seed.startedAt;
-    activeWalkRef.current = { id: walkId, startedAt, points: [] };
+    const walk: ActiveWalk = { id: walkId, startedAt, points: [] };
+    activeWalkRef.current = walk;
     nextRecordedPointStartsNewSegmentRef.current = false;
-    setElapsedNow(startedAt);
     trackingUserRef.current = accountUserId;
-    saveWalkJournal(accountUserId, pendingWalksRef.current, {
-      ...activeWalkRef.current,
-      finishedAt: activeWalkRef.current.startedAt,
-    });
+    try {
+      await saveWalkJournal(accountUserId, pendingWalksRef.current, { ...walk, finishedAt: startedAt });
+    } catch (error) {
+      console.error("Could not save the new journey", { walkId, error: errorDiagnostic(error) });
+      if (activeWalkRef.current === walk && accountUserIdRef.current === accountUserId) {
+        activeWalkRef.current = null;
+        trackingUserRef.current = null;
+        explorationStartRef.current = null;
+        setJourneyStopMessage(t("Could not save this journey. Keep Hecate open and retry saving."));
+        setTracking("idle");
+      }
+      return;
+    }
+    if (activeWalkRef.current !== walk || accountUserIdRef.current !== accountUserId) return;
+    setElapsedNow(startedAt);
     setJourneyStopMessage(null);
     const tracker = createJourneyRecordingTracker(
       seed.source === "automatic" || autoPauseEnabled ? createAutomaticJourneyTracker(walkId) : createLocationTracker(walkId),
@@ -4797,13 +4820,7 @@ export default function App() {
       trackerRef.current = null;
       void Promise.resolve(tracker.stop()).catch(() => undefined);
       setJourneyStopMessage(error instanceof Error ? error.message : t("Could not start journey recording."));
-      if (seed.points.length >= 2) await finalizeRecordedWalk();
-      else {
-        activeWalkRef.current = null;
-        nextRecordedPointStartsNewSegmentRef.current = false;
-        trackingUserRef.current = null;
-        saveWalkJournal(accountUserId, pendingWalksRef.current, null);
-      }
+      await finalizeRecordedWalk();
       setPassiveLocationStatus("idle");
       setTracking("unavailable");
     }
@@ -4997,10 +5014,12 @@ export default function App() {
       !accountUserId ||
       trackingUserRef.current !== accountUserId ||
       !activeWalkRef.current ||
+      restoredWalkIdRef.current !== activeWalkRef.current.id ||
       trackerRef.current
     )
       return;
     const restoredWalkId = activeWalkRef.current.id;
+    restoredWalkIdRef.current = null;
     if (automation.hasPendingSegmentBreak(restoredWalkId, activeWalkRef.current.points.at(-1)?.recordedAt)) {
       nextRecordedPointStartsNewSegmentRef.current = true;
     }

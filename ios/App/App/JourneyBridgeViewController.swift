@@ -6,6 +6,7 @@ class JourneyBridgeViewController: CAPBridgeViewController {
     private let journeyActivity = JourneyActivityPlugin()
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(journeyActivity)
+        bridge?.registerPluginInstance(PersistentStoragePlugin())
         bridge?.registerPluginInstance(AppIconPlugin())
         bridge?.registerPluginInstance(NavigationScreenPlugin())
         bridge?.registerPluginInstance(JourneyMotionPlugin())

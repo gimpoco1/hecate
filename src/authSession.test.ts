@@ -35,16 +35,25 @@ describe("account session observation", () => {
     stop();
   });
 
-  it("reports a temporary session-read failure without publishing a logout", async () => {
+  it("retries a temporary session-read failure without publishing a logout", async () => {
     const client = authClient();
+    await client.auth.signInWithPassword({ email: "test@example.invalid", password: "test-password" });
+    vi.useFakeTimers();
     const error = new AuthRetryableFetchError("Session refresh is temporarily unavailable", 503);
     vi.spyOn(client.auth, "getSession").mockResolvedValueOnce({ data: { session: null }, error });
     const onSession = vi.fn();
     const onError = vi.fn();
     const stop = observeAuthSession(client, onSession, onError);
-    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(error));
-    expect(onSession).not.toHaveBeenCalled();
-    stop();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onError).toHaveBeenCalledWith(error);
+      expect(onSession).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(onSession).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ user }), "INITIAL_SESSION");
+    } finally {
+      stop();
+      vi.useRealTimers();
+    }
   });
 
   it("does not let a delayed initial read undo a newer sign-in or sign-out", async () => {
