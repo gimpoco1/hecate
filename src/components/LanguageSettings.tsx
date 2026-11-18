@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { LANGUAGES, LANGUAGE_NAMES, currentLanguage, languagePreference, setLanguagePreference, t, useAppTranslation, type LanguagePreference } from "../i18n";
 import { mdiTranslate } from "@mdi/js";
 import { ArrowLeftIcon, ChevronIcon, XIcon } from "./Icons";
+import { errorHaptic, selectionHaptic } from "../haptics";
 
 type Props = { onBack: () => void; onClose: () => void };
 
@@ -34,7 +35,9 @@ export function LanguageSettings({ onBack, onClose }: Props) {
     try {
       await setLanguagePreference(value);
       setError("");
+      selectionHaptic();
     } catch (error) {
+      errorHaptic();
       console.error("Could not save language", { preference: value, error });
       setError(t("Could not save your language. Check that device storage is available and try again."));
     }
@@ -42,7 +45,7 @@ export function LanguageSettings({ onBack, onClose }: Props) {
   return createPortal(<div className="sheet-backdrop gpx-import-backdrop" onClick={event => { event.stopPropagation(); onBack(); }}>
     <section ref={panel} className="sheet profile-collection-sheet appearance-settings-sheet" data-testid="language-panel"
       onClick={event => event.stopPropagation()} aria-modal="true" role="dialog" aria-labelledby="language-settings-title">
-      <button type="button" className="icon-button walking-stats-back" data-testid="language-back" aria-label={t("Back")} onClick={onBack}><ArrowLeftIcon /></button>
+      <button type="button" data-swipe-back className="icon-button walking-stats-back" data-testid="language-back" aria-label={t("Back")} onClick={onBack}><ArrowLeftIcon /></button>
       <button type="button" className="icon-button sheet__close" data-testid="language-close" aria-label={t("Close")} onClick={onClose}><XIcon /></button>
       <div className="eyebrow">{t("Preferences")}</div>
       <h2 id="language-settings-title">{t("Language")}</h2>

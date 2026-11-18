@@ -1,4 +1,5 @@
 import { t, useAppTranslation } from "../i18n";
+import { errorHaptic, selectionHaptic } from "../haptics";
 import { useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -47,7 +48,8 @@ export function ReminderDuration({ title, value, options, disabled, onChange }: 
                 onClick={() => {
                   const message = onChange(minutes);
                   setError(message ?? "");
-                  if (!message) picker.current?.hidePopover();
+                  if (message) errorHaptic();
+                  else { selectionHaptic(); picker.current?.hidePopover(); }
                 }}
               >{t("{{value0}} minutes", { value0: minutes })}</button>
             ))}

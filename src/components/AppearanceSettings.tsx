@@ -7,6 +7,7 @@ import { useState } from "react";
 import { mdiMonitorCellphone, mdiWeatherNight, mdiWhiteBalanceSunny } from "@mdi/js";
 import { setAppearancePreference, useAppearance, type AppearancePreference } from "../appearance";
 import { AppIconSettings } from "./AppIconSettings";
+import { selectionHaptic, errorHaptic } from "../haptics";
 
 const choices: { value: AppearancePreference; label: string; icon: string }[] = [
   { value: "system", get label() { return t("System"); }, icon: mdiMonitorCellphone },
@@ -23,8 +24,9 @@ export function AppearanceSettings({ mapRewards, onSelectMapReward, onViewMapRew
     <fieldset className="appearance-options" aria-label={t("App appearance")}>
       {choices.map((choice) => <label key={choice.value}>
         <input type="radio" name="appearance" value={choice.value} checked={preference === choice.value} data-testid={`appearance-${choice.value}`} onChange={() => {
-          try { setAppearancePreference(choice.value); setError(""); }
+          try { setAppearancePreference(choice.value); setError(""); selectionHaptic(); }
           catch (failure) {
+            errorHaptic();
             console.error("Could not save appearance", { preference: choice.value, error: errorDiagnostic(failure) });
             setError(t("Could not save your appearance. Check that device storage is available and try again."));
           }

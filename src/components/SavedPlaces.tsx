@@ -13,6 +13,7 @@ import {
 import { loadMapStyle } from "../mapStyle";
 import { useAppearance } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
+import { collapseMapAttribution } from "../mapAttribution";
 import { ArrowLeftIcon, ChevronIcon, SaveIcon, XIcon } from "./Icons";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -64,12 +65,6 @@ function formatSavedAt(timestamp: number): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(timestamp);
-}
-
-function collapseMapAttribution(container: HTMLDivElement): void {
-  container
-    .querySelector(".maplibregl-ctrl-attrib")
-    ?.classList.remove("maplibregl-compact-show");
 }
 
 function SavedPlaceMapPreview({ place }: { place: FavoritePlace }) {
@@ -185,7 +180,7 @@ export function SavedPlacesSheet({
         aria-labelledby="saved-places-title"
       >
         <button
-          className="icon-button walking-stats-back"
+          data-swipe-back className="icon-button walking-stats-back"
           type="button"
           onClick={onBack}
           aria-label={t("Back to profile")}

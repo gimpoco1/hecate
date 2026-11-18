@@ -1,5 +1,6 @@
 import { ContextualGuide } from "./ContextualGuide";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { successHaptic } from "../haptics";
 import { MapRewardPreview } from "./MapRewardPreview";
 import { MAP_REWARDS, type MapReward } from "../goalRewards";
 import { t, useAppTranslation } from "../i18n";
@@ -21,6 +22,12 @@ export function AchievementCelebration({
 }) {
   useAppTranslation();
   const [showMap, setShowMap] = useState(false);
+  const celebratedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (celebratedId.current === achievement.id) return;
+    celebratedId.current = achievement.id;
+    successHaptic();
+  }, [achievement.id]);
   const reward = MAP_REWARDS.find(item => item.goal === achievement.id);
   if (showMap && reward) return <div className="achievement-celebration-backdrop" role="presentation">
     <section className="achievement-celebration map-reward-reveal" role="dialog" aria-modal="true" aria-labelledby="map-reward-reveal-title" data-testid="map-reward-reveal">

@@ -22,6 +22,8 @@ import { DiscoveryFogLayer, type FogGeometry } from "../fogLayer";
 import { loadMapStyle, MAP_STYLE_URL } from "../mapStyle";
 import { useAppearance } from "../appearance";
 import { applyMapAppearance } from "../mapAppearance";
+import { collapseMapAttribution } from "../mapAttribution";
+import { MapHighlightLegend } from "./MapHighlightLegend";
 import type { Coordinate, DiscoveryCell, MapMode } from "../types";
 
 maplibregl.setWorkerUrl(mapWorkerUrl);
@@ -370,6 +372,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       new maplibregl.AttributionControl({ compact: true }),
       "bottom-right",
     );
+    map.once("load", () => collapseMapAttribution(container));
     map.on("error", (event) =>
       console.error("Map rendering error", errorDiagnostic(event.error)),
     );
@@ -389,6 +392,10 @@ export const DiscoveryMap = memo(function DiscoveryMap({
       fogLayerRef.current = fogLayer;
       if (externalFogLayerRef) externalFogLayerRef.current = fogLayer;
       map.addLayer(fogLayer);
+      // Keep place names readable while streets and POIs remain hidden by discovery fog.
+      for (const layer of baseStyleRef.current.layers) {
+        if (layer.type === "symbol" && layer["source-layer"] === "place") map.moveLayer(layer.id);
+      }
       if (highlightedNewGroundSegmentsRef.current.length > 0)
         syncHighlightedDiscoveries(map, highlightedNewGroundSegmentsRef.current, fogLayer.id, rewardRef.current ?? "standard");
       if (highlightedPointsRef.current.length > 0) {
@@ -604,12 +611,7 @@ export const DiscoveryMap = memo(function DiscoveryMap({
         className="map"
         aria-label={t("Interactive discovery map")}
       />
-      {(highlightedPoints.length > 0 || highlightedNewGroundSegments.length > 0) && (
-        <aside className="map-highlight-legend" data-testid="map-highlight-legend" aria-label={t("Map legend")}>
-          {highlightedPoints.length > 0 && <span><i className="map-highlight-legend__journey" style={{ background: journeyHighlightColor(reward ?? "standard") }} aria-hidden="true" />{t("Travelled")}</span>}
-          {highlightedNewGroundSegments.length > 0 && <span><i className="map-highlight-legend__new" style={{ background: reward === "paper" ? "transparent" : discoveryHighlightColor(reward ?? "standard"), borderTop: reward === "paper" ? `2px dashed ${discoveryHighlightColor("paper")}` : undefined }} aria-hidden="true" />{t("New ground")}</span>}
-        </aside>
-      )}
+      <MapHighlightLegend reward={reward ?? "standard"} points={highlightedPoints} newGroundSegments={highlightedNewGroundSegments} />
     </div>
   );
 });

@@ -652,6 +652,7 @@ export function SyncSheet({
         aria-labelledby="sync-title"
       >
         <button
+          data-swipe-back
           className="icon-button sheet__close"
           onClick={onClose}
           aria-label={t("Close")}
@@ -961,7 +962,7 @@ export function SyncSheet({
                 <section className="sheet profile-collection-sheet appearance-settings-sheet"
                   data-testid="appearance-panel" onClick={(event) => event.stopPropagation()}
                   aria-modal="true" role="dialog" aria-labelledby="appearance-settings-title">
-                  <button className="icon-button walking-stats-back" type="button"
+                  <button data-swipe-back className="icon-button walking-stats-back" type="button"
                     data-testid="appearance-back" aria-label={t("Back to profile")} onClick={() => setAppearanceSheetOpen(false)}>
                     <ArrowLeftIcon />
                   </button>
@@ -992,7 +993,7 @@ export function SyncSheet({
                   aria-labelledby="gpx-import-sheet-title"
                 >
                   <button
-                    className="icon-button walking-stats-back"
+                    data-swipe-back className="icon-button walking-stats-back"
                     type="button"
                     onClick={() => setGpxImportSheetOpen(false)}
                     aria-label={t("Back to profile")}
@@ -1100,7 +1101,7 @@ export function SyncSheet({
                   aria-labelledby="notification-settings-sheet-title"
                 >
                   <button
-                    className="icon-button walking-stats-back"
+                    data-swipe-back className="icon-button walking-stats-back"
                     type="button"
                     onClick={() => setNotificationSettingsSheetOpen(false)}
                     aria-label={t("Back to profile")}

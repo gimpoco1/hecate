@@ -5,6 +5,8 @@ import type { ColorTheme } from "./appearance";
 
 function darkMapColor(layerId: string, property: string): string {
   const id = layerId.toLowerCase();
+  if (id === "label_other" && property === "text-color") return "#b7cbbf";
+  if (id === "label_other" && property === "text-halo-color") return "#18232e";
   if (property === "text-halo-color") return "#172333";
   if (property === "text-color" || property === "icon-color") {
     return /water|ocean|river/.test(id) ? "#8daecc" : "#c6d1df";
