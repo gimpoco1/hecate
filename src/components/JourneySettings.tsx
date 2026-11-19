@@ -130,11 +130,11 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
           <button type="button" role="switch" aria-labelledby="journey-auto-pause-label" aria-describedby="journey-auto-pause-description" aria-checked={preferences.autoPause && (permissions?.motion === "authorized" && permissions.available)} disabled={pending || !native || (permissions?.motion !== "authorized" || !permissions.available)} data-testid="journey-auto-pause" onClick={() => void save({ ...preferences, autoPause: !preferences.autoPause })}>{preferences.autoPause && (permissions?.motion === "authorized" && permissions.available) ? t("On") : t("Off")}</button>
         </div>
       </section>
-      {preferences.mode !== "manual" && <section className="account-settings-panel" aria-labelledby="journey-end-title">
+      {native && <section className="account-settings-panel" aria-labelledby="journey-end-title">
         <div className="account-setting">
           <div>
-            <strong id="journey-end-title">{t("End automatic journeys")}</strong>
-            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End automatic journeys")} description={t("Finish after staying in one place for this long. Journeys you start manually only end when you stop them.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending || !automaticAvailable} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
+            <strong id="journey-end-title">{t("End paused journeys")}</strong>
+            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End paused journeys")} description={t("Finish a journey after it has been paused for this long.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
           </div>
         </div>
       </section>}

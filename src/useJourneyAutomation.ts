@@ -6,7 +6,7 @@ import { errorDiagnostic } from "./diagnostics";
 import { t } from "./i18n";
 import { createCandidateLocationTracker, readLocationAuthorization, readReminderMotionAuthorization, requestReminderMotionPermission, type LocationTracker, type LocationAuthorization, type ReminderMotionAuthorization } from "./location";
 import { createJourneyRecordingTracker } from "./journeyRecording";
-import { CANDIDATE_STOP_GRACE_MS, automaticJourneyFinishedAt, journeyElapsedMs, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
+import { CANDIDATE_STOP_GRACE_MS, automaticJourneyEndDeadline, journeyElapsedMs, advanceCandidateWalkingClock, candidateWalkingDuration, type CandidateWalkingClock, JourneyMotionMonitor, defaultJourneyPreferences, inactivityDeadlineBeforeMovement, isJourneyMovement, loadJourneyPreferences, reconcileJourneyMotion, saveJourneyPreferences, type JourneyMotionObservation, type JourneyPreferences, type JourneySeed, type JourneySource } from "./journeyAutomation";
 import type { Coordinate } from "./types";
 import { selectionHaptic } from "./haptics";
 
@@ -257,7 +257,7 @@ export function useJourneyAutomation(options: Options) {
     selectionHaptic();
   }
 
-  const monitorNeeded = Boolean(settingsReady && options.ownerId && options.ready && (preferences.mode !== "manual" || (preferences.autoPause && options.walkId)));
+  const monitorNeeded = Boolean(settingsReady && options.ownerId && options.ready && (preferences.mode !== "manual" || ((preferences.autoPause || paused) && options.walkId)));
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     if (!monitorNeeded) {
@@ -281,41 +281,45 @@ export function useJourneyAutomation(options: Options) {
       void discardCandidate().catch((cause) => console.error("Could not discard automatic journey buffer", { error: errorDiagnostic(cause) }));
     };
 
-    const finishAutomaticJourney = async (idleSince: number): Promise<void> => {
-      const preferences = preferencesRef.current;
-      const finishedAt = automaticJourneyFinishedAt(idleSince, preferences.stopMinutes);
-      // A suspended app may receive its first idle callback after both deadlines.
-      if (preferences.autoPause && session.current.pausedAt === null &&
-        finishedAt - idleSince >= preferences.pauseMinutes * 60_000) {
-        session.current = { ...session.current, pausedAt: idleSince, pauseMode: "automatic" };
+    const automaticEndAfterPause = (pausedAt: number): number =>
+      automaticJourneyEndDeadline(pausedAt, session.current.pauseMode === "manual"
+        ? 0 : preferencesRef.current.pauseMinutes, preferencesRef.current.stopMinutes);
+
+    const finishAutomaticJourney = async (pausedAt: number): Promise<void> => {
+      if (busy.current) return;
+      if (session.current.pausedAt === null) {
+        session.current = { ...session.current, pausedAt, pauseMode: "automatic" };
         persist();
         setPaused(true);
-        setPausedAt(idleSince);
+        setPausedAt(pausedAt);
       }
       busy.current = true;
       report("stopping-journey", null);
-      try { await latest.current.onStop(finishedAt); }
+      try { await latest.current.onStop(pausedAt); }
       finally { busy.current = false; }
     };
 
     const tick = async (): Promise<void> => {
-      if (!started || !valid() || busy.current || !latest.current.ready) return;
+      if (disposed || busy.current || !latest.current.ready || latest.current.ownerId !== ownerId) return;
       const now = Date.now();
       const activeId = latest.current.walkId;
       if (activeId) {
         report("journey-active", null);
-        if (!motion.current || motion.current.activity === "unknown") return;
         if (session.current.id !== activeId) {
           session.current = { ...emptySession(), id: activeId };
           persist();
         }
-        const idleSince = session.current.idleSince;
-        if (idleSince === null) return;
-        if (session.current.source === "automatic" && now - idleSince >= preferencesRef.current.stopMinutes * 60_000) {
-          await finishAutomaticJourney(idleSince);
-          return;
+        const { idleSince, pausedAt, pauseMode } = session.current;
+        const pauseStart = pausedAt ?? (preferencesRef.current.autoPause && motion.current &&
+          motion.current.activity !== "unknown" ? idleSince : null);
+        if (pauseStart !== null) {
+          const deadline = automaticEndAfterPause(pauseStart);
+          if (now >= deadline) {
+            await finishAutomaticJourney(pauseStart);
+            return;
+          }
         }
-        if (session.current.pauseMode === "manual" && session.current.pausedAt !== null) return;
+        if (!started || !valid() || (!motion.current || motion.current.activity === "unknown") || idleSince === null || pauseMode === "manual") return;
         if (preferencesRef.current.autoPause && now - idleSince >= preferencesRef.current.pauseMinutes * 60_000) {
           const newlyPaused = session.current.pausedAt === null;
           if (newlyPaused) {
@@ -336,6 +340,7 @@ export function useJourneyAutomation(options: Options) {
         }
         return;
       }
+      if (!started || !valid()) return;
       const interruptedAt = candidate.current?.clock.interruptedAt;
       if (interruptedAt !== undefined && interruptedAt !== null && now - interruptedAt > CANDIDATE_STOP_GRACE_MS) {
         await discardCandidate();
@@ -393,13 +398,15 @@ export function useJourneyAutomation(options: Options) {
       if (!valid()) return;
       const next = reconcileJourneyMotion(motion.current, sample);
       if (next === motion.current) return;
-      const inactiveEnd = session.current.source === "automatic"
-        ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.stopMinutes)
-        : null;
-      if (latest.current.walkId && inactiveEnd !== null) {
-        motion.current = next;
-        await finishAutomaticJourney(inactiveEnd);
-        return;
+      const pauseStart = session.current.pausedAt ?? (preferencesRef.current.autoPause
+        ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.pauseMinutes) : null);
+      if (latest.current.walkId && pauseStart !== null && isJourneyMovement(next)) {
+        const deadline = automaticEndAfterPause(pauseStart);
+        if ((session.current.pauseMode === "manual" ? Date.now() : next.since) >= deadline) {
+          motion.current = next;
+          await finishAutomaticJourney(pauseStart);
+          return;
+        }
       }
       motion.current = next;
       report("motion-observed", null);
@@ -442,15 +449,18 @@ export function useJourneyAutomation(options: Options) {
       motionQueue.current = motionQueue.current.then(() => observe(sample)).catch(fail);
     };
     const refresh = (): void => {
-      if (disposed || !started || document.visibilityState !== "visible") return;
-      if (failed) { setRevision(value => value + 1); return; }
+      if (disposed || document.visibilityState !== "visible") return;
+      if (failed) { checkTime(); setRevision(value => value + 1); return; }
+      if (!started) { checkTime(); return; }
       void JourneyMotionMonitor.getState().then(({ motion: sample }) => {
         if (valid() && sample) queueObservation(sample);
+        else checkTime();
       }).catch(fail);
     };
     const checkTime = (): void => { void tick().catch(fail); };
     locationTick.current = checkTime;
     const setup = async (): Promise<void> => {
+      if (preferencesRef.current.mode === "manual" && !preferencesRef.current.autoPause) return;
       let motionAuthorization = await readReminderMotionAuthorization();
       if (motionAuthorization === "notDetermined") {
         if (await requestReminderMotionPermission()) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automaticJourneyFinishedAt, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
+import { automaticJourneyEndDeadline, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
 
 const idle = 1700000000000;
 describe("inactivity after an adaptive location suspension", () => {
@@ -83,21 +83,18 @@ describe("native motion observation ordering", () => {
 
 
 describe("completed automatic journey timing", () => {
-  it("keeps the final ten-minute pause in the recap without counting it as active walking", () => {
+  it("excludes the final pause while preserving earlier paused time", () => {
     const startedAt = 1794742473910;
     const pausedAt = 1794743224268;
-    const finishedAt = automaticJourneyFinishedAt(pausedAt, 10);
-    const elapsedMs = journeyElapsedMs(startedAt, 5000, pausedAt, finishedAt);
-    expect(finishedAt).toBe(pausedAt + 600000);
-    expect(elapsedMs).toBe(pausedAt - startedAt - 5000);
-    expect(finishedAt - startedAt - elapsedMs).toBe(605000);
+    const deadline = automaticJourneyEndDeadline(pausedAt, 0, 10);
+    const elapsedMs = journeyElapsedMs(startedAt, 5000, pausedAt, pausedAt);
+    expect(deadline).toBe(pausedAt + 600000);
+    expect(pausedAt - startedAt - elapsedMs).toBe(5000);
   });
 
-  it("ends at the inactivity deadline when renewed walking is delivered later", () => {
-    const motion = { activity: "walking" as const, since: idle + 15 * 60000 };
-    const idleSince = inactivityDeadlineBeforeMovement(idle, motion, 10);
-    expect(idleSince).toBe(idle);
-    expect(automaticJourneyFinishedAt(idleSince!, 10)).toBe(idle + 10 * 60000);
+  it("starts the end countdown after the two-minute auto-pause delay", () => {
+    const finishedAt = automaticJourneyEndDeadline(idle, 2, 7);
+    expect(finishedAt).toBe(idle + 9 * 60_000);
   });
 
   it("preserves earlier pauses when finishing an active journey", () => {

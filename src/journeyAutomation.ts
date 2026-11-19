@@ -103,9 +103,9 @@ export function reconcileJourneyMotion(current: JourneyMotionObservation | null,
   return current !== null && next.observedAt < current.observedAt ? current : next;
 }
 
-/** Automatic completion includes the final inactivity interval as paused time. */
-export function automaticJourneyFinishedAt(idleSince: number, stopMinutes: number): number {
-  return idleSince + stopMinutes * 60_000;
+/** Automatic pauses backdate elapsed-time accounting to the start of inactivity. */
+export function automaticJourneyEndDeadline(pausedAt: number, pauseDelayMinutes: number, stopMinutes: number): number {
+  return pausedAt + (pauseDelayMinutes + stopMinutes) * 60_000;
 }
 
 /** Use an explicit start time so finalization cannot depend on a cleared React session. */
