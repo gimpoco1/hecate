@@ -2,9 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Trans } from "react-i18next";
 import { Capacitor } from "@capacitor/core";
-import { Clipboard } from "@capacitor/clipboard";
-import { errorDiagnostic } from "../diagnostics";
-import { journeyDiagnosticReport } from "../journeyDiagnostics";
 import { App as CapacitorApp } from "@capacitor/app";
 import { t } from "../i18n";
 import { JOURNEY_RESTART_DURATIONS, JOURNEY_START_DURATIONS, JOURNEY_PAUSE_DURATIONS, JOURNEY_STOP_DURATIONS, JourneyMotionMonitor, defaultJourneyPreferences, type JourneyPreferences, type JourneyStartMode } from "../journeyAutomation";
@@ -21,7 +18,6 @@ type Props = {
 };
 
 export function JourneySettings({ preferences, onChange, onBack, onClose }: Props) {
-  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [permissions, setPermissions] = useState<{ location: LocationAuthorization; motion: ReminderMotionAuthorization; available: boolean } | null>(null);
@@ -66,20 +62,6 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
     try { await onChange(next); return null; }
     catch (failure) { const message = failure instanceof Error ? failure.message : t("Could not save journey settings."); setError(message); return message; }
     finally { setPending(false); }
-  }
-  async function copyDiagnostics(): Promise<void> {
-    setError("");
-    setDiagnosticsCopied(false);
-    try {
-      const report = journeyDiagnosticReport(localStorage);
-      const app = native ? await CapacitorApp.getInfo() : null;
-      const header = app ? `App: ${app.version} (${app.build})\n` : "";
-      await Clipboard.write({ string: header + report });
-      setDiagnosticsCopied(true);
-    } catch (failure) {
-      console.error("Could not copy journey diagnostics", { error: errorDiagnostic(failure) });
-      setError(t("Could not copy journey diagnostics. Please try again."));
-    }
   }
   async function enableMotion(): Promise<void> {
     setPending(true);
@@ -133,8 +115,8 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
       {native && <section className="account-settings-panel" aria-labelledby="journey-end-title">
         <div className="account-setting">
           <div>
-            <strong id="journey-end-title">{t("End paused journeys")}</strong>
-            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End paused journeys")} description={t("Finish a journey after it has been paused for this long.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
+            <strong id="journey-end-title">{t("End automatically paused journeys")}</strong>
+            <p><Trans i18nKey="settings.journeyEndTiming" components={{ duration: <ReminderDuration title={t("End automatically paused journeys")} description={t("Finish a journey after an automatic pause lasts this long.")} value={preferences.stopMinutes} options={JOURNEY_STOP_DURATIONS} disabled={pending || !preferences.autoPause} onChange={minutes => save({ ...preferences, stopMinutes: minutes })} /> }} /></p>
           </div>
         </div>
       </section>}
@@ -143,12 +125,6 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
           <button type="button" data-testid="journey-reset-defaults" disabled={pending} onClick={() => void save({ ...defaultJourneyPreferences(), autoPause: native && permissions?.motion === "authorized" && permissions.available && (permissions.location === "always" || permissions.location === "whenInUse") })}>{t("Reset to defaults")}</button>
         </div>
       </div>
-      <details className="account-settings-panel" data-testid="journey-diagnostics">
-        <summary>{t("Journey diagnostics")}</summary>
-        <p>{t("After a walking test, copy this report to help diagnose automatic recording. It includes recent tracking states and GPS quality, without coordinates or account details.")}</p>
-        <button type="button" data-testid="journey-diagnostics-copy" onClick={() => void copyDiagnostics()}>{t("Copy diagnostic report")}</button>
-        {diagnosticsCopied && <p role="status">{t("Diagnostic report copied.")}</p>}
-      </details>
       {(error || permissionError) && <p role="alert">{error || permissionError}</p>}
     </section>
   </div>, document.body);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automaticJourneyEndDeadline, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
+import { automaticPauseTiming, automaticPauseOutcome, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
 
 const idle = 1700000000000;
 describe("inactivity after an adaptive location suspension", () => {
@@ -86,15 +86,22 @@ describe("completed automatic journey timing", () => {
   it("excludes the final pause while preserving earlier paused time", () => {
     const startedAt = 1794742473910;
     const pausedAt = 1794743224268;
-    const deadline = automaticJourneyEndDeadline(pausedAt, 0, 10);
     const elapsedMs = journeyElapsedMs(startedAt, 5000, pausedAt, pausedAt);
-    expect(deadline).toBe(pausedAt + 600000);
     expect(pausedAt - startedAt - elapsedMs).toBe(5000);
   });
 
   it("starts the end countdown after the two-minute auto-pause delay", () => {
-    const finishedAt = automaticJourneyEndDeadline(idle, 2, 7);
-    expect(finishedAt).toBe(idle + 9 * 60_000);
+    const pause = automaticPauseTiming(idle, 2, 7);
+    expect(pause).toEqual({ startsAt: idle + 2 * 60_000, endsAt: idle + 9 * 60_000 });
+    expect(automaticPauseOutcome(pause, pause.endsAt - 1, null)).toBe("wait");
+    expect(automaticPauseOutcome(pause, pause.endsAt, null)).toBe("end");
+  });
+
+  it("uses movement onset when an observation arrives after the deadline", () => {
+    const pause = automaticPauseTiming(idle, 2, 7);
+    const deliveredAt = pause.endsAt + 30_000;
+    expect(automaticPauseOutcome(pause, deliveredAt, pause.endsAt - 1)).toBe("resume");
+    expect(automaticPauseOutcome(pause, deliveredAt, pause.endsAt)).toBe("end");
   });
 
   it("preserves earlier pauses when finishing an active journey", () => {

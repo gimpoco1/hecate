@@ -103,9 +103,17 @@ export function reconcileJourneyMotion(current: JourneyMotionObservation | null,
   return current !== null && next.observedAt < current.observedAt ? current : next;
 }
 
-/** Automatic pauses backdate elapsed-time accounting to the start of inactivity. */
-export function automaticJourneyEndDeadline(pausedAt: number, pauseDelayMinutes: number, stopMinutes: number): number {
-  return pausedAt + (pauseDelayMinutes + stopMinutes) * 60_000;
+export type AutomaticPause = { startsAt: number; endsAt: number };
+
+export function automaticPauseTiming(idleSince: number, pauseMinutes: number, stopMinutes: number): AutomaticPause {
+  const startsAt = idleSince + pauseMinutes * 60_000;
+  return { startsAt, endsAt: startsAt + stopMinutes * 60_000 };
+}
+
+/** Use movement onset even if the observation arrives after the deadline. */
+export function automaticPauseOutcome(pause: AutomaticPause, now: number, movementAt: number | null): "resume" | "end" | "wait" {
+  if (movementAt !== null) return movementAt < pause.endsAt ? "resume" : "end";
+  return now >= pause.endsAt ? "end" : "wait";
 }
 
 /** Use an explicit start time so finalization cannot depend on a cleared React session. */

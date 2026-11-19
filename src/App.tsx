@@ -1550,8 +1550,6 @@ export default function App() {
     startedAt: activeWalkRef.current?.startedAt ?? null,
     ready: authReady && !discoveryLoading && !walkFinalizing && !journeySaveError &&
       (discoveryHistoryReadyRef.current || Boolean(activeWalkRef.current && trackingUserRef.current === accountUserId)),
-    readiness: { authReady, discoveryLoading, historyReady: discoveryHistoryReadyRef.current,
-      walkFinalizing, saveFailed: Boolean(journeySaveError) },
     cities: progressCities,
     onStart: (seed) => startRecordedJourney(seed),
     onPause: async () => {
@@ -1845,10 +1843,7 @@ export default function App() {
       trackingUserRef.current !== accountUserId
     )
       return;
-    if (Capacitor.getPlatform() === "ios" && !iosAppActive) {
-      automation.recordLiveActivityStatus("deferred", null);
-      return;
-    }
+    if (Capacitor.getPlatform() === "ios" && !iosAppActive) return;
     const snapshot = journeyActivitySnapshot(
       walk,
       started.discoveryDistance,
@@ -1868,9 +1863,7 @@ export default function App() {
           navigationRemaining: guidanceRef.current?.remaining ?? null,
           ownerId: accountUserId,
         });
-        automation.recordLiveActivityStatus("started", null);
       } catch (error) {
-        automation.recordLiveActivityStatus("failed", errorDiagnostic(error).code ?? "LIVE_ACTIVITY_START_FAILED");
         setJourneyStopMessage(error instanceof Error ? error.message : t("Could not start the journey Live Activity."));
         throw error;
       }
