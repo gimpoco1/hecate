@@ -80,7 +80,7 @@ export function JourneySettings({ preferences, onChange, onBack, onClose }: Prop
   ];
   return createPortal(<div className="sheet-backdrop gpx-import-backdrop" onClick={event => { event.stopPropagation(); onBack(); }}>
     <section ref={panel} tabIndex={-1} className="sheet profile-collection-sheet journey-settings-sheet" role="dialog" aria-modal="true" aria-labelledby="journey-settings-title" data-testid="journey-settings" onClick={event => event.stopPropagation()}>
-      <button type="button" className="icon-button walking-stats-back" data-testid="journey-settings-back" aria-label={t("Back to profile")} onClick={onBack}><ArrowLeftIcon /></button>
+      <button type="button" data-swipe-back className="icon-button walking-stats-back" data-testid="journey-settings-back" aria-label={t("Back to profile")} onClick={onBack}><ArrowLeftIcon /></button>
       <button type="button" className="icon-button sheet__close" data-testid="journey-settings-close" aria-label={t("Close")} onClick={onClose}><XIcon /></button>
       <div className="eyebrow">{t("Preferences")}</div>
       <h2 id="journey-settings-title">{t("Journey recording")}</h2>
