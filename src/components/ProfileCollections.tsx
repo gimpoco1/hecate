@@ -1,9 +1,9 @@
 import { ContextualGuide } from "./ContextualGuide";
 import { MAP_REWARDS, type MapReward } from "../goalRewards";
 import { useLayoutEffect, useRef, useState } from "react";
-import { mdiCubeOutline, mdiMapMarkerOutline } from "@mdi/js";
+import { mdiCubeOutline, mdiMapMarkerDistance, mdiMapMarkerOutline, mdiSortAlphabeticalAscending } from "@mdi/js";
 import { formatDiscoveryPercentage } from "../cityProgressFormat";
-import { formatNumber, t, useAppTranslation } from "../i18n";
+import { currentLanguage, formatNumber, t, useAppTranslation } from "../i18n";
 import { personalAchievementDefinition, type AchievementEvaluation, type PersonalAchievementId } from "../achievements";
 import {
   CITY_MILESTONE_TIERS,
@@ -58,7 +58,12 @@ export function CitiesSheet({
   onClose,
 }: CitiesSheetProps) {
   useAppTranslation();
+  const [sortOrder, setSortOrder] = useState<"distance" | "name">("distance");
   if (!open) return null;
+  const byName = new Intl.Collator(currentLanguage());
+  const sortedCities = [...cityProgresses].sort((a, b) =>
+    (sortOrder === "distance" ? b.distance - a.distance : 0) || byName.compare(a.city.name, b.city.name),
+  );
   const totalDistance = cityProgresses.reduce(
     (total, progress) => total + progress.distance,
     0,
@@ -91,7 +96,23 @@ export function CitiesSheet({
           <XIcon />
         </button>
         <div className="eyebrow">{t("Your map")}</div>
-        <h2 id="cities-sheet-title">{t("Cities explored")}</h2>
+        <div className="cities-collection-heading">
+          <h2 id="cities-sheet-title">{t("Cities explored")}</h2>
+          {cityProgresses.length > 1 && (
+            <div className="cities-collection-sort" role="group" aria-label={t("Sort by")}>
+              <button type="button" data-testid="cities-sort-distance"
+                aria-label={t("Most new ground")} title={t("Most new ground")}
+                aria-pressed={sortOrder === "distance"} onClick={() => setSortOrder("distance")}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiMapMarkerDistance} /></svg>
+              </button>
+              <button type="button" data-testid="cities-sort-name"
+                aria-label={t("Name")} title={t("Name")}
+                aria-pressed={sortOrder === "name"} onClick={() => setSortOrder("name")}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={mdiSortAlphabeticalAscending} /></svg>
+              </button>
+            </div>
+          )}
+        </div>
 
         <section className="profile-collection-summary" aria-label={t("Cities summary")}>
           <span>
@@ -110,7 +131,7 @@ export function CitiesSheet({
           <p className="profile-collection-empty">{t("Start a walk to add your first city.")}</p>
         ) : (
           <ul className="cities-collection-list">
-            {cityProgresses.map(({ city, percentage, distance }) => {
+            {sortedCities.map(({ city, percentage, distance }) => {
               const earned = earnedCityMilestones(city.id, city.name, distance);
               const { next, progress } = cityMilestoneProgress(distance);
               return (

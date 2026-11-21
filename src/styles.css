@@ -1177,6 +1177,41 @@ button {
   font-size: 12px;
   text-align: center;
 }
+.cities-collection-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 9px;
+}
+.cities-collection-sort {
+  display: flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--theme-surface-alt, #e9ebe5);
+}
+.cities-collection-sort button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--theme-text-muted, #748078);
+  cursor: pointer;
+}
+.cities-collection-sort button[aria-pressed="true"] {
+  background: var(--theme-surface, white);
+  color: var(--theme-text-accent, #53723c);
+  box-shadow: 0 1px 4px #0002;
+}
+.cities-collection-sort button:focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: -2px;
+}
 .cities-collection-list,
 .achievements-collection-list {
   list-style: none;
@@ -3159,6 +3194,11 @@ button {
 }
 .profile-collection-sheet > h2 {
   margin-top: 24px;
+}
+.cities-collection-heading > h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .sheet > p {
   margin: 0 0 23px;

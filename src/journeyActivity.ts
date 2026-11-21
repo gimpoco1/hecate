@@ -17,14 +17,14 @@ export type JourneyActivitySnapshot = {
   navigationRemaining?: NavigationRemaining | null;
 };
 
-export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
+export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number; automatic?: boolean };
 
 export type JourneyPauseRequest = { id: string; walkId: string; ownerId: string; paused: boolean; requestedAt: number; activeStartedAt: number };
 
 interface JourneyActivityPlugin {
   getPauseRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyPauseRequest | null }>;
   acknowledgePause(options: { ownerId: string; walkId: string; id: string }): Promise<void>;
-  pauseLocation(options: { walkId: string }): Promise<void>;
+  pauseLocation(options: { walkId: string; deadline?: { ownerId: string; finishedAt: number; endsAt: number; elapsedMs: number } }): Promise<void>;
   resumeLocation(options: { walkId: string }): Promise<void>;
   addListener(event: "pauseRequested", listener: (request: JourneyPauseRequest) => void): Promise<PluginListenerHandle>;
   setAppearance(options: { preference: AppearancePreference; theme: ColorTheme; language: LanguagePreference }): Promise<void>;

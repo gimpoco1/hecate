@@ -1552,11 +1552,21 @@ export default function App() {
       (discoveryHistoryReadyRef.current || Boolean(activeWalkRef.current && trackingUserRef.current === accountUserId)),
     cities: progressCities,
     onStart: (seed) => startRecordedJourney(seed),
-    onPause: async () => {
+    onPause: async (deadline) => {
       resetInactivityReminder();
       selectionHaptic();
       if (Capacitor.isNativePlatform() && activeWalkRef.current) {
-        await JourneyActivity.pauseLocation({ walkId: activeWalkRef.current.id });
+        const walkId = activeWalkRef.current.id;
+        const ownerId = trackingUserRef.current;
+        if (deadline && Capacitor.getPlatform() === "ios") {
+          if (!ownerId) throw new Error("Scheduling an automatic stop requires the journey owner.");
+          await JourneyActivity.pauseLocation({
+            walkId,
+            deadline: { ...deadline, ownerId, elapsedMs: automation.activityState(deadline.finishedAt).elapsedMs },
+          });
+        } else {
+          await JourneyActivity.pauseLocation({ walkId });
+        }
         return;
       }
       const tracker = trackerRef.current;
@@ -1723,17 +1733,31 @@ export default function App() {
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    const listener = JourneyActivity.addListener("stopRequested", (request) => {
+    let active = true;
+    const applyStop = (request: JourneyStopRequest): void => {
       if (
-        request.ownerId !== accountUserIdRef.current ||
+        !active || request.ownerId !== accountUserIdRef.current ||
         request.walkId !== activeWalkRef.current?.id
       )
         return;
       widgetStopRef.current = request;
       setRequestedJourneyStopId(request.walkId);
+    };
+    const listener = JourneyActivity.addListener("stopRequested", applyStop);
+    const foreground = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      const walkId = activeWalkRef.current?.id;
+      const ownerId = trackingUserRef.current;
+      if (!isActive || !walkId || !ownerId) return;
+      void JourneyActivity.getStopRequest({ walkId, ownerId }).then(({ request }) => {
+        if (request) applyStop(request);
+      }).catch((error: Error) => {
+        if (active) setJourneyStopMessage(error.message);
+      });
     });
     return () => {
+      active = false;
       void listener.then((handle) => handle.remove());
+      void foreground.then((handle) => handle.remove());
     };
   }, []);
 
@@ -4869,7 +4893,13 @@ export default function App() {
     ) {
       setRequestedJourneyStopId(null);
       setSyncOpen(false);
-      void toggleTracking();
+      const request = widgetStopRef.current;
+      void toggleTracking().then(async () => {
+        if (!request?.automatic || activeWalkRef.current || accountUserIdRef.current !== request.ownerId) return;
+        await sendJourneyAutoEndNotification(LocalNotifications, request.ownerId, request.walkId,
+          () => accountUserIdRef.current === request.ownerId && activeWalkRef.current === null,
+        );
+      }).catch(error => console.error("Could not notify automatic journey end", { walkId: walk.id, error: errorDiagnostic(error) }));
       return;
     }
     if (!walk || walk.id !== requestedJourneyStopId)

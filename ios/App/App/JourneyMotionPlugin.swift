@@ -135,6 +135,39 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @MainActor
+    func movementBeforeDeadline(from start: Date, until deadline: Date) async throws -> Bool {
+        let startMs = start.timeIntervalSince1970 * 1000
+        let deadlineMs = deadline.timeIntervalSince1970 * 1000
+        if let latest, (latest.activity == "walking" || latest.activity == "cycling"),
+           latest.since > startMs && latest.since < deadlineMs {
+            publishDeadlineMovement(activity: latest.activity, since: latest.since)
+            return true
+        }
+        let activities = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[CMMotionActivity], Error>) in
+            motionManager.queryActivityStarting(from: start, to: deadline, to: .main) { activities, error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume(returning: activities ?? []) }
+            }
+        }
+        guard !Task.isCancelled, let movement = activities.first(where: {
+            $0.confidence != .low && !$0.automotive && !$0.stationary &&
+                ($0.walking || $0.running || $0.cycling) &&
+                $0.startDate.timeIntervalSince1970 * 1000 > startMs &&
+                $0.startDate.timeIntervalSince1970 * 1000 < deadlineMs
+        }) else { return false }
+        publishDeadlineMovement(activity: movement.cycling ? "cycling" : "walking",
+                                since: movement.startDate.timeIntervalSince1970 * 1000)
+        return true
+    }
+
+    private func publishDeadlineMovement(activity: String, since: Double) {
+        // A historical observation must reach the same reconciliation path as a live transition.
+        let observedAt = Date().timeIntervalSince1970 * 1000
+        latest = (activity: activity, since: since, observedAt: observedAt)
+        notifyListeners("motion", data: ["activity": activity, "since": since, "observedAt": observedAt], retainUntilConsumed: true)
+    }
+
     @objc func getState(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             guard CMMotionActivityManager.authorizationStatus() == .authorized else {

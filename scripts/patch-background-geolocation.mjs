@@ -489,6 +489,34 @@ if (!source.includes("private var journeyPauseObserver")) {
   writeFileSync(pluginPath, source);
 }
 
+// Timed pauses keep the iOS location session active, but discard paused fixes before they reach the WebView.
+source = readFileSync(pluginPath, "utf8");
+const timedPauseAccuracy = "var timedPauseAccuracy: CLLocationAccuracy?";
+if (!source.includes(timedPauseAccuracy)) {
+  const watcher = "    private let created = Date()";
+  const initial = '                if paused { watcher.stop() }\n                else if UserDefaults.standard.data(forKey: "hecate.journey.stop." + walkId) == nil { watcher.start() }';
+  if (!source.includes(watcher) || !source.includes(initial))
+    throw new Error("Background geolocation plugin changed; review timed pause monitoring.");
+  source = source.replace(watcher, `    ${timedPauseAccuracy}\n${watcher}`).replace(initial, `                if paused && notification.userInfo?["keepMonitoring"] as? Bool == true {
+                    if watcher.timedPauseAccuracy == nil { watcher.timedPauseAccuracy = watcher.locationManager.desiredAccuracy }
+                    watcher.locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+                    continue
+                }
+                if let accuracy = watcher.timedPauseAccuracy {
+                    watcher.locationManager.desiredAccuracy = accuracy
+                    watcher.timedPauseAccuracy = nil
+                }
+${initial}`);
+  writeFileSync(pluginPath, source);
+}
+const discardPausedFix = 'if let walkId = watcher.journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + walkId) { return }';
+if (!source.includes(discardPausedFix)) {
+  const anchor = "                if watcher.isLocationValid(location) {";
+  if (!source.includes(anchor)) throw new Error("Background geolocation plugin changed; review paused fix filtering.");
+  source = source.replace(anchor, `                ${discardPausedFix}\n${anchor}`);
+  writeFileSync(pluginPath, source);
+}
+
 // Use the instance authorization API supported by every deployment target in this app.
 source = readFileSync(pluginPath, "utf8");
 for (const [original, replacement] of [

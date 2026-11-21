@@ -22,7 +22,7 @@ type Options = {
   ready: boolean;
   cities: CityBoundary[];
   onStart: (seed: JourneySeed) => Promise<void>;
-  onPause: () => Promise<void>;
+  onPause: (deadline: { finishedAt: number; endsAt: number } | null) => Promise<void>;
   onAutomaticPause: (walkId: string) => Promise<void>;
   onResume: () => void;
   onStop: (finishedAt: number) => Promise<void>;
@@ -282,21 +282,24 @@ export function useJourneyAutomation(options: Options) {
         if (!timing || pauseStart === null || now < timing.startsAt) return;
 
         if (automaticPauseOutcome(timing, now, null) === "end") {
-          if (expiryCheckPending) return;
+          if ((automaticPause && pausedRecorderId.current === activeId && Capacitor.getPlatform() === "ios") || expiryCheckPending) return;
           expiryCheckPending = true;
           const before = session.current;
           // Let motion events received during the native read run before its result.
           void JourneyMotionMonitor.getState().then(({ motion: sample }) => {
             enqueueMotion(async () => {
               try {
-                if (!sample || !canFinish()) return;
-                await observe(sample);
+                if (!canFinish()) return;
+                if (sample) await observe(sample);
                 if (!canFinish()) return;
                 if (!automaticPause) markAutomaticPause(pauseStart, timing);
                 await finishAutomaticJourney(activeId, pauseStart);
               } finally { expiryCheckPending = false; }
             });
-          }).catch(fail);
+          }).catch(error => {
+            expiryCheckPending = false;
+            fail(error);
+          });
 
           function canFinish(): boolean {
             return valid() && latest.current.ready && latest.current.walkId === activeId &&
@@ -306,10 +309,10 @@ export function useJourneyAutomation(options: Options) {
         }
         if (!automaticPause) markAutomaticPause(pauseStart, timing);
         if (pausedRecorderId.current !== activeId) {
-          pausedRecorderId.current = activeId;
           busy.current = true;
           try {
-            await latest.current.onPause();
+            await latest.current.onPause({ finishedAt: pauseStart, endsAt: timing.endsAt });
+            pausedRecorderId.current = activeId;
             if (!automaticPause) await latest.current.onAutomaticPause(activeId);
           } finally { busy.current = false; }
         }
@@ -374,6 +377,7 @@ export function useJourneyAutomation(options: Options) {
           if (stopTimingStart !== null) {
             const timing = session.current.automaticPause ?? pauseTiming(stopTimingStart);
             if (automaticPauseOutcome(timing, Date.now(), next.since) === "end") {
+              if (session.current.automaticPause && pausedRecorderId.current === walkId && Capacitor.getPlatform() === "ios") return;
               if (!session.current.automaticPause) markAutomaticPause(stopTimingStart, timing);
               await finishAutomaticJourney(walkId, stopTimingStart);
               return;
@@ -514,7 +518,7 @@ export function useJourneyAutomation(options: Options) {
     setPausedMs(session.current.pausedMs);
     setPausedAt(pausedAt);
     pausedRecorderId.current = activeId;
-    await latest.current.onPause();
+    await latest.current.onPause(null);
   }
 
   function resumeJourney(): void {

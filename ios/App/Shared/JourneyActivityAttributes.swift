@@ -75,6 +75,7 @@ struct JourneyStopRequest: Codable {
     let walkId: String
     let ownerId: String
     let finishedAt: Double
+    let automatic: Bool?
 }
 
 enum JourneyStopStore {
@@ -129,7 +130,7 @@ struct StopJourneyIntent: LiveActivityIntent {
         let request = try await MainActor.run {
             let request = try JourneyStopStore.read(walkId: walkId) ?? JourneyStopRequest(
                 walkId: walkId, ownerId: activity.attributes.ownerId,
-                finishedAt: Date().timeIntervalSince1970 * 1000
+                finishedAt: Date().timeIntervalSince1970 * 1000, automatic: nil
             )
             // Persist before stopping GPS so a suspended or reloaded WebView can finish saving the walk later.
             try JourneyStopStore.save(request)
