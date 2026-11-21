@@ -1,3 +1,4 @@
+import type { VisibleDiscoveryArea } from "./discoveryStorage";
 import { OnboardingLocationContext } from "./onboardingLocation";
 import { restartOnboarding } from "./components/Onboarding";
 import { TourCompletion } from "./components/TourCompletion";
@@ -252,6 +253,7 @@ import {
   isSyncConfigured,
   loadDiscoveredCities,
   loadSyncedDiscovery,
+  loadSyncedVisibleDiscoveryArea,
   purgeLegacyDiscoveryCache,
   replaceDiscoveredCities,
   saveCompletedWalk,
@@ -861,6 +863,9 @@ export default function App() {
     ? mergeRoutePoints(points, mockJourneyPoints) : points, [points, mockJourneyPoints]);
   const initialLocation = useContext(OnboardingLocationContext);
   const [currentPoint, setCurrentPoint] = useState<Coordinate | undefined>(initialLocation);
+  const startupLocationRef = useRef(currentPoint);
+  startupLocationRef.current = currentPoint;
+  const refreshStartupAreaRef = useRef<(() => void) | null>(null);
   const [mapReadyGeneration, setMapReadyGeneration] = useState(0);
   const locatingRef = useRef(false);
   const [passiveLocationStatus, setPassiveLocationStatus] =
@@ -986,6 +991,9 @@ export default function App() {
   >("signin");
   const [coverageInfoOpen, setCoverageInfoOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [startupArea, setStartupArea] = useState<{ userId: string; area: VisibleDiscoveryArea } | null>(null);
+  const visibleArea = startupArea?.userId === accountUserId ? startupArea.area : null;
+  const waitingForOpeningArea = discoveryLoading && visibleArea === null;
   const [discoveryHistoryError, setDiscoveryHistoryError] = useState("");
   const retryDiscoveryHistoryRef = useRef<(() => void) | null>(null);
   const [perspectiveView, setPerspectiveView] = useState(false);
@@ -2821,12 +2829,21 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    let retryTimer: number | null = null;
+    let historyRetryTimer: number | null = null;
+    let journalRetryTimer: number | null = null;
     let finishFrame: number | null = null;
     let historyRequest: AbortController | null = null;
     let localRestored = false;
+    let remoteHistory: Awaited<ReturnType<typeof loadSyncedDiscovery>> | null = null;
+    let historyLoadFailed = false;
+    let areaRequest: AbortController | null = null;
+    let areaTimeout: number | null = null;
+    let openingAreaSettled = false;
+    let requestedAreaCenter: Coordinate | null | undefined;
+    let loadedAreaCenter: VisibleDiscoveryArea["center"] = null;
     restoredWalkIdRef.current = null;
     setDiscoveryHistoryError("");
+    setStartupArea(null);
     const activeWalkOwner = trackingUserRef.current;
     if (activeWalkOwner && activeWalkOwner !== accountUserId) {
       const tracker = trackerRef.current;
@@ -2868,79 +2885,126 @@ export default function App() {
     deferredLocationUiRef.current = false;
     if (!accountUserId) return;
 
+    const applyRemoteHistory = (remote: Awaited<ReturnType<typeof loadSyncedDiscovery>>): void => {
+      setDiscoveryHistoryError("");
+      const persistedWalkIds = new Set(
+        remote.points.flatMap((point) =>
+          point.walkId ? [point.walkId] : [],
+        ),
+      );
+      if (journeyFinishedAtRef.current === null) {
+        const pending = pendingWalksRef.current.filter(walk => !persistedWalkIds.has(walk.id));
+        if (pending.length !== pendingWalksRef.current.length) {
+          pendingWalksRef.current = pending;
+          checkpointWalkJournal(accountUserId);
+        }
+      }
+      const mergedPoints = mergeRoutePoints(
+        pointsRef.current,
+        remote.points,
+      );
+      const mergedCells = mergeDiscoveryCells(
+        cellsRef.current,
+        remote.cells,
+      );
+      pointsRef.current = mergedPoints;
+      cellsRef.current = mergedCells;
+      setPoints(mergedPoints);
+      setCells(mergedCells);
+      cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
+      if (
+        activeWalkRef.current &&
+        trackingUserRef.current === accountUserId
+      ) {
+        const baseline = mergedPoints.filter(
+          (point) => point.walkId !== activeWalkRef.current?.id,
+        );
+        const baselineDiscoveryCells = discoveryCellsFromPoints(baseline);
+        explorationStartRef.current = {
+          cells: new Set(baselineDiscoveryCells.map(discoveryCellKey)),
+          points: baseline,
+          discoveryDistance: discoveredDistanceKm(baseline),
+        };
+      }
+      discoveryHistoryReadyRef.current = true;
+      if (!activeWalkRef.current)
+        lastPointRef.current = mergedPoints.at(-1);
+      void flushPendingWalks(accountUserId);
+      finishFrame = window.requestAnimationFrame(() => {
+        finishFrame = window.requestAnimationFrame(() => {
+          if (!active || accountUserIdRef.current !== accountUserId) return;
+          setDiscoveryLoading(false);
+          setStartupArea(null);
+        });
+      });
+    };
     const loadRemote = (): void => {
-      if (!active || !localRestored || discoveryHistoryReadyRef.current || historyRequest) return;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      retryTimer = null;
+      if (!active || !openingAreaSettled || discoveryHistoryReadyRef.current || historyRequest ||
+          (!localRestored && remoteHistory !== null)) return;
+      if (historyRetryTimer !== null) window.clearTimeout(historyRetryTimer);
+      historyRetryTimer = null;
       const request = new AbortController();
       historyRequest = request;
-      void loadSyncedDiscovery(accountUserId, request.signal)
-        .then((remote) => {
-          if (!active || historyRequest !== request || accountUserIdRef.current !== accountUserId) return;
-          setDiscoveryHistoryError("");
-          const persistedWalkIds = new Set(
-            remote.points.flatMap((point) =>
-              point.walkId ? [point.walkId] : [],
-            ),
-          );
-          if (journeyFinishedAtRef.current === null) {
-            const pending = pendingWalksRef.current.filter(walk => !persistedWalkIds.has(walk.id));
-            if (pending.length !== pendingWalksRef.current.length) {
-              pendingWalksRef.current = pending;
-              checkpointWalkJournal(accountUserId);
-            }
-          }
-          const mergedPoints = mergeRoutePoints(
-            pointsRef.current,
-            remote.points,
-          );
-          const mergedCells = mergeDiscoveryCells(
-            cellsRef.current,
-            remote.cells,
-          );
-          pointsRef.current = mergedPoints;
-          cellsRef.current = mergedCells;
-          setPoints(mergedPoints);
-          setCells(mergedCells);
-          cellKeysRef.current = new Set(mergedCells.map(discoveryCellKey));
-          if (
-            activeWalkRef.current &&
-            trackingUserRef.current === accountUserId
-          ) {
-            const baseline = mergedPoints.filter(
-              (point) => point.walkId !== activeWalkRef.current?.id,
-            );
-            const baselineDiscoveryCells = discoveryCellsFromPoints(baseline);
-            explorationStartRef.current = {
-              cells: new Set(baselineDiscoveryCells.map(discoveryCellKey)),
-              points: baseline,
-              discoveryDistance: discoveredDistanceKm(baseline),
-            };
-          }
-          discoveryHistoryReadyRef.current = true;
-          if (!activeWalkRef.current)
-            lastPointRef.current = mergedPoints.at(-1);
-          void flushPendingWalks(accountUserId);
-          finishFrame = window.requestAnimationFrame(() => {
-            finishFrame = window.requestAnimationFrame(() => {
-              if (active && accountUserIdRef.current === accountUserId)
-                setDiscoveryLoading(false);
-            });
-          });
-        })
-        .catch((error) => {
-          if (!active || historyRequest !== request) return;
-          request.abort();
-          console.warn("Could not load discovery history; retrying", { userId: accountUserId, error: errorDiagnostic(error) });
-          setDiscoveryHistoryError(t("Your explored map could not be loaded. Check your connection and retry."));
-          // Keep recording available offline. Upload/reconciliation remains
-          // gated by discoveryHistoryReadyRef until a later retry succeeds.
-          setDiscoveryLoading(false);
-          retryTimer = window.setTimeout(loadRemote, 15_000);
-        }).finally(() => {
-          if (historyRequest === request) historyRequest = null;
-        });
+      const result = remoteHistory === null
+        ? loadSyncedDiscovery(accountUserId, request.signal)
+        : Promise.resolve(remoteHistory);
+      void result.then((remote) => {
+        if (!active || historyRequest !== request || accountUserIdRef.current !== accountUserId) return;
+        historyLoadFailed = false;
+        if (!localRestored) {
+          remoteHistory = remote;
+          return;
+        }
+        remoteHistory = null;
+        applyRemoteHistory(remote);
+      }).catch((error) => {
+        if (!active || historyRequest !== request || accountUserIdRef.current !== accountUserId) return;
+        request.abort();
+        historyLoadFailed = true;
+        console.warn("Could not load discovery history; retrying", { userId: accountUserId, error: errorDiagnostic(error) });
+        setDiscoveryHistoryError(t("Your explored map could not be loaded. Check your connection and retry."));
+        // Keep recording available offline once the journal has been recovered.
+        if (localRestored) setDiscoveryLoading(false);
+        historyRetryTimer = window.setTimeout(loadRemote, 15_000);
+      }).finally(() => {
+        if (historyRequest !== request) return;
+        historyRequest = null;
+        if (localRestored && remoteHistory !== null && !request.signal.aborted) loadRemote();
+      });
     };
+    const loadStartupArea = (): void => {
+      if (!active || discoveryHistoryReadyRef.current) return;
+      const point = startupLocationRef.current ?? null;
+      if (requestedAreaCenter !== undefined && (
+        !point ||
+        (requestedAreaCenter && distanceKm(requestedAreaCenter, point) < 3) ||
+        (loadedAreaCenter && distanceKm({ ...point, ...loadedAreaCenter }, point) < 4)
+      )) return;
+
+      areaRequest?.abort();
+      if (areaTimeout !== null) window.clearTimeout(areaTimeout);
+      const request = new AbortController();
+      areaRequest = request;
+      requestedAreaCenter = point;
+      areaTimeout = window.setTimeout(() => request.abort(), 8_000);
+      void loadSyncedVisibleDiscoveryArea(accountUserId, point, request.signal).then(area => {
+        if (!active || request.signal.aborted || areaRequest !== request ||
+            accountUserIdRef.current !== accountUserId || discoveryHistoryReadyRef.current) return;
+        loadedAreaCenter = area.center;
+        setStartupArea({ userId: accountUserId, area });
+      }).catch(error => {
+        if (active && areaRequest === request)
+          console.warn("Could not load the opening discovery area", { error: errorDiagnostic(error) });
+      }).finally(() => {
+        if (!active || areaRequest !== request) return;
+        areaRequest = null;
+        if (areaTimeout !== null) window.clearTimeout(areaTimeout);
+        areaTimeout = null;
+        openingAreaSettled = true;
+        loadRemote();
+      });
+    };
+    refreshStartupAreaRef.current = loadStartupArea;
     const resumeHistory = (): void => {
       if (document.visibilityState === "visible" && !discoveryHistoryReadyRef.current) loadRemote();
     };
@@ -3006,26 +3070,36 @@ export default function App() {
         setPoints(pointsRef.current);
         setCells(cellsRef.current);
         localRestored = true;
-        loadRemote();
+        if (historyLoadFailed) setDiscoveryLoading(false);
+        if (historyRetryTimer === null) loadRemote();
       } catch (error) {
         if (!active || accountUserIdRef.current !== accountUserId) return;
         console.warn("Could not recover the journey journal; retrying", { error: errorDiagnostic(error) });
         setJourneyStopMessage(error instanceof Error ? error.message : String(error));
-        retryTimer = window.setTimeout(() => void restoreLocal(), 15_000);
+        journalRetryTimer = window.setTimeout(() => void restoreLocal(), 15_000);
       }
     };
     void restoreLocal();
+    loadStartupArea();
     return () => {
       active = false;
       historyRequest?.abort();
+      areaRequest?.abort();
+      if (areaTimeout !== null) window.clearTimeout(areaTimeout);
+      if (refreshStartupAreaRef.current === loadStartupArea) refreshStartupAreaRef.current = null;
       if (retryDiscoveryHistoryRef.current === loadRemote) retryDiscoveryHistoryRef.current = null;
       document.removeEventListener("visibilitychange", resumeHistory);
       window.removeEventListener("online", resumeHistory);
       if (nativeResume) void nativeResume.then(handle => handle.remove());
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      if (historyRetryTimer !== null) window.clearTimeout(historyRetryTimer);
+      if (journalRetryTimer !== null) window.clearTimeout(journalRetryTimer);
       if (finishFrame !== null) window.cancelAnimationFrame(finishFrame);
     };
   }, [accountUserId, enqueueJourneyActivity, nativeApp, resetInactivityReminder]);
+
+  useEffect(() => {
+    refreshStartupAreaRef.current?.();
+  }, [currentPoint]);
 
   const checkpointWalkJournal = (userId: string): void => {
     const walk = activeWalkRef.current;
@@ -3149,7 +3223,7 @@ export default function App() {
   }, [accountUserId]);
 
   useEffect(() => {
-    if (!accountUserId || citiesLoadedUserId === accountUserId) return;
+    if (!accountUserId || citiesLoadedUserId === accountUserId || waitingForOpeningArea) return;
     let active = true;
     let retryTimer: number | null = null;
     const load = () =>
@@ -3215,7 +3289,7 @@ export default function App() {
       active = false;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [accountUserId, citiesLoadedUserId]);
+  }, [accountUserId, citiesLoadedUserId, waitingForOpeningArea]);
 
   useEffect(() => {
     if (!accountUserId || cells.length === 0) return;
@@ -3767,22 +3841,23 @@ export default function App() {
   };
 
   useEffect(() => {
-    const focusIdentity = accountUserId ?? "__anonymous__";
+    const point = currentPoint ?? visibleArea?.center;
+    const focusIdentity = currentPoint ? accountUserId ?? "__anonymous__" : `opening-area:${accountUserId}`;
     const map = mapRef.current;
-    if (!map || initialMapFocusUserRef.current === focusIdentity || !currentPoint || !followCameraEnabledRef.current)
+    if (!map || initialMapFocusUserRef.current === focusIdentity || !point || !followCameraEnabledRef.current)
       return;
     const targetZoom = 14;
-    setViewCenter({ lng: currentPoint.lng, lat: currentPoint.lat });
+    setViewCenter({ lng: point.lng, lat: point.lat });
     setZoom(targetZoom);
     setViewedCity(null);
     map.jumpTo({
-      center: [currentPoint.lng, currentPoint.lat],
+      center: [point.lng, point.lat],
       zoom: targetZoom,
       pitch: 0,
       bearing: 0,
     });
     initialMapFocusUserRef.current = focusIdentity;
-  }, [accountUserId, currentPoint, mapReadyGeneration]);
+  }, [accountUserId, visibleArea, currentPoint, mapReadyGeneration]);
 
   const addPoint = (point: Coordinate) => {
     automation.observeLocation();
@@ -5609,6 +5684,12 @@ export default function App() {
       : t("Location temporarily unavailable");
   const accountDataLoading =
     !authReady || Boolean(accountUserId && discoveryLoading);
+  const openingAreaReady = visibleArea !== null && (!currentPoint || (visibleArea.center !== null &&
+    distanceKm({ ...currentPoint, ...visibleArea.center }, currentPoint) < 4));
+  const previewArea = discoveryHistoryReadyRef.current ? null : visibleArea;
+  const mapPoints = useMemo(() => previewArea ? mergeRoutePoints(displayedDiscoveryPoints, previewArea.points) : displayedDiscoveryPoints,
+    [previewArea, displayedDiscoveryPoints]);
+  const mapCells = useMemo(() => previewArea ? mergeDiscoveryCells(previewArea.cells, cells) : cells, [previewArea, cells]);
   const showFirstDiscoveryHint = Boolean(
     accountUserId &&
     !discoveryLoading &&
@@ -5975,7 +6056,7 @@ export default function App() {
       }
       aria-busy={accountDataLoading}
     >
-      <AccountLoadingScreen visible={accountDataLoading} />
+      <AccountLoadingScreen visible={!authReady || (accountDataLoading && !openingAreaReady)} />
       <AnimatePresence>
         {tourVisible && tour.step === "finished" && <TourCompletion onClose={tour.dismiss} />}
         {tourVisible && tour.step !== "done" && tour.step !== "finished" && <OnboardingTour
@@ -6008,8 +6089,8 @@ export default function App() {
         initialZoom={initialLocation ? 14 : undefined}
         reward={mapRewards.selected}
         mode={mode}
-        points={displayedDiscoveryPoints}
-        cells={cells}
+        points={mapPoints}
+        cells={mapCells}
         highlightedPoints={mockJourneyPoints.length > 0 ? mockJourneyPoints : highlightedRoutePoints}
         highlightedNewGroundSegments={mockJourneyPoints.length > 0 ? [mockJourneyPoints] : highlightedNewGroundSegments}
         currentPoint={
@@ -6375,7 +6456,6 @@ export default function App() {
           <span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span>
           <div className="account-toast__message"><p>{discoveryHistoryError}</p><button type="button" className="app-error-toast__action" data-testid="retry-discovery-history" onClick={() => retryDiscoveryHistoryRef.current?.()}>{t("Retry")}</button></div>
         </aside>}
-        {discoveryLoading && accountUserId && !discoveryHistoryError && <aside className="account-toast account-toast--info app-error-toast" role="status" data-testid="discovery-history-loading">{t("Loading your explored map…")}</aside>}
         {automation.error && !automation.errorDismissed && !syncOpen && <aside className="account-toast app-error-toast journey-permission-toast" role="alert" data-testid="journey-automation-error"><span className="account-toast__mark" aria-hidden="true"><InfoIcon size={18} /></span><div className="account-toast__message"><p>{automation.error}</p><button className="app-error-toast__action" type="button" onClick={() => { setOpenJourneySettings(true); setSyncOpen(true); }}>{t("Journey recording")}</button></div><button type="button" className="app-error-toast__dismiss" data-testid="journey-automation-dismiss" aria-label={t("Close")} onClick={automation.dismissError}><XIcon /></button></aside>}
         {(journeyStopMessage || (tracking === "unavailable" && !locationErrorDismissed)) && (
           <aside className="account-toast account-toast--error app-error-toast" role="alert" data-testid="journey-error-toast">

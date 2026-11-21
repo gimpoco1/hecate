@@ -4,6 +4,7 @@ import type { CityBoundary } from "./city.ts";
 import type { Coordinate, DiscoveryCell } from "./types.ts";
 
 export type StoredDiscovery = { points: Coordinate[]; cells: DiscoveryCell[]; cities: CityBoundary[] };
+export type VisibleDiscoveryArea = Pick<StoredDiscovery, "points" | "cells"> & { center: { lng: number; lat: number } | null };
 type WalkCursor = { startedAt: string; id: string };
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -108,6 +109,28 @@ async function loadHistoryPage<T>(signal: AbortSignal, query: (pageSignal: Abort
     clearTimeout(timeout);
     signal.removeEventListener("abort", cancel);
   }
+}
+
+export async function loadVisibleDiscoveryArea(
+  client: SupabaseClient,
+  center: Pick<Coordinate, "lng" | "lat"> | null,
+  signal: AbortSignal,
+): Promise<VisibleDiscoveryArea> {
+  const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_visible_discovery_area", {
+    // A coarse center is enough to select what the opening viewport will cover.
+    p_lng: center === null ? null : Math.round(center.lng * 100) / 100,
+    p_lat: center === null ? null : Math.round(center.lat * 100) / 100,
+  }).abortSignal(pageSignal));
+  if (error) throw error;
+  if (!object(data) || !Array.isArray(data.walks) || !Array.isArray(data.cells)) {
+    throw new TypeError("The visible discovery area must contain walk and discovery-cell arrays.");
+  }
+  const [lng, lat] = data.center === null ? [0, 0] : position(data.center);
+  return {
+    center: data.center === null ? null : { lng, lat },
+    points: data.walks.flatMap(row => parseStoredWalk(row).points),
+    cells: data.cells.map(parseStoredCell),
+  };
 }
 
 /** Stable pages avoid the hosted API's implicit row cap without truncating an account's history. */

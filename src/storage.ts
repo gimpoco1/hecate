@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 import { Capacitor } from "@capacitor/core";
 import { persistentStorage } from "./persistentStorage";
-import { loadStoredWalkPoints, loadStoredCells, loadStoredCities } from "./discoveryStorage";
+import { loadStoredWalkPoints, loadStoredCells, loadStoredCities, loadVisibleDiscoveryArea, type VisibleDiscoveryArea } from "./discoveryStorage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from "./geo";
 import type { CityBoundary } from "./city";
@@ -128,7 +128,7 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
   if (error) throw error;
 }
 
-export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortSignal): Promise<SyncedDiscovery> {
+async function requireDiscoverySession(expectedUserId: string, signal: AbortSignal): Promise<SupabaseClient> {
   if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (!supabase) throw new Error("Cannot load discovery history: Supabase is not configured.");
   const { data: { session }, error } = await supabase.auth.getSession();
@@ -136,9 +136,23 @@ export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortS
   if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (session?.user.id !== expectedUserId)
     throw new Error("Cannot load discovery history: the signed-in session does not match the requested account.");
+  return supabase;
+}
+
+export async function loadSyncedVisibleDiscoveryArea(
+  expectedUserId: string,
+  center: VisibleDiscoveryArea["center"],
+  signal: AbortSignal,
+): Promise<VisibleDiscoveryArea> {
+  const client = await requireDiscoverySession(expectedUserId, signal);
+  return loadVisibleDiscoveryArea(client, center, signal);
+}
+
+export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortSignal): Promise<SyncedDiscovery> {
+  const client = await requireDiscoverySession(expectedUserId, signal);
   const [walkPoints, cells] = await Promise.all([
-    loadStoredWalkPoints(supabase, signal),
-    loadStoredCells(supabase, signal),
+    loadStoredWalkPoints(client, signal),
+    loadStoredCells(client, signal),
   ]);
   rememberSyncedCells(expectedUserId, cells);
   return {
