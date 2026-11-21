@@ -8,14 +8,14 @@ export type JourneyRecapRoute = {
   bounds: { west: number; east: number; south: number; north: number };
 };
 
-/** Mark recorded segment breaks within one journey, without inferring pauses from GPS gaps. */
+/** Mark explicit recording pauses within one journey. */
 export function journeyPauseBoundaries(points: Coordinate[]): { pausedAt: Coordinate; resumedAt: Coordinate }[] {
   const segments = splitRoute(points);
   return segments.slice(1).flatMap((segment, index) => {
     const previous = segments[index];
     const pausedAt = previous[previous.length - 1];
     const resumedAt = segment[0];
-    if (resumedAt.segmentBreakBefore !== true || pausedAt.walkId !== resumedAt.walkId) return [];
+    if (resumedAt.resumedAfterPause !== true || pausedAt.walkId !== resumedAt.walkId) return [];
     return [{ pausedAt, resumedAt }];
   });
 }

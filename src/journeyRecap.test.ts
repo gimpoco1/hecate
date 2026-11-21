@@ -36,7 +36,7 @@ describe("recap geometry", () => {
       points: [
         { lng: 2.17, lat: 41.38, recordedAt: 1000 },
         { lng: 2.171, lat: 41.38, recordedAt: 61000 },
-        { lng: 2.175, lat: 41.381, recordedAt: 121000, segmentBreakBefore: true },
+        { lng: 2.175, lat: 41.381, recordedAt: 121000, segmentBreakBefore: true, resumedAfterPause: true },
         { lng: 2.176, lat: 41.381, recordedAt: 181000 },
       ],
     };
@@ -54,17 +54,17 @@ describe("journey pause boundaries", () => {
   it("does not infer pauses from long GPS gaps or separate journeys", () => {
     expect(journeyPauseBoundaries([
       { lng: 2.17, lat: 41.38, recordedAt: 1000, walkId: "first" },
-      { lng: 2.18, lat: 41.38, recordedAt: 10000000, walkId: "first" },
-      { lng: 2.19, lat: 41.38, recordedAt: 10001000, walkId: "second", segmentBreakBefore: true },
+      { lng: 2.18, lat: 41.38, recordedAt: 10000000, walkId: "first", segmentBreakBefore: true },
+      { lng: 2.19, lat: 41.38, recordedAt: 10001000, walkId: "second", segmentBreakBefore: true, resumedAfterPause: true },
     ])).toEqual([]);
   });
 
   it("keeps every pause even when recording resumes in the same place", () => {
     const points = [
       { lng: 2.17, lat: 41.38, recordedAt: 1000, walkId: "walk" },
-      { lng: 2.17, lat: 41.38, recordedAt: 61000, walkId: "walk", segmentBreakBefore: true },
+      { lng: 2.17, lat: 41.38, recordedAt: 61000, walkId: "walk", segmentBreakBefore: true, resumedAfterPause: true },
       { lng: 2.18, lat: 41.38, recordedAt: 121000, walkId: "walk" },
-      { lng: 2.18, lat: 41.38, recordedAt: 181000, walkId: "walk", segmentBreakBefore: true },
+      { lng: 2.18, lat: 41.38, recordedAt: 181000, walkId: "walk", segmentBreakBefore: true, resumedAfterPause: true },
     ];
     expect(journeyPauseBoundaries(points)).toEqual([
       { pausedAt: points[0], resumedAt: points[1] },

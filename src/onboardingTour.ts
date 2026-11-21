@@ -1,5 +1,6 @@
 import { resetContextualGuides } from "./contextualGuides";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { persistentStorage } from "./persistentStorage";
 
 export const TOUR_STEPS = ["start", "stats", "navigation", "save", "city", "profile", "done"] as const;
 export type TourStep = typeof TOUR_STEPS[number] | "finished";
@@ -20,23 +21,49 @@ export function nextTourStep(current: TourStep, completed: TourStep): TourStep {
   return TOUR_STEPS[TOUR_STEPS.indexOf(current) + 1];
 }
 
-export function resetOnboardingTour(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export async function resetOnboardingTour(): Promise<void> {
+  await persistentStorage.setItem(STORAGE_KEY, "start");
   resetContextualGuides();
 }
 
-export function useOnboardingTour(): {
-  step: TourStep;
+export function useOnboardingTour(reportError: (message: string) => void): {
+  step: TourStep | null;
   advance: (completed: TourStep) => void;
   dismiss: () => void;
   restart: () => void;
 } {
-  const [step, setStep] = useState<TourStep>(() => parseTourStep(localStorage.getItem(STORAGE_KEY)));
+  const [step, setStep] = useState<TourStep | null>(null);
+  const saving = useRef(false);
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, step);
-  }, [step]);
-  const advance = useCallback((completed: TourStep): void => {
-    setStep(current => nextTourStep(current, completed));
-  }, []);
-  return { step, advance, dismiss: () => setStep("done"), restart: () => { resetOnboardingTour(); setStep("start"); } };
+    let active = true;
+    void persistentStorage.getItem(STORAGE_KEY).then(value => {
+      if (active) setStep(parseTourStep(value));
+    }).catch((error: Error) => {
+      if (active) reportError(`Could not load walkthrough progress. Reopen Hecate to retry. ${error.message}`);
+    });
+    return () => { active = false; };
+  }, [reportError]);
+
+  async function save(next: TourStep): Promise<void> {
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      await persistentStorage.setItem(STORAGE_KEY, next);
+      setStep(next);
+    } catch (error) {
+      reportError(`Could not save walkthrough progress. Check device storage and try again. ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      saving.current = false;
+    }
+  }
+
+  return {
+    step,
+    advance: completed => { if (step !== null && step === completed) void save(nextTourStep(step, completed)); },
+    dismiss: () => { void save("done"); },
+    restart: () => {
+      resetContextualGuides();
+      void save("start");
+    },
+  };
 }

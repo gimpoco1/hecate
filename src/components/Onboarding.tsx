@@ -14,15 +14,16 @@ import { acquireForegroundLocation, requestForegroundLocationPermission, request
 import { canRequestOnboardingNotifications, requestOnboardingNotifications, readOnboardingNotificationPermission } from "../onboardingPermissions";
 import { errorDiagnostic } from "../diagnostics";
 import { JourneyMotionMonitor, ONBOARDING_JOURNEY_MODE_KEY, type JourneyStartMode } from "../journeyAutomation";
+import { persistentStorage } from "../persistentStorage";
 import "./Onboarding.css";
 
 const COMPLETION_KEY = "hecate.onboarding.v1";
 const RESTART_EVENT = "hecate:restart-onboarding";
 
-export function restartOnboarding(): void {
-  resetOnboardingTour();
+export async function restartOnboarding(): Promise<void> {
+  await resetOnboardingTour();
   resetGuideMotion();
-  localStorage.removeItem(COMPLETION_KEY);
+  await persistentStorage.removeItem(COMPLETION_KEY);
   window.dispatchEvent(new Event(RESTART_EVENT));
 }
 const introPages = [
@@ -39,7 +40,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
   const motionControls = useGuideMotion();
   const nativeApp = Capacitor.isNativePlatform();
 
-  const [complete, setComplete] = useState(() => localStorage.getItem(COMPLETION_KEY) === "complete");
+  const [complete, setComplete] = useState<boolean | null>(null);
   const [step, setStep] = useState(0);
   const [requesting, setRequesting] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(false);
@@ -54,6 +55,15 @@ export function Onboarding({ children }: { children: ReactNode }) {
   const automaticReady = nativeApp && journeyMode === "automatic" && locationResult === true && motionResult === true && backgroundAllowed === true && motionAvailable;
   const pages = introPages.filter(page => page.kind !== "motion" || (nativeApp && journeyMode !== "automatic"));
   const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    let active = true;
+    void persistentStorage.getItem(COMPLETION_KEY).then(value => {
+      if (active) setComplete(value === "complete");
+    }).catch((error: Error) => {
+      if (active) setPermissionError(`Could not load onboarding progress. Reopen Hecate to retry. ${error.message}`);
+    });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     const restart = (): void => {
       setStep(0);
@@ -73,15 +83,22 @@ export function Onboarding({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(RESTART_EVENT, restart);
   }, []);
   useEffect(() => {
-    if (!complete) heading.current?.focus();
+    if (complete === false) heading.current?.focus();
   }, [step, complete]);
 
-  function finish(): void {
-    if (step >= pages.findIndex(page => page.kind === "location")) {
-      localStorage.setItem(ONBOARDING_JOURNEY_MODE_KEY, automaticReady ? "automatic" : "manual");
+  async function finish(): Promise<void> {
+    setRequesting(true);
+    try {
+      if (step >= pages.findIndex(page => page.kind === "location")) {
+        localStorage.setItem(ONBOARDING_JOURNEY_MODE_KEY, automaticReady ? "automatic" : "manual");
+      }
+      await persistentStorage.setItem(COMPLETION_KEY, "complete");
+      setComplete(true);
+    } catch (error) {
+      setPermissionError(`Could not save onboarding progress. Check device storage and try again. ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRequesting(false);
     }
-    localStorage.setItem(COMPLETION_KEY, "complete");
-    setComplete(true);
   }
 
   async function enableLocation(): Promise<void> {
@@ -130,7 +147,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (complete || requesting) return;
+    if (complete !== false || requesting) return;
     const kind = pages[step].kind;
     if (kind !== "notifications" && kind !== "motion" && kind !== "location") return;
     let active = true;
@@ -187,7 +204,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
 
   function advancePage(): void {
     setPermissionError("");
-    if (step === pages.length - 1) finish();
+    if (step === pages.length - 1) void finish();
     else setStep(step + 1);
   }
 
@@ -207,6 +224,7 @@ export function Onboarding({ children }: { children: ReactNode }) {
     } finally { setRequesting(false); }
   }
 
+  if (complete === null) return <main className="account-loading-screen">{permissionError && <p role="alert">{permissionError}</p>}</main>;
   if (complete) return <OnboardingLocationContext.Provider value={initialLocation}>{children}</OnboardingLocationContext.Provider>;
   const page = pages[step];
   const configuringAutomatic = page.kind === "location" && journeyMode === "automatic";

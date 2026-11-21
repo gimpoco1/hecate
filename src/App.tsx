@@ -913,7 +913,7 @@ export default function App() {
     return () => window.removeEventListener("hecate:auth-error", onAuthError);
   }, []);
 
-  const tour = useOnboardingTour();
+  const tour = useOnboardingTour(setJourneyStopMessage);
   const [tracking, setTracking] = useState<TrackingState>("idle");
   useEffect(() => { setMockJourneyPlayback(null); setMockJourneyPoints([]); }, [accountUserId, tracking]);
   useEffect(() => {
@@ -2933,8 +2933,12 @@ export default function App() {
           ? (await JourneyActivity.getStopRequest({ ownerId: accountUserId, walkId: journal.active.id })).request
           : null;
         if (!active || accountUserIdRef.current !== accountUserId) return;
-        const pending = request
-          ? await recoverWalkJournal(accountUserId, journal, request.finishedAt)
+        if (nativeApp && journal.active) {
+          await JourneyActivity.reconcile({ ownerId: accountUserId, walkId: null });
+          if (!active || accountUserIdRef.current !== accountUserId) return;
+        }
+        const pending = nativeApp
+          ? await recoverWalkJournal(accountUserId, journal, request?.finishedAt ?? null)
           : journal.pending;
         if (request) {
           enqueueJourneyActivity(() => JourneyActivity.acknowledgeStop({
@@ -2944,7 +2948,7 @@ export default function App() {
         }
         if (!active || accountUserIdRef.current !== accountUserId) return;
         pendingWalksRef.current = pending;
-        const activeWalk = request ? null : journal.active;
+        const activeWalk = nativeApp ? null : journal.active;
         if (activeWalk) {
           activeWalkRef.current = {
             id: activeWalk.id,
@@ -3823,7 +3827,7 @@ export default function App() {
     const recordedPoint = {
       ...point,
       walkId: activeWalkRef.current?.id,
-      ...(nextRecordedPointStartsNewSegmentRef.current ? { segmentBreakBefore: true } : {}),
+      ...(nextRecordedPointStartsNewSegmentRef.current ? { segmentBreakBefore: true, resumedAfterPause: true } : {}),
     };
     nextRecordedPointStartsNewSegmentRef.current = false;
     const previousRecordedPoint = lastPointRef.current ?? null;
@@ -5146,10 +5150,10 @@ export default function App() {
 
   const journeyVisibleHeight = (card: HTMLElement) => {
     const { collapsed, expanded } = journeyBounds(card);
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const drawerBottom = card.parentElement!.getBoundingClientRect().bottom;
     return Math.max(
       collapsed,
-      Math.min(expanded, viewportHeight - card.getBoundingClientRect().top),
+      Math.min(expanded, drawerBottom - card.getBoundingClientRect().top),
     );
   };
 
@@ -5229,6 +5233,8 @@ export default function App() {
         animation.oncancel = () => {
           if (journeyAnimationRef.current === animation) {
             journeyAnimationRef.current = null;
+            card.style.removeProperty("transform");
+            setCitiesExpanded(expanded);
           }
         };
       });
@@ -5912,7 +5918,7 @@ export default function App() {
     ? mapOrientation === "north-up" ? t("Switch to heading-up") : t("Switch to north-up")
     : (simulationPoint || locationIsCurrent) ? t("Center on my location") : t("Find my location");
 
-  const tourVisible = tour.step !== "done" && authReady && !accountDataLoading &&
+  const tourVisible = tour.step !== null && tour.step !== "done" && authReady && !accountDataLoading &&
     !syncOpen && !routePlannerOpen && !simulationRoute && !favoriteDraft &&
     !explorationSummary && !activeAchievementCelebration && !coverageInfoOpen &&
     !journeyHistoryOpen && !globalMilestonesOpen && !savedPlacesOpen &&
@@ -5961,7 +5967,7 @@ export default function App() {
                         "Tap the profile button to find saved places, journeys, achievements, and settings. You can restart this tour there anytime."}
           onNext={tourNeedsAccount ? null : () => {
             if (tour.step === "stats" && citiesExpanded) settleJourneySheet(false);
-            tour.advance(tour.step);
+            if (tour.step !== null) tour.advance(tour.step);
           }}
           onDismiss={tour.dismiss}
         />}
@@ -6152,7 +6158,7 @@ export default function App() {
             disabled={tracking === "tracking" || tracking === "requesting" || walkFinalizing || Boolean(journeySaveError)}
             onClick={() => {
               setDevToolsOpen(false);
-              restartOnboarding();
+              void restartOnboarding().catch((error: Error) => setJourneyStopMessage(error.message));
             }}
           >Replay onboarding</button>
           <button
@@ -6557,6 +6563,7 @@ export default function App() {
           ref={journeyCardRef}
           className={`journey-card${activeNavigationRoute ? " journey-card--navigating" : ""}`}
           data-testid="journey-drawer"
+          data-expanded={citiesExpanded}
           onPointerDown={beginJourneyDrag}
           onPointerMove={moveJourneyDrag}
           onPointerUp={endJourneyDrag}

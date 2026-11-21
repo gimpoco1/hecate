@@ -25,9 +25,10 @@ describe("stored discovery validation", () => {
     const start = Date.parse(walk.started_at);
     const restored = parseStoredWalk({ ...walk, finished_at: new Date(start + 720000).toISOString(),
       coordinates: [[2, 41], [2.001, 41], [2.01, 41], [2.011, 41]],
-      point_metadata: [[start, false], [start + 60000, false], [start + 600000, true], [start + 660000, false]],
+      point_metadata: [[start, false], [start + 60000, false], [start + 600000, true, true], [start + 660000, false]],
     }).points;
     expect(splitRoute(restored)).toHaveLength(2);
+    expect(restored[2].resumedAfterPause).toBe(true);
     expect(discoveryJourneyMetrics(restored)[0].finishedAt).toBe(start + 720000);
     expect(restored.map(point => point.recordedAt)).toEqual([start, start + 60000, start + 600000, start + 660000]);
     expect(routeDistanceKm(restored)).toBeCloseTo(routeDistanceKm(restored.slice(0, 2)) + routeDistanceKm(restored.slice(2)));
@@ -36,7 +37,8 @@ describe("stored discovery validation", () => {
   it("rejects incomplete, out-of-order and malformed pause metadata", () => {
     const start = Date.parse(walk.started_at);
     for (const metadata of [[], [null, null], [[start, false]], [[start, false], [start - 1, true]],
-      [[start, false], [start + 61000, true]], [[start, false], [start + 60000, "true"]]]) {
+      [[start, false], [start + 61000, true]], [[start, false], [start + 60000, "true"]],
+      [[start, false], [start + 60000, false, true]]]) {
       expect(() => parseStoredWalk({ ...walk, point_metadata: metadata })).toThrow(TypeError);
     }
   });

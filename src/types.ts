@@ -9,6 +9,7 @@ export type Coordinate = {
   walkStartedAt?: number
   walkFinishedAt?: number
   segmentBreakBefore?: boolean
+  resumedAfterPause?: boolean
   achievementEligible?: boolean
 };
 

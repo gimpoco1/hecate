@@ -67,14 +67,16 @@ export function parseStoredWalk(value: unknown): { points: Coordinate[]; cursor:
   const points = value.coordinates.map((point: unknown, index: number): Coordinate => {
     const [lng, lat] = position(point);
     const sample = Array.isArray(metadata) ? metadata[index] : null;
-    if (Array.isArray(metadata) && (!Array.isArray(sample) || sample.length !== 2 || typeof sample[0] !== "number" ||
+    if (Array.isArray(metadata) && (!Array.isArray(sample) || (sample.length !== 2 &&
+          !(sample.length === 3 && sample[1] === true && sample[2] === true)) || typeof sample[0] !== "number" ||
         !Number.isFinite(sample[0]) || sample[0] < previousTime || sample[0] > finishedAt || typeof sample[1] !== "boolean")) {
       throw new TypeError(t("Discovery history contains an invalid walk."));
     }
     const recordedAt: number = sample === null ? startedAt + (finishedAt - startedAt) * index / (count - 1) : sample[0];
     previousTime = recordedAt;
     return { lng, lat, recordedAt, walkId, achievementEligible: eligible, walkStartedAt: startedAt, walkFinishedAt: finishedAt,
-      ...(sample !== null && sample[1] ? { segmentBreakBefore: true } : {}) };
+      ...(sample !== null && sample[1] ? { segmentBreakBefore: true } : {}),
+      ...(sample !== null && sample[2] === true ? { resumedAfterPause: true } : {}) };
   });
   return { points, cursor: { startedAt: value.started_at as string, id: walkId } };
 }
@@ -113,7 +115,7 @@ export async function loadStoredWalkPoints(client: SupabaseClient, signal: Abort
   const points: Coordinate[] = [];
   let cursor: WalkCursor | null = null;
   for (;;) {
-    const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_walk_routes_page", {
+    const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_walk_routes_page_with_pauses", {
       p_after_started_at: cursor?.startedAt ?? null, p_after_id: cursor?.id ?? null, p_limit: 20,
     }).abortSignal(pageSignal));
     if (error) throw error;

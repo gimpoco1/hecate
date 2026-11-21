@@ -368,26 +368,26 @@ export function useJourneyAutomation(options: Options) {
       if (walkId && session.current.id === walkId && finishedWalkId !== walkId && latest.current.ready) {
         if (isJourneyMovement(next)) {
           if (session.current.pauseMode === "manual") return;
-          const pausedAt = session.current.pausedAt ?? (preferencesRef.current.autoPause
+          const { pausedAt } = session.current;
+          const stopTimingStart = pausedAt ?? (preferencesRef.current.autoPause
             ? inactivityDeadlineBeforeMovement(session.current.idleSince, next, preferencesRef.current.pauseMinutes) : null);
-          const wasPaused = pausedAt !== null;
-          if (wasPaused) {
-            const timing = session.current.automaticPause ?? pauseTiming(pausedAt);
+          if (stopTimingStart !== null) {
+            const timing = session.current.automaticPause ?? pauseTiming(stopTimingStart);
             if (automaticPauseOutcome(timing, Date.now(), next.since) === "end") {
-              if (!session.current.automaticPause) markAutomaticPause(pausedAt, timing);
-              await finishAutomaticJourney(walkId, pausedAt);
+              if (!session.current.automaticPause) markAutomaticPause(stopTimingStart, timing);
+              await finishAutomaticJourney(walkId, stopTimingStart);
               return;
             }
           }
           session.current = { ...session.current, idleSince: null, pausedAt: null,
             pausedMs: session.current.pausedMs + (pausedAt === null ? 0 : Math.max(0, next.since - pausedAt)),
-            pauseMode: null, automaticPause: null, resumedAt: wasPaused ? next.since : session.current.resumedAt };
+            pauseMode: null, automaticPause: null, resumedAt: pausedAt === null ? session.current.resumedAt : next.since };
           persist();
           setPaused(false);
           pausedRecorderId.current = null;
           setPausedMs(session.current.pausedMs);
           setPausedAt(null);
-          if (wasPaused) latest.current.onResume();
+          if (pausedAt !== null) latest.current.onResume();
         } else if (session.current.pauseMode !== "manual" && next.activity !== "unknown" && session.current.idleSince === null) {
           const startedAt = latest.current.startedAt;
           if (startedAt === null) throw new Error("An active journey is missing its start time.");

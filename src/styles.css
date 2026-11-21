@@ -587,7 +587,7 @@ button {
   box-shadow: 0 -10px 42px rgba(28, 54, 45, 0.13);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  transform: translate3d(0, calc(var(--journey-height) - var(--journey-collapsed-height)), 0);
+  transform: translate3d(0, calc(100% - var(--journey-collapsed-height)), 0);
   will-change: transform;
   backface-visibility: hidden;
   contain: layout paint style;
