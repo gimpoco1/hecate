@@ -45,7 +45,7 @@ export function JourneyHistory({ backLabel, journeys, loading, filters, onFilter
   const weekJourneys = journeys.filter(journey => journey.finishedAt >= weekStart && journey.finishedAt < weekEnd);
   const visibleJourneys = weekJourneys.filter(journey => selectedDay === null || (journey.finishedAt >= selectedDay && journey.finishedAt < shiftJourneyDay(selectedDay, 1)))
     .sort((first, second) => second.startedAt - first.startedAt);
-  return <div className="sheet-backdrop" onClick={onClose}>
+  return <div className="sheet-backdrop" onClick={onBack}>
     <section className="sheet profile-collection-sheet journey-history-sheet" role="dialog" aria-modal="true" aria-labelledby="journey-history-title" onClick={event => event.stopPropagation()}>
       <button type="button" data-swipe-back className="icon-button walking-stats-back" aria-label={backLabel} onClick={onBack}><ArrowLeftIcon /></button>
       <button type="button" className="icon-button sheet__close" aria-label={t("Close")} onClick={onClose}><XIcon /></button>

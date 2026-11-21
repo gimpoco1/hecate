@@ -70,7 +70,7 @@ export function CitiesSheet({
   );
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop" onClick={onBack}>
       <section
         className="sheet profile-collection-sheet cities-sheet"
         onClick={(event) => event.stopPropagation()}
@@ -207,7 +207,7 @@ export function AchievementsSheet({
   ).length;
 
   return (
-    <div className="sheet-backdrop achievements-backdrop" data-testid="achievements-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop achievements-backdrop" data-testid="achievements-backdrop" onClick={onBack}>
       <section
         ref={sheetRef}
         className="sheet profile-collection-sheet"

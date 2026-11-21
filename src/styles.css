@@ -3014,10 +3014,11 @@ button {
   z-index: 11;
 }
 .sheet {
+  --sheet-full-height: calc(100dvh - env(safe-area-inset-top) - 12px);
   position: relative;
   width: min(520px, 100%);
   min-height: 60dvh;
-  max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+  max-height: var(--sheet-full-height);
   overflow-y: auto;
   border-radius: 28px 28px 0 0;
   padding: 34px 26px calc(26px + env(safe-area-inset-bottom));
@@ -3025,11 +3026,15 @@ button {
   box-shadow: 0 -16px 60px rgba(11, 32, 24, 0.2);
   animation: sheet-up 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.sheet.gpx-import-sheet {
-  min-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+.sheet.profile-sheet {
+  min-height: var(--sheet-full-height);
 }
-.sheet.notification-settings-sheet {
-  min-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+.sheet.profile-collection-sheet,
+.sheet.saved-places-sheet,
+.sheet.global-milestones-sheet {
+  --profile-subview-height: calc(var(--sheet-full-height) - 100px);
+  min-height: var(--profile-subview-height);
+  max-height: var(--profile-subview-height);
 }
 .account-toast {
   position: fixed;

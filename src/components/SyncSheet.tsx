@@ -667,7 +667,7 @@ export function SyncSheet({
         </div>
       )}
       <section
-        className="sheet"
+        className={user ? "sheet profile-sheet" : "sheet"}
         onClick={(event) => event.stopPropagation()}
         aria-modal="true"
         role="dialog"
