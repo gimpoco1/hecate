@@ -24,7 +24,7 @@ vi.mock("@capacitor/core", () => ({
   }),
 }));
 
-import { acquireForegroundLocation, createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode, requestForegroundLocationPermission } from "./location";
+import { acquireForegroundLocation, createCandidateLocationTracker, createForegroundLocationTracker, createLocationTracker, createReminderLocationTracker, newestCoordinate, openLocationSettings, passiveLocationMode, requestForegroundLocationPermission } from "./location";
 import { hasForegroundLocationPermission, hasBackgroundLocationPermission, readForegroundLocationPermission, readReminderMotionAuthorization, requestReminderMotionPermission, readLocationAuthorization } from "./location";
 
 describe("iOS location authorization", () => {
@@ -138,6 +138,19 @@ describe("native location lifecycle", () => {
     expect(onPoint).toHaveBeenCalledWith(expect.objectContaining({ lng: 2.17, lat: 41.38, heading: 135 }));
     await tracker.stop();
     expect(native.removeWatcher).toHaveBeenCalledWith({ id: "foreground-watcher" });
+  });
+
+  it("collects unfiltered precise candidate fixes without assigning them to a recorded journey", async () => {
+    native.addWatcher.mockResolvedValue("candidate-watcher");
+    native.removeWatcher.mockResolvedValue(undefined);
+    const tracker = createCandidateLocationTracker();
+    await tracker.start(() => undefined, () => undefined);
+    expect(native.addWatcher).toHaveBeenCalledWith(expect.objectContaining({
+      journeyCandidate: true, journeyId: null, motionGated: false, stale: false,
+      distanceFilter: 0, backgroundMessage: expect.any(String),
+    }), expect.any(Function));
+    await tracker.stop();
+    expect(native.removeWatcher).toHaveBeenCalledWith({ id: "candidate-watcher" });
   });
 
   it("retries native watcher removal so a failed teardown cannot leave iOS tracking active", async () => {

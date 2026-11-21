@@ -1,10 +1,14 @@
+import { Capacitor } from "@capacitor/core";
 import { t } from "./i18n";
 import { errorDiagnostic } from "./diagnostics";
-import type { LocalNotifications } from "@capacitor/local-notifications";
+import type { LocalNotifications, LocalNotificationSchema } from "@capacitor/local-notifications";
 import type { AppLauncher } from "@capacitor/app-launcher";
 import { JOURNEY_SPEED_STOP_ACTION_TYPE_ID, registerNotificationActions } from "./notificationActions";
 
 export const JOURNEY_SPEED_STOP_NOTIFICATION_ID = 1046;
+export const JOURNEY_AUTO_START_NOTIFICATION_ID = 1047;
+export const JOURNEY_AUTO_PAUSE_NOTIFICATION_ID = 1048;
+export const JOURNEY_AUTO_END_NOTIFICATION_ID = 1049;
 export const JOURNEY_SPEED_STOP_MESSAGE =
   "Your journey was stopped because your speed was too high for walking. Your progress up to that point has been saved.";
 
@@ -13,10 +17,83 @@ type JourneyNotificationClient = Pick<
   "checkPermissions" | "schedule" | "registerActionTypes"
 >;
 
+type JourneyEventNotificationClient = Pick<JourneyNotificationClient, "checkPermissions" | "schedule">;
+
+/** Recheck session ownership after each native call, without prompting in the background. */
+async function deliverJourneyNotification(
+  client: JourneyEventNotificationClient,
+  notification: LocalNotificationSchema,
+  isCurrent: () => boolean,
+): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    if (!isCurrent()) return;
+    try {
+      const permission = await client.checkPermissions();
+      if (permission.display !== "granted" || !isCurrent()) return;
+      await client.schedule({ notifications: [notification] });
+      return;
+    } catch (error) {
+      if (attempt === 3) throw error;
+      console.warn("Could not deliver journey notification; retrying", { notificationId: notification.id, attempt, error: errorDiagnostic(error) });
+    }
+  }
+}
+
 export type JourneySpeedStopReport = {
   userId: string;
   walkId: string;
 };
+
+/** Confirm a qualified automatic journey without prompting for notification access. */
+export async function sendJourneyAutoStartNotification(
+  client: JourneyEventNotificationClient,
+  userId: string,
+  walkId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  await deliverJourneyNotification(client, {
+    id: JOURNEY_AUTO_START_NOTIFICATION_ID,
+    title: t("Your journey started automatically"),
+    body: Capacitor.getPlatform() === "ios"
+      ? t("Walking detected. Your route includes the beginning of your walk. Open Hecate to show your journey on the Lock Screen.")
+      : t("Walking detected. Your route includes the beginning of your walk."),
+    extra: { kind: "automatic-journey", userId, walkId },
+    sound: "default",
+    threadIdentifier: "hecate-journeys",
+  }, isCurrent);
+}
+
+export async function sendJourneyAutoPauseNotification(
+  client: JourneyEventNotificationClient,
+  userId: string,
+  walkId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  await deliverJourneyNotification(client, {
+    id: JOURNEY_AUTO_PAUSE_NOTIFICATION_ID,
+    title: t("Your journey paused automatically"),
+    body: t("No movement detected. Recording will resume when you move again."),
+    sound: "default",
+    threadIdentifier: "hecate-journeys",
+    extra: { kind: "automatic-journey-pause", userId, walkId },
+  }, isCurrent);
+}
+
+export async function sendJourneyAutoEndNotification(
+  client: JourneyEventNotificationClient,
+  userId: string,
+  walkId: string,
+  isCurrent: () => boolean,
+): Promise<void> {
+  await deliverJourneyNotification(client, {
+    id: JOURNEY_AUTO_END_NOTIFICATION_ID,
+    title: t("Your journey ended automatically"),
+    body: t("Your journey ended after a period of inactivity. Your progress has been saved."),
+    sound: "default",
+    threadIdentifier: "hecate-journeys",
+    extra: { kind: "automatic-journey-end", userId, walkId },
+  }, isCurrent);
+}
 
 /** Open a support draft for the user to review and send, without route coordinates. */
 export async function openJourneySpeedStopReport(

@@ -1,4 +1,4 @@
 {
-  "imports": { "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0" },
+  "imports": { "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0", "../../../src/i18n": "../_shared/i18n.ts" },
   "compilerOptions": { "types": ["npm:@types/geojson@7946.0.16"] }
 }

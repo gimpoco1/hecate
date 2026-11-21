@@ -282,3 +282,33 @@ if (oldMotionStart !== -1) {
   service = service.slice(0, oldMotionStart) + service.slice(end);
   writeFileSync(servicePath, service);
 }
+
+// Pausing keeps the journey watcher and foreground controls while stopping GPS.
+service = readFileSync(servicePath, "utf8");
+if (!service.includes("public synchronized Task<Void> pauseJourney")) {
+  service = replaceRequired(service, "        public String journeyId;", "        public String journeyId;\n        public boolean journeyPaused;");
+  service = replaceRequired(service, "    private Task<Void> startWatcherLocation(Watcher watcher) {", `    private Task<Void> startWatcherLocation(Watcher watcher) {
+        if (watcher.journeyPaused) return Tasks.forResult(null);`);
+  service = replaceRequired(service, "        public synchronized void stopJourney(String journeyId) {", `        public synchronized Task<Void> pauseJourney(String journeyId) {
+            java.util.List<Task<Void>> operations = new java.util.ArrayList<>();
+            for (Watcher watcher : watchers) if (journeyId.equals(watcher.journeyId)) {
+                watcher.journeyPaused = true;
+                operations.add(stopWatcherLocation(watcher));
+            }
+            if (operations.isEmpty()) return Tasks.forException(new IllegalStateException("No GPS watcher exists for journey " + journeyId));
+            return Tasks.whenAll(operations);
+        }
+
+        public synchronized Task<Void> resumeJourney(String journeyId) {
+            java.util.List<Task<Void>> operations = new java.util.ArrayList<>();
+            for (Watcher watcher : watchers) if (journeyId.equals(watcher.journeyId)) {
+                watcher.journeyPaused = false;
+                operations.add(startWatcherLocation(watcher));
+            }
+            if (operations.isEmpty()) return Tasks.forException(new IllegalStateException("No GPS watcher exists for journey " + journeyId));
+            return Tasks.whenAll(operations);
+        }
+
+        public synchronized void stopJourney(String journeyId) {`);
+  writeFileSync(servicePath, service);
+}

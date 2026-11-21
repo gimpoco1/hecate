@@ -33,14 +33,23 @@ struct JourneyWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
                         JourneyIslandMark()
-                        Text(context.state.finishedAt == nil ? (context.isStale ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language) : JourneyLocalization.text("Exploring", language: context.state.language)) : JourneyLocalization.text("Journey complete", language: context.state.language))
+                        Text(context.state.finishedAt == nil
+                             ? (context.state.paused
+                                ? JourneyLocalization.text("Paused", language: context.state.language)
+                                : (context.isStale
+                                   ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language)
+                                   : JourneyLocalization.text("Exploring", language: context.state.language)))
+                             : JourneyLocalization.text("Journey complete", language: context.state.language))
                     }
                         .font(.caption.bold())
                         .foregroundStyle(JourneyPalette.lime)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if context.state.finishedAt == nil {
-                        StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
+                        HStack(spacing: 8) {
+                            StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
+                            PauseJourneyButton(walkId: context.attributes.walkId, paused: context.state.paused, language: context.state.language)
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -208,34 +217,44 @@ private struct JourneyPanel: View {
     private var scheme: ColorScheme { journeyColorScheme(context.state.appearance, theme: context.state.colorTheme, system: systemColorScheme) }
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 6) {
-                    HecateJourneyMark().frame(width: 28, height: 28)
-                        .background(JourneyPalette.paper, in: Circle())
-                    Text(context.state.finishedAt == nil ? (context.isStale ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language).uppercased() : JourneyLocalization.text("Exploring…", language: context.state.language).uppercased()) : JourneyLocalization.text("Journey complete", language: context.state.language).uppercased())
-                        .font(.caption.bold())
-                        .foregroundStyle(JourneyPalette.foreground(scheme))
-                }
-                if activeNavigation(context) != nil || activeNavigationRemaining(context) != nil {
-                    JourneyNavigationStatus(
-                        turn: activeNavigation(context),
-                        remaining: activeNavigationRemaining(context),
-                        updatedAt: context.state.updatedAt,
-                        language: context.state.language
-                    )
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                HecateJourneyMark().frame(width: 28, height: 28)
+                    .background(JourneyPalette.paper, in: Circle())
+                Text(context.state.finishedAt == nil
+                     ? (context.state.paused
+                        ? JourneyLocalization.text("Paused", language: context.state.language).uppercased()
+                        : (context.isStale
+                           ? JourneyLocalization.text("Open Hecate to refresh", language: context.state.language).uppercased()
+                           : JourneyLocalization.text("Exploring…", language: context.state.language).uppercased()))
+                     : JourneyLocalization.text("Journey complete", language: context.state.language).uppercased())
+                    .font(.caption.bold())
                     .foregroundStyle(JourneyPalette.foreground(scheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
+                if context.state.finishedAt == nil {
+                    HStack(spacing: 10) {
+                        StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
+                        PauseJourneyButton(walkId: context.attributes.walkId, paused: context.state.paused, language: context.state.language)
+                    }
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(JourneyPalette.accent(scheme))
                 }
-                JourneyMetrics(context: context)
-                    .foregroundStyle(JourneyPalette.foreground(scheme))
             }
-            if context.state.finishedAt == nil {
-                StopJourneyButton(walkId: context.attributes.walkId, language: context.state.language)
-            } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(JourneyPalette.accent(scheme))
+            if activeNavigation(context) != nil || activeNavigationRemaining(context) != nil {
+                JourneyNavigationStatus(
+                    turn: activeNavigation(context),
+                    remaining: activeNavigationRemaining(context),
+                    updatedAt: context.state.updatedAt,
+                    language: context.state.language
+                )
+                .foregroundStyle(JourneyPalette.foreground(scheme))
             }
+            JourneyMetrics(context: context)
+                .foregroundStyle(JourneyPalette.foreground(scheme))
         }
         .padding(18)
         .background {
@@ -283,6 +302,7 @@ private struct JourneyIslandMark: View {
 }
 
 private struct StopJourneyButton: View {
+    @Environment(\.colorScheme) private var scheme
     let walkId: String
     let language: String?
 
@@ -298,11 +318,42 @@ private struct StopJourneyButton: View {
     }
 
     private var icon: some View {
-        Image(systemName: "stop.fill")
+        Text(JourneyLocalization.text("End", language: language))
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(JourneyPalette.foreground(scheme))
+            .padding(.horizontal, 12)
+            .frame(minWidth: 52, minHeight: 30)
+            .background(JourneyPalette.background(scheme), in: Capsule())
+            .overlay(Capsule().strokeBorder(JourneyPalette.foreground(scheme).opacity(0.24), lineWidth: 1))
+    }
+}
+
+private struct PauseJourneyButton: View {
+    @Environment(\.colorScheme) private var scheme
+    let walkId: String
+    let paused: Bool
+    let language: String?
+
+    var body: some View {
+        if #available(iOS 17.0, *) {
+            if paused {
+                Button(intent: ResumeJourneyIntent(walkId: walkId)) { icon }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(JourneyLocalization.text("Resume discovering", language: language))
+            } else {
+                Button(intent: PauseJourneyIntent(walkId: walkId)) { icon }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(JourneyLocalization.text("Pause discovering", language: language))
+            }
+        }
+    }
+
+    private var icon: some View {
+        Image(systemName: paused ? "play.fill" : "pause.fill")
             .font(.body.bold())
             .foregroundStyle(.white)
             .frame(width: 44, height: 44)
-            .background(JourneyPalette.stop, in: Circle())
+            .background(scheme == .dark ? Color(red: 128 / 255, green: 73 / 255, blue: 54 / 255) : JourneyPalette.stop, in: Circle())
     }
 }
 
@@ -317,16 +368,16 @@ private struct JourneyMetrics: View {
             Divider().frame(height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 if let finishedAt = context.state.finishedAt {
-                    Text(elapsedTimeLabel(finishedAt.timeIntervalSince(context.attributes.startedAt)))
+                    Text(elapsedTimeLabel(finishedAt.timeIntervalSince(context.state.activeStartedAt)))
                         .font(.headline).monospacedDigit()
-                } else if context.isStale {
-                    Text(elapsedTimeLabel(context.state.updatedAt.timeIntervalSince(context.attributes.startedAt)))
+                } else if context.state.paused || context.isStale {
+                    Text(elapsedTimeLabel(context.state.updatedAt.timeIntervalSince(context.state.activeStartedAt)))
                         .font(.headline).monospacedDigit()
                 } else {
-                    Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
+                    Text(timerInterval: context.state.activeStartedAt...Date.distantFuture, countsDown: false)
                         .font(.headline).monospacedDigit()
                 }
-                Text(JourneyLocalization.text("time", language: context.state.language)).font(.caption).opacity(0.65)
+                Text(JourneyLocalization.text("time", language: context.state.language)).font(.caption).opacity(0.65).lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -335,7 +386,7 @@ private struct JourneyMetrics: View {
     private func metric(_ value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value).font(.headline).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(.caption).opacity(0.65)
+            Text(label).font(.caption).opacity(0.65).lineLimit(1).minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

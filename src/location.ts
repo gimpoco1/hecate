@@ -203,7 +203,7 @@ class NativeLocationTracker implements LocationTracker {
   private registrationPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
 
-  constructor(private readonly mode: "walk" | "foreground" | "reminder", private readonly journeyId: string | null) {}
+  constructor(private readonly mode: "walk" | "foreground" | "reminder" | "candidate" | "automatic" | "automatic-monitor", private readonly journeyId: string | null) {}
 
   async start(
     onPoint: (point: Coordinate) => void,
@@ -230,30 +230,37 @@ class NativeLocationTracker implements LocationTracker {
       showsBackgroundLocationIndicator?: boolean;
       journeyId: string | null;
       motionGated: boolean;
+      journeyCandidate: boolean;
     } = {
-      showsBackgroundLocationIndicator: this.mode === "walk",
+      showsBackgroundLocationIndicator: this.mode === "walk" || this.mode === "automatic",
       journeyId: this.journeyId,
-      motionGated: this.mode === "reminder",
-      ...(this.mode === "walk"
+      journeyCandidate: this.mode === "candidate",
+      motionGated: this.mode === "reminder" || this.mode === "automatic-monitor",
+      ...(this.mode === "walk" || this.mode === "automatic"
         ? {
           backgroundTitle: t("Hecate is revealing your path"),
           backgroundMessage:
               t("Your discovery is continuing in the background."),
         }
-        : this.mode === "reminder"
+        : this.mode === "candidate" || this.mode === "automatic-monitor"
           ? {
-            backgroundTitle: t("Hecate is checking for walks"),
-            backgroundMessage:
-                t("Discovery reminders are on. No path is being recorded."),
+            backgroundTitle: t("Hecate is detecting a journey"),
+            backgroundMessage: t("Your route is buffered while walking is being detected."),
           }
-          : {}),
+          : this.mode === "reminder"
+            ? {
+              backgroundTitle: t("Hecate is checking for walks"),
+              backgroundMessage:
+                t("Discovery reminders are on. No path is being recorded."),
+            }
+            : {}),
       requestPermissions: true,
       // A recent cached fix makes the locate control useful immediately while
       // iOS obtains a fresh foreground position. Walks and reminders continue
       // to require fresh locations.
       stale: this.mode === "foreground",
       distanceFilter:
-        this.mode === "walk" ? 8 : this.mode === "reminder" ? 30 : 20,
+        this.mode === "automatic" || this.mode === "candidate" ? 0 : this.mode === "walk" ? 8 : this.mode === "reminder" ? 30 : 20,
     };
     const watcherId = await BackgroundGeolocation.addWatcher(
       options,
@@ -313,6 +320,24 @@ export function createLocationTracker(walkId: string): LocationTracker {
   return isNativeApp()
     ? new NativeLocationTracker("walk", walkId)
     : new WebLocationTracker(true);
+}
+
+/** Buffers precise fixes without assigning them to a saved journey. */
+export function createCandidateLocationTracker(): LocationTracker {
+  if (!isNativeApp()) throw new Error("Automatic journeys require the iOS or Android app.");
+  return new NativeLocationTracker("candidate", null);
+}
+
+/** Stationary fixes keep pause and end deadlines observable while the phone is locked. */
+export function createAutomaticJourneyTracker(walkId: string): LocationTracker {
+  if (!isNativeApp()) throw new Error("Automatic journeys require the iOS or Android app.");
+  return new NativeLocationTracker("automatic", walkId);
+}
+
+/** Keeps the native motion-gated wake service available between automatic journeys. */
+export function createAutomaticMonitoringTracker(): LocationTracker {
+  if (!isNativeApp()) throw new Error("Automatic journeys require the iOS or Android app.");
+  return new NativeLocationTracker("automatic-monitor", null);
 }
 
 export function createForegroundLocationTracker(): LocationTracker {

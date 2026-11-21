@@ -31,6 +31,7 @@ repositories {
 }
 
 dependencies {
+    implementation "com.google.android.gms:play-services-location:$playServicesLocationVersion"
     implementation "androidx.core:core:$androidxCoreVersion"
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
