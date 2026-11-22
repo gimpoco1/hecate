@@ -13,10 +13,12 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.UUID;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "JourneyActivity")
 public class JourneyActivityPlugin extends Plugin {
+    private static final String PROCESS_ID = UUID.randomUUID().toString();
     private JourneyNotifications notifications;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final BroadcastReceiver appearanceReceiver = new BroadcastReceiver() {
@@ -71,6 +73,12 @@ public class JourneyActivityPlugin extends Plugin {
 
     private static void reject(PluginCall call, RuntimeException error) {
         call.reject("Android journey action failed: " + error.getMessage(), error);
+    }
+
+    @PluginMethod public void getProcessId(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("id", PROCESS_ID);
+        call.resolve(result);
     }
 
     @PluginMethod public void pauseLocation(PluginCall call) {

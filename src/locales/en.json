@@ -1233,5 +1233,8 @@
   "Your journey ended automatically": "Your journey ended automatically",
   "Your journey ended after a period of inactivity. Your progress has been saved.": "Your journey ended after a period of inactivity. Your progress has been saved.",
   "Journey paused": "Journey paused",
-  "Journey resumed": "Journey resumed"
+  "Journey resumed": "Journey resumed",
+  "Could not load onboarding progress.": "Could not load onboarding progress.",
+  "Route break": "Route break",
+  "Could not end the journey automatically. Resume it or end it manually.": "Could not end the journey automatically. Resume it or end it manually."
 }

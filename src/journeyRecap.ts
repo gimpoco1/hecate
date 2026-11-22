@@ -8,15 +8,15 @@ export type JourneyRecapRoute = {
   bounds: { west: number; east: number; south: number; north: number };
 };
 
-/** Mark explicit recording pauses within one journey. */
-export function journeyPauseBoundaries(points: Coordinate[]): { pausedAt: Coordinate; resumedAt: Coordinate }[] {
+/** Older recordings only identify the segment break, so its cause is unspecified. */
+export function journeyBreakBoundaries(points: Coordinate[]): { before: Coordinate; after: Coordinate; pause: boolean }[] {
   const segments = splitRoute(points);
   return segments.slice(1).flatMap((segment, index) => {
     const previous = segments[index];
-    const pausedAt = previous[previous.length - 1];
-    const resumedAt = segment[0];
-    if (resumedAt.resumedAfterPause !== true || pausedAt.walkId !== resumedAt.walkId) return [];
-    return [{ pausedAt, resumedAt }];
+    const before = previous[previous.length - 1];
+    const after = segment[0];
+    if (after.segmentBreakBefore !== true || before.walkId !== after.walkId || after.achievementEligible === false) return [];
+    return [{ before, after, pause: after.resumedAfterPause === true }];
   });
 }
 

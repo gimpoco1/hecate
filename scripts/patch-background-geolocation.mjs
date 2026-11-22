@@ -516,6 +516,17 @@ if (!source.includes(discardPausedFix)) {
   source = source.replace(anchor, `                ${discardPausedFix}\n${anchor}`);
   writeFileSync(pluginPath, source);
 }
+// A replacement watcher starts paused after a WebView reload. Re-arm its low-power location session.
+const startTimedPause = 'if let journeyId, timedPauseAccuracy == nil, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }';
+if (!source.includes(startTimedPause)) {
+  const pausedStart = 'if let journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }';
+  const reducedAccuracy = "                    watcher.locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers";
+  if (!source.includes(pausedStart) || !source.includes(reducedAccuracy))
+    throw new Error("Background geolocation plugin changed; review timed pause restoration.");
+  source = source.replace(pausedStart, startTimedPause)
+    .replace(reducedAccuracy, `${reducedAccuracy}\n                    watcher.start()`);
+  writeFileSync(pluginPath, source);
+}
 
 // Use the instance authorization API supported by every deployment target in this app.
 source = readFileSync(pluginPath, "utf8");

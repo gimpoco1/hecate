@@ -7028,6 +7028,7 @@ button {
 .journey-endpoint--finish { border-radius: 4px; background: repeating-conic-gradient(#243e3a 0% 25%, #fff 0% 50%) 50% / 7px 7px; }
 .journey-endpoint--pause, .journey-endpoint--resume { display: grid; place-items: center; width: 22px; height: 22px; border-width: 2px; border-radius: 50%; background: #294a3e; color: #fff; }
 .journey-endpoint--pause svg, .journey-endpoint--resume svg { width: 14px; height: 14px; }
+.journey-endpoint--break { width: 14px; height: 14px; border: 2px dashed #294a3e; border-radius: 50%; background: #fff; }
 .app-shell:has(.location-status) .map-highlight-legend { top: max(116px, calc(env(safe-area-inset-top) + 104px)); }
 
 :root:not([data-theme="dark"]) .map-highlight-legend__new { box-shadow: 0 1px 3px rgba(52, 64, 42, .35); }
@@ -7315,6 +7316,7 @@ button {
 
 .map-stage--monochrome .journey-endpoint--start { background: #000; }
 .map-stage--monochrome .journey-endpoint--pause, .map-stage--monochrome .journey-endpoint--resume { background: #000; }
+.map-stage--monochrome .journey-endpoint--break { border-color: #000; }
 .map-stage--monochrome .journey-endpoint--finish { background: repeating-conic-gradient(#000 0% 25%, #fff 0% 50%) 50% / 7px 7px; }
 .map-stage--monochrome .map-highlight-legend__new { box-shadow: none; }
 .achievement-reward__zoom > svg { width: 15px; height: 15px; }

@@ -113,14 +113,9 @@ async function loadHistoryPage<T>(signal: AbortSignal, query: (pageSignal: Abort
 
 export async function loadVisibleDiscoveryArea(
   client: SupabaseClient,
-  center: Pick<Coordinate, "lng" | "lat"> | null,
   signal: AbortSignal,
 ): Promise<VisibleDiscoveryArea> {
-  const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_visible_discovery_area", {
-    // A coarse center is enough to select what the opening viewport will cover.
-    p_lng: center === null ? null : Math.round(center.lng * 100) / 100,
-    p_lat: center === null ? null : Math.round(center.lat * 100) / 100,
-  }).abortSignal(pageSignal));
+  const { data, error } = await loadHistoryPage(signal, pageSignal => client.rpc("get_discovery_opening_area").abortSignal(pageSignal));
   if (error) throw error;
   if (!object(data) || !Array.isArray(data.walks) || !Array.isArray(data.cells)) {
     throw new TypeError("The visible discovery area must contain walk and discovery-cell arrays.");

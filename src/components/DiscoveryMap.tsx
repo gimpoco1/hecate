@@ -2,7 +2,7 @@ import { mapRewardTheme, journeyHighlightColor, discoveryHighlightColor, navigat
 import type { MapReward } from "../goalRewards";
 import { t, useAppTranslation } from "../i18n";
 import { errorDiagnostic } from "../diagnostics";
-import { journeyPauseBoundaries } from "../journeyRecap";
+import { journeyBreakBoundaries } from "../journeyRecap";
 import { mdiPause, mdiPlay } from "@mdi/js";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
@@ -525,14 +525,18 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const finish = highlightedPoints.at(-1);
     if (!map || !start || !finish) return;
     const nearStart = distanceKm(start, finish) < 0.02;
-    const endpoints = [
+    type Endpoint = { point: Coordinate; label: string; className: string; offset: number; icon: string | null };
+    const endpoints: Endpoint[] = [
       { point: start, label: t("Journey start"), className: "journey-endpoint--start", offset: nearStart ? -15 : 0, icon: null },
       { point: finish, label: t("Journey finish"), className: "journey-endpoint--finish", offset: nearStart ? 15 : 0, icon: null },
-      ...journeyPauseBoundaries(highlightedPoints).flatMap(({ pausedAt, resumedAt }) => {
-        const nearby = distanceKm(pausedAt, resumedAt) < 0.02;
+      ...journeyBreakBoundaries(highlightedPoints).flatMap<Endpoint>(({ before, after, pause }) => {
+        const nearby = distanceKm(before, after) < 0.02;
+        if (!pause) return (nearby ? [after] : [before, after]).map(point => ({
+          point, label: t("Route break"), className: "journey-endpoint--break", offset: 0, icon: null,
+        }));
         return [
-          { point: pausedAt, label: t("Journey paused"), className: "journey-endpoint--pause", offset: nearby ? -15 : 0, icon: mdiPause },
-          { point: resumedAt, label: t("Journey resumed"), className: "journey-endpoint--resume", offset: nearby ? 15 : 0, icon: mdiPlay },
+          { point: before, label: t("Journey paused"), className: "journey-endpoint--pause", offset: nearby ? -15 : 0, icon: mdiPause },
+          { point: after, label: t("Journey resumed"), className: "journey-endpoint--resume", offset: nearby ? 15 : 0, icon: mdiPlay },
         ];
       }),
     ];

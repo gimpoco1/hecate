@@ -1248,5 +1248,8 @@
   "Your journey ended automatically": "Putovanje je automatski završeno",
   "Your journey ended after a period of inactivity. Your progress has been saved.": "Putovanje je završeno nakon razdoblja neaktivnosti. Tvoj je napredak spremljen.",
   "Journey paused": "Putovanje pauzirano",
-  "Journey resumed": "Putovanje nastavljeno"
+  "Journey resumed": "Putovanje nastavljeno",
+  "Could not load onboarding progress.": "Napredak uvoda nije se mogao učitati.",
+  "Route break": "Prekid rute",
+  "Could not end the journey automatically. Resume it or end it manually.": "Ruta se nije mogla automatski završiti. Nastavi je ili završi ručno."
 }

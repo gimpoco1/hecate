@@ -5,6 +5,7 @@ import { resetOnboardingTour } from "../onboardingTour";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useAppTranslation } from "../i18n";
 import { GuideMotionButton } from "./GuideMotionButton";
+import { AccountLoadingScreen } from "./AccountLoadingScreen";
 import { useGuideMotion } from "../guideMotion";
 import { HecateMark } from "./Icons";
 import { IntroArtwork, type IntroArtworkKind } from "./IntroArtwork";
@@ -41,6 +42,8 @@ export function Onboarding({ children }: { children: ReactNode }) {
   const nativeApp = Capacitor.isNativePlatform();
 
   const [complete, setComplete] = useState<boolean | null>(null);
+  const [progressLoadError, setProgressLoadError] = useState(false);
+  const [progressLoadAttempt, setProgressLoadAttempt] = useState(0);
   const [step, setStep] = useState(0);
   const [requesting, setRequesting] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(false);
@@ -60,10 +63,12 @@ export function Onboarding({ children }: { children: ReactNode }) {
     void persistentStorage.getItem(COMPLETION_KEY).then(value => {
       if (active) setComplete(value === "complete");
     }).catch((error: Error) => {
-      if (active) setPermissionError(`Could not load onboarding progress. Reopen Hecate to retry. ${error.message}`);
+      if (!active) return;
+      console.error("Could not load onboarding progress", { error: errorDiagnostic(error) });
+      setProgressLoadError(true);
     });
     return () => { active = false; };
-  }, []);
+  }, [progressLoadAttempt]);
   useEffect(() => {
     const restart = (): void => {
       setStep(0);
@@ -224,7 +229,16 @@ export function Onboarding({ children }: { children: ReactNode }) {
     } finally { setRequesting(false); }
   }
 
-  if (complete === null) return <main className="account-loading-screen">{permissionError && <p role="alert">{permissionError}</p>}</main>;
+  if (complete === null) {
+    if (!progressLoadError) return <AccountLoadingScreen visible />;
+    return <main className="account-loading-screen account-loading-screen--visible">
+      <strong role="alert" data-testid="onboarding-progress-error">{t("Could not load onboarding progress.")}</strong>
+      <button type="button" className="onboarding-next" data-testid="onboarding-progress-retry" onClick={() => {
+        setProgressLoadError(false);
+        setProgressLoadAttempt(value => value + 1);
+      }}>{t("Try again")}</button>
+    </main>;
+  }
   if (complete) return <OnboardingLocationContext.Provider value={initialLocation}>{children}</OnboardingLocationContext.Provider>;
   const page = pages[step];
   const configuringAutomatic = page.kind === "location" && journeyMode === "automatic";

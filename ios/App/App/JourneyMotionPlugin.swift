@@ -3,6 +3,10 @@ import CoreLocation
 import CoreMotion
 import Foundation
 
+enum JourneyDeadlineMotion {
+    case movement, noMovement, awaitingHistory
+}
+
 @objc(JourneyMotionPlugin)
 public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "JourneyMotionPlugin"
@@ -136,29 +140,40 @@ public class JourneyMotionPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @MainActor
-    func movementBeforeDeadline(from start: Date, until deadline: Date) async throws -> Bool {
+    func motionAtDeadline(from start: Date, until deadline: Date, through now: Date) async throws -> JourneyDeadlineMotion {
         let startMs = start.timeIntervalSince1970 * 1000
         let deadlineMs = deadline.timeIntervalSince1970 * 1000
-        if let latest, (latest.activity == "walking" || latest.activity == "cycling"),
-           latest.since > startMs && latest.since < deadlineMs {
+        func publishLiveMovement() -> Bool {
+            guard let latest, (latest.activity == "walking" || latest.activity == "cycling"),
+                  latest.since >= startMs && latest.since < deadlineMs else { return false }
             publishDeadlineMovement(activity: latest.activity, since: latest.since)
             return true
         }
+        try Task.checkCancellation()
+        if publishLiveMovement() { return .movement }
         let activities = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[CMMotionActivity], Error>) in
-            motionManager.queryActivityStarting(from: start, to: deadline, to: .main) { activities, error in
+            motionManager.queryActivityStarting(from: start, to: now, to: .main) { activities, error in
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume(returning: activities ?? []) }
             }
         }
-        guard !Task.isCancelled, let movement = activities.first(where: {
+        try Task.checkCancellation()
+        if publishLiveMovement() { return .movement }
+        if let movement = activities.first(where: {
             $0.confidence != .low && !$0.automotive && !$0.stationary &&
                 ($0.walking || $0.running || $0.cycling) &&
-                $0.startDate.timeIntervalSince1970 * 1000 > startMs &&
-                $0.startDate.timeIntervalSince1970 * 1000 < deadlineMs
-        }) else { return false }
-        publishDeadlineMovement(activity: movement.cycling ? "cycling" : "walking",
-                                since: movement.startDate.timeIntervalSince1970 * 1000)
-        return true
+                $0.startDate >= start && $0.startDate < deadline
+        }) {
+            let live = latest
+            let since = movement.startDate.timeIntervalSince1970 * 1000
+            publishDeadlineMovement(activity: movement.cycling ? "cycling" : "walking",
+                                    since: since)
+            if let live, live.since > since {
+                publishDeadlineMovement(activity: live.activity, since: live.since)
+            }
+            return .movement
+        }
+        return activities.contains { $0.startDate >= deadline } ? .noMovement : .awaitingHistory
     }
 
     private func publishDeadlineMovement(activity: String, since: Double) {

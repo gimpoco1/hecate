@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { discoveryJourneyMetrics, mergeRoutePoints, splitRoute } from "./geo";
-import { createJourneyRecapRoute, journeyPauseBoundaries } from "./journeyRecap";
+import { createJourneyRecapRoute, journeyBreakBoundaries } from "./journeyRecap";
 import type { PendingWalk } from "./types";
 
 const completed: PendingWalk = {
@@ -43,18 +43,25 @@ describe("recap geometry", () => {
     const route = createJourneyRecapRoute([], pausedResume);
 
     expect(splitRoute(route.points)).toHaveLength(2);
-    expect(journeyPauseBoundaries(route.points)).toEqual([{
-      pausedAt: route.points[1], resumedAt: route.points[2],
+    expect(journeyBreakBoundaries(route.points)).toEqual([{
+      before: route.points[1], after: route.points[2], pause: true,
     }]);
   });
 });
 
 
-describe("journey pause boundaries", () => {
+describe("journey boundaries", () => {
+  it("marks a legacy recording break without labeling it as a pause", () => {
+    const before = { ...completed.points[0], walkId: completed.id };
+    const after = { ...completed.points[1], walkId: completed.id, segmentBreakBefore: true };
+    expect(journeyBreakBoundaries([before, after])).toEqual([{ before, after, pause: false }]);
+    expect(journeyBreakBoundaries([before, { ...after, achievementEligible: false }])).toEqual([]);
+  });
+
   it("does not infer pauses from long GPS gaps or separate journeys", () => {
-    expect(journeyPauseBoundaries([
+    expect(journeyBreakBoundaries([
       { lng: 2.17, lat: 41.38, recordedAt: 1000, walkId: "first" },
-      { lng: 2.18, lat: 41.38, recordedAt: 10000000, walkId: "first", segmentBreakBefore: true },
+      { lng: 2.18, lat: 41.38, recordedAt: 10000000, walkId: "first" },
       { lng: 2.19, lat: 41.38, recordedAt: 10001000, walkId: "second", segmentBreakBefore: true, resumedAfterPause: true },
     ])).toEqual([]);
   });
@@ -66,11 +73,11 @@ describe("journey pause boundaries", () => {
       { lng: 2.18, lat: 41.38, recordedAt: 121000, walkId: "walk" },
       { lng: 2.18, lat: 41.38, recordedAt: 181000, walkId: "walk", segmentBreakBefore: true, resumedAfterPause: true },
     ];
-    expect(journeyPauseBoundaries(points)).toEqual([
-      { pausedAt: points[0], resumedAt: points[1] },
-      { pausedAt: points[2], resumedAt: points[3] },
+    expect(journeyBreakBoundaries(points)).toEqual([
+      { before: points[0], after: points[1], pause: true },
+      { before: points[2], after: points[3], pause: true },
     ]);
-    expect(journeyPauseBoundaries(completed.points)).toEqual([]);
-    expect(journeyPauseBoundaries([])).toEqual([]);
+    expect(journeyBreakBoundaries(completed.points)).toEqual([]);
+    expect(journeyBreakBoundaries([])).toEqual([]);
   });
 });

@@ -1233,5 +1233,8 @@
   "Your journey ended automatically": "O percurso terminou automaticamente",
   "Your journey ended after a period of inactivity. Your progress has been saved.": "O percurso terminou após um período de inatividade. O teu progresso foi guardado.",
   "Journey paused": "Percurso em pausa",
-  "Journey resumed": "Percurso retomado"
+  "Journey resumed": "Percurso retomado",
+  "Could not load onboarding progress.": "Não foi possível carregar o progresso da introdução.",
+  "Route break": "Interrupção do percurso",
+  "Could not end the journey automatically. Resume it or end it manually.": "Não foi possível terminar o percurso automaticamente. Retoma-o ou termina-o manualmente."
 }

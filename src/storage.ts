@@ -141,11 +141,10 @@ async function requireDiscoverySession(expectedUserId: string, signal: AbortSign
 
 export async function loadSyncedVisibleDiscoveryArea(
   expectedUserId: string,
-  center: VisibleDiscoveryArea["center"],
   signal: AbortSignal,
 ): Promise<VisibleDiscoveryArea> {
   const client = await requireDiscoverySession(expectedUserId, signal);
-  return loadVisibleDiscoveryArea(client, center, signal);
+  return loadVisibleDiscoveryArea(client, signal);
 }
 
 export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortSignal): Promise<SyncedDiscovery> {
