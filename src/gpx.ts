@@ -145,6 +145,25 @@ export function parseGpx(
       [...route.children].filter((child) => child.localName === "rtept"),
   );
   const segments = trackSegments.length > 0 ? trackSegments : routeSegments;
+  const segmentBreaks = new Set<Element>();
+  if (trackSegments.length > 1) {
+    for (let index = trackSegments.length - 1; index >= 0; index--) {
+      const segment = trackSegments[index];
+      if (segment.length !== 1) continue;
+      const previous = trackSegments[index - 1];
+      const next = trackSegments[index + 1];
+      const track = segment[0].parentElement?.parentElement;
+      if (previous && previous[0]?.parentElement?.parentElement === track && previous.length < MAX_GPX_POINTS_PER_SEGMENT) {
+        segmentBreaks.add(segment[0]);
+        previous.push(segment[0]);
+        trackSegments.splice(index, 1);
+      } else if (next && next[0]?.parentElement?.parentElement === track && next.length < MAX_GPX_POINTS_PER_SEGMENT) {
+        segmentBreaks.add(next[0]);
+        next.unshift(segment[0]);
+        trackSegments.splice(index, 1);
+      }
+    }
+  }
   if (segments.length === 0) {
     throw new Error(t("The GPX file does not contain a track or route."));
   }
@@ -153,7 +172,9 @@ export function parseGpx(
   const fallbackStartedAt = fallbackRecordedAt - (totalPointCount - 1) * 1_000;
   let fallbackOffset = 0;
   return segments.map((segment, segmentIndex) => {
-    const points = parseSegment(segment, fallbackStartedAt + fallbackOffset);
+    const points = parseSegment(segment, fallbackStartedAt + fallbackOffset).map((point, index) =>
+      index > 0 && segmentBreaks.has(segment[index]) ? { ...point, segmentBreakBefore: true } : point,
+    );
     fallbackOffset += segment.length * 1_000;
     if (
       points.some(
@@ -186,11 +207,19 @@ export function journeyToGpx(points: Coordinate[]): string {
       throw new RangeError(t("The GPX track points are not in chronological order."));
     }
   }
+  const runs: Coordinate[][] = [];
+  for (const point of points) {
+    const run = runs.at(-1);
+    if (!run || point.segmentBreakBefore) runs.push([point]);
+    else run.push(point);
+  }
   const segments: string[] = [];
-  for (let start = 0; start < points.length - 1; start += MAX_GPX_POINTS_PER_SEGMENT - 1) {
-    const track = points.slice(start, start + MAX_GPX_POINTS_PER_SEGMENT)
-      .map(point => `<trkpt lat="${point.lat}" lon="${point.lng}"><time>${new Date(point.recordedAt).toISOString()}</time></trkpt>`).join("");
-    segments.push(`<trkseg>${track}</trkseg>`);
+  for (const run of runs) {
+    for (let start = 0; start < Math.max(1, run.length - 1); start += MAX_GPX_POINTS_PER_SEGMENT - 1) {
+      const track = run.slice(start, start + MAX_GPX_POINTS_PER_SEGMENT)
+        .map(point => `<trkpt lat="${point.lat}" lon="${point.lng}"><time>${new Date(point.recordedAt).toISOString()}</time></trkpt>`).join("");
+      segments.push(`<trkseg>${track}</trkseg>`);
+    }
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Hecate" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>Hecate ${new Date(points[0].recordedAt).toISOString()}</name>${segments.join("")}</trk></gpx>`;
 }

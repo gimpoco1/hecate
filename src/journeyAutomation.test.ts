@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest";
+import { automaticPauseTiming, automaticPauseOutcome, journeyElapsedMs, reconcileJourneyMotion, advanceCandidateWalkingClock, candidateWalkingDuration, inactivityDeadlineBeforeMovement, type CandidateWalkingClock } from "./journeyAutomation";
+
+const idle = 1700000000000;
+describe("inactivity after an adaptive location suspension", () => {
+  it("ends an expired idle period before the next movement can resume the old journey", () => {
+    expect(inactivityDeadlineBeforeMovement(idle, { activity: "walking", since: idle + 10 * 60000 }, 7)).toBe(idle);
+  });
+  it("uses movement onset instead of delayed delivery time", () => {
+    expect(inactivityDeadlineBeforeMovement(idle, { activity: "walking", since: idle + 4 * 60000 }, 7)).toBeNull();
+  });
+  it("accounts for a missed pause deadline when walking or cycling resumes", () => {
+    for (const activity of ["walking", "cycling"] as const) {
+      expect(inactivityDeadlineBeforeMovement(idle, { activity, since: idle + 3 * 60000 }, 2)).toBe(idle);
+    }
+  });
+  it("does not treat unknown motion or driving as a confirmed resume", () => {
+    for (const activity of ["unknown", "other", "stationary"] as const) {
+      expect(inactivityDeadlineBeforeMovement(idle, { activity, since: idle + 10 * 60000 }, 2)).toBeNull();
+    }
+  });
+  it("keeps shorter stops and missing inactivity from creating a pause", () => {
+    expect(inactivityDeadlineBeforeMovement(idle, { activity: "walking", since: idle + 60000 }, 2)).toBeNull();
+    expect(inactivityDeadlineBeforeMovement(null, { activity: "walking", since: idle + 60000 }, 2)).toBeNull();
+  });
+});
+
+describe("automatic start grace period", () => {
+  const clock: CandidateWalkingClock = { walkingMs: 0, walkingSince: idle, interruptedAt: null };
+  it("keeps three minutes of walking across a two-minute traffic-light stop", () => {
+    const stopped = advanceCandidateWalkingClock(clock, { activity: "stationary", since: idle + 180000 });
+    expect(stopped).not.toBeNull();
+    const resumed = advanceCandidateWalkingClock(stopped!, { activity: "walking", since: idle + 300000 });
+    expect(resumed).not.toBeNull();
+    expect(candidateWalkingDuration(resumed!, idle + 419999)).toBe(299999);
+    expect(candidateWalkingDuration(resumed!, idle + 420000)).toBe(300000);
+  });
+  it("does not count unknown readings as walking or let repeated readings extend grace", () => {
+    const uncertain = advanceCandidateWalkingClock(clock, { activity: "unknown", since: idle + 180000 });
+    expect(candidateWalkingDuration(uncertain!, idle + 240000)).toBe(180000);
+    const stopped = advanceCandidateWalkingClock(uncertain!, { activity: "stationary", since: idle + 250000 });
+    expect(stopped?.interruptedAt).toBe(idle + 180000);
+    expect(advanceCandidateWalkingClock(stopped!, { activity: "walking", since: idle + 300001 })).toBeNull();
+  });
+  it("uses movement onset when the resume update arrives late", () => {
+    const stopped = advanceCandidateWalkingClock(clock, { activity: "stationary", since: idle + 180000 });
+    const resumed = advanceCandidateWalkingClock(stopped!, { activity: "walking", since: idle + 240000 });
+    expect(candidateWalkingDuration(resumed!, idle + 360000)).toBe(300000);
+  });
+  it("combines multiple brief stops without counting either as walking", () => {
+    const stopped = advanceCandidateWalkingClock(clock, { activity: "stationary", since: idle + 120000 });
+    const resumed = advanceCandidateWalkingClock(stopped!, { activity: "walking", since: idle + 180000 });
+    const secondStop = advanceCandidateWalkingClock(resumed!, { activity: "stationary", since: idle + 240000 });
+    const secondResume = advanceCandidateWalkingClock(secondStop!, { activity: "walking", since: idle + 300000 });
+    expect(candidateWalkingDuration(secondResume!, idle + 420000)).toBe(300000);
+  });
+  it("discards a walking candidate when switching to cycling or driving", () => {
+    for (const activity of ["cycling", "other"] as const) expect(advanceCandidateWalkingClock(clock, { activity, since: idle + 180000 })).toBeNull();
+  });
+});
+
+describe("native motion observation ordering", () => {
+  it("accepts newly confirmed walking with an onset before a newer unknown classification", () => {
+    const uncertain = { activity: "unknown" as const, since: idle + 60000, observedAt: idle + 60000 };
+    const walking = reconcileJourneyMotion(uncertain, { activity: "walking", since: idle, observedAt: idle + 90000 });
+    expect(walking.activity).toBe("walking");
+    expect(walking.since).toBe(idle);
+    const clock: CandidateWalkingClock = { walkingMs: 0, walkingSince: idle + 90000, interruptedAt: null };
+    const stopped = advanceCandidateWalkingClock(clock, { activity: "stationary", since: idle + 270000 });
+    const resumed = reconcileJourneyMotion(walking, { activity: "walking", since: idle + 330000, observedAt: idle + 350000 });
+    const resumedClock = advanceCandidateWalkingClock(stopped!, resumed);
+    expect(candidateWalkingDuration(resumedClock!, idle + 450000)).toBe(300000);
+  });
+  it("rejects a stale cached observation without rejecting backdated activity onset", () => {
+    const walking = { activity: "walking" as const, since: idle, observedAt: idle + 90000 };
+    expect(reconcileJourneyMotion(walking, { activity: "unknown", since: idle + 60000, observedAt: idle + 60000 })).toBe(walking);
+    expect(reconcileJourneyMotion(walking, walking)).toEqual(walking);
+  });
+  it("reports an invalid native observation timestamp instead of silently freezing detection", () => {
+    expect(() => reconcileJourneyMotion(null, { activity: "walking", since: idle, observedAt: Number.NaN })).toThrow(TypeError);
+  });
+});
+
+
+describe("completed automatic journey timing", () => {
+  it("excludes the final pause while preserving earlier paused time", () => {
+    const startedAt = 1794742473910;
+    const pausedAt = 1794743224268;
+    const elapsedMs = journeyElapsedMs(startedAt, 5000, pausedAt, pausedAt);
+    expect(pausedAt - startedAt - elapsedMs).toBe(5000);
+  });
+
+  it("starts the end countdown after the two-minute auto-pause delay", () => {
+    const pause = automaticPauseTiming(idle, 2, 7);
+    expect(pause).toEqual({ startsAt: idle + 2 * 60_000, endsAt: idle + 9 * 60_000 });
+    expect(automaticPauseOutcome(pause, pause.endsAt - 1, null)).toBe("wait");
+    expect(automaticPauseOutcome(pause, pause.endsAt, null)).toBe("end");
+  });
+
+  it("uses movement onset when an observation arrives after the deadline", () => {
+    const pause = automaticPauseTiming(idle, 2, 7);
+    const deliveredAt = pause.endsAt + 30_000;
+    expect(automaticPauseOutcome(pause, deliveredAt, pause.endsAt - 1)).toBe("resume");
+    expect(automaticPauseOutcome(pause, deliveredAt, pause.endsAt)).toBe("end");
+  });
+
+  it("preserves earlier pauses when finishing an active journey", () => {
+    expect(journeyElapsedMs(idle, 120000, null, idle + 600000)).toBe(480000);
+  });
+});

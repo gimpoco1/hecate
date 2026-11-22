@@ -171,7 +171,7 @@ export function SavedPlacesSheet({
   const activeGroup = groups.find((group) => group.id === activeCategoryId);
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop" onClick={onBack}>
       <section
         className="sheet saved-places-sheet"
         onClick={(event) => event.stopPropagation()}

@@ -22,6 +22,16 @@ type Placement = {
   card: { left: number; top: number; width: number; maxHeight: number };
 };
 
+function inflateRadius(radius: string, amount: number): string {
+  const value = radius.trim();
+  const match = value.match(/^(-?\d*\.?\d+)([a-z%]*)$/i);
+  if (!match) return value;
+  const numeric = Number(match[1]);
+  const unit = (match[2] || "px").toLowerCase();
+  if (!Number.isFinite(numeric) || unit === "%") return value;
+  return `${Math.max(0, numeric + amount)}${unit}`;
+}
+
 /** Keeps the real control usable while explaining it in a nearby, non-modal tip. */
 export function OnboardingTour({ descriptionValues, gesture, targetId, title, description, onNext, onDismiss }: Props): ReactElement {
   useAppTranslation();
@@ -44,6 +54,7 @@ export function OnboardingTour({ descriptionValues, gesture, targetId, title, de
     }
     function position(): void {
       const rect = outlineTarget!.getBoundingClientRect();
+      const style = getComputedStyle(outlineTarget!);
       const viewport = window.visualViewport;
       const width = viewport?.width ?? window.innerWidth;
       const height = viewport?.height ?? window.innerHeight;
@@ -55,7 +66,12 @@ export function OnboardingTour({ descriptionValues, gesture, targetId, title, de
       const placeAbove = above >= cardHeight || above > below;
       const cardWidth = Math.min(320, width - 32);
       setPlacement({
-        borderRadius: getComputedStyle(outlineTarget!).borderRadius,
+        borderRadius: [
+          inflateRadius(style.borderTopLeftRadius, 5),
+          inflateRadius(style.borderTopRightRadius, 5),
+          inflateRadius(style.borderBottomRightRadius, 5),
+          inflateRadius(style.borderBottomLeftRadius, 5),
+        ].join(" "),
         target: { left: rect.left - 5, top: rect.top - 5, width: rect.width + 10, height: rect.height + 10 },
         card: {
           left: Math.max(left + 16, Math.min(rect.right - cardWidth, left + width - cardWidth - 16)),

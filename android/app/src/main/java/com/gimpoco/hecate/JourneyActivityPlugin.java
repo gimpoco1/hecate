@@ -13,10 +13,12 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.util.UUID;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "JourneyActivity")
 public class JourneyActivityPlugin extends Plugin {
+    private static final String PROCESS_ID = UUID.randomUUID().toString();
     private JourneyNotifications notifications;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final BroadcastReceiver appearanceReceiver = new BroadcastReceiver() {
@@ -64,11 +66,41 @@ public class JourneyActivityPlugin extends Plugin {
 
     private static JourneyState snapshot(PluginCall call, String ownerId, Long finishedAt) {
         return new JourneyState(requiredString(call, "walkId"), ownerId, (long) requiredNumber(call, "startedAt"),
-            requiredNumber(call, "distanceKm"), call.getDouble("newGroundMeters"), finishedAt);
+            requiredNumber(call, "distanceKm"), call.getDouble("newGroundMeters"), finishedAt,
+            Boolean.TRUE.equals(call.getBoolean("paused")), (long) requiredNumber(call, "elapsedMs"),
+            finishedAt == null ? System.currentTimeMillis() : finishedAt);
     }
 
     private static void reject(PluginCall call, RuntimeException error) {
         call.reject("Android journey action failed: " + error.getMessage(), error);
+    }
+
+    @PluginMethod public void getProcessId(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("id", PROCESS_ID);
+        call.resolve(result);
+    }
+
+    @PluginMethod public void pauseLocation(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                String walkId = requiredString(call, "walkId");
+                JourneyNotifications.withService(getContext(), service -> service.pauseJourney(walkId)
+                    .addOnSuccessListener(result -> call.resolve())
+                    .addOnFailureListener(error -> call.reject("Could not pause journey GPS: " + walkId, error)), error -> reject(call, error));
+            } catch (IllegalArgumentException | IllegalStateException error) { reject(call, error); }
+        });
+    }
+
+    @PluginMethod public void resumeLocation(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            try {
+                String walkId = requiredString(call, "walkId");
+                JourneyNotifications.withService(getContext(), service -> service.resumeJourney(walkId)
+                    .addOnSuccessListener(result -> call.resolve())
+                    .addOnFailureListener(error -> call.reject("Could not resume journey GPS: " + walkId, error)), error -> reject(call, error));
+            } catch (IllegalArgumentException | IllegalStateException error) { reject(call, error); }
+        });
     }
 
     @PluginMethod public void start(PluginCall call) { getActivity().runOnUiThread(() -> startOnMain(call)); }

@@ -1,17 +1,23 @@
 import ActivityKit
 import Capacitor
 import Foundation
+import OSLog
 import UIKit
 
 @objc(JourneyActivityPlugin)
 class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
+    private static let processId = UUID().uuidString
     let identifier = "JourneyActivityPlugin"
     let jsName = "JourneyActivity"
     private var appearance: JourneyAppearance = .system
     private var colorTheme: JourneyColorTheme = .light
     private var language: String? = nil
     @MainActor private var activityQueue: Task<Void, Never>?
+    @MainActor private var automaticStop: (walkId: String, task: Task<Void, Never>)?
+    @MainActor private var deadlineFailure: (walkId: String, ownerId: String, detail: String)?
+    private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Hecate", category: "JourneyActivity")
     let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "getProcessId", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setAppearance", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
@@ -19,6 +25,10 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStopRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeStop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPauseRequest", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acknowledgePause", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pauseLocation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resumeLocation", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reconcile", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getControlRequest", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "acknowledgeControlRequest", returnType: CAPPluginReturnPromise)
@@ -32,11 +42,17 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(journeyStopped(_:)),
                                                name: JourneyStopStore.notification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(journeyPaused(_:)),
+                                               name: JourneyPauseStore.notification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(journeyControlRequested(_:)),
                                                name: JourneyControlStore.notification, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
+
+    @objc func getProcessId(_ call: CAPPluginCall) {
+        call.resolve(["id": Self.processId])
+    }
 
     // Serialize native trait changes with metrics so theme refreshes cannot overwrite a newer snapshot.
     private func enqueueActivityOperation(_ operation: @escaping @MainActor () async -> Void) {
@@ -125,8 +141,12 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc private func journeyStopped(_ notification: Notification) {
         guard let request = notification.object as? JourneyStopRequest else { return }
-        notifyListeners("stopRequested", data: ["walkId": request.walkId,
-                        "ownerId": request.ownerId, "finishedAt": request.finishedAt])
+        Task { @MainActor in
+            self.cancelAutomaticStop(walkId: request.walkId)
+            UserDefaults.standard.removeObject(forKey: "hecate.journey.gps-paused." + request.walkId)
+            self.notifyListeners("stopRequested", data: ["walkId": request.walkId,
+                                 "ownerId": request.ownerId, "finishedAt": request.finishedAt, "automatic": request.automatic == true], retainUntilConsumed: true)
+        }
     }
 
     @objc func getStopRequest(_ call: CAPPluginCall) {
@@ -134,14 +154,213 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Reading a widget stop requires the journey and owner IDs.")
             return
         }
-        do {
-            guard let request = try JourneyStopStore.read(walkId: walkId), request.ownerId == ownerId else {
-                call.resolve(["request": NSNull()])
-                return
+        Task { @MainActor in
+            do {
+                if let request = try JourneyStopStore.read(walkId: walkId), request.ownerId == ownerId {
+                    call.resolve(["request": ["walkId": request.walkId, "ownerId": request.ownerId,
+                                             "finishedAt": request.finishedAt, "automatic": request.automatic == true]])
+                } else if let failure = self.deadlineFailure, failure.walkId == walkId && failure.ownerId == ownerId {
+                    call.resolve(["request": NSNull(), "deadlineFailure": ["walkId": walkId, "ownerId": ownerId, "detail": failure.detail]])
+                } else {
+                    call.resolve(["request": NSNull()])
+                }
+            } catch {
+                call.reject("Could not read the saved widget stop request.", nil, error)
             }
-            call.resolve(["request": ["walkId": request.walkId, "ownerId": request.ownerId,
-                                     "finishedAt": request.finishedAt]])
-        } catch { call.reject("Could not read the saved widget stop request.", nil, error) }
+        }
+    }
+
+    private func pauseData(_ request: JourneyPauseRequest) -> JSObject {
+        ["id": request.id, "walkId": request.walkId, "ownerId": request.ownerId,
+         "paused": request.paused, "requestedAt": request.requestedAt, "activeStartedAt": request.activeStartedAt]
+    }
+
+    @objc private func journeyPaused(_ notification: Notification) {
+        guard let request = notification.object as? JourneyPauseRequest else { return }
+        Task { @MainActor in
+            self.cancelAutomaticStop(walkId: request.walkId)
+            self.notifyListeners("pauseRequested", data: self.pauseData(request), retainUntilConsumed: true)
+        }
+    }
+
+    @objc func getPauseRequest(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), let ownerId = call.getString("ownerId") else {
+            call.reject("Reading a widget pause requires the journey and owner IDs.")
+            return
+        }
+        do {
+            guard let request = try JourneyPauseStore.read(walkId: walkId) else { call.resolve(["request": NSNull()]); return }
+            guard request.ownerId == ownerId else { call.reject("The widget pause belongs to a different account."); return }
+            call.resolve(["request": pauseData(request)])
+        } catch { call.reject("Could not read the saved widget pause request.", nil, error) }
+    }
+
+    @objc func acknowledgePause(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), let ownerId = call.getString("ownerId"), let id = call.getString("id") else {
+            call.reject("Acknowledging a widget pause requires its journey, owner and request IDs.")
+            return
+        }
+        do {
+            if let request = try JourneyPauseStore.read(walkId: walkId) {
+                guard request.ownerId == ownerId else { call.reject("The widget pause belongs to a different account."); return }
+                if request.id == id { JourneyPauseStore.remove(walkId: walkId) }
+            }
+            call.resolve()
+        } catch { call.reject("Could not acknowledge the saved widget pause request.", nil, error) }
+    }
+
+    @MainActor
+    private func cancelAutomaticStop(walkId: String?) {
+        guard let automaticStop, walkId == nil || automaticStop.walkId == walkId else { return }
+        automaticStop.task.cancel()
+        self.automaticStop = nil
+    }
+
+    @objc func pauseLocation(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), !walkId.isEmpty else { call.reject("Pausing GPS requires a journey ID."); return }
+        DispatchQueue.main.async {
+            if let deadline = call.getObject("deadline") {
+                guard let ownerId = deadline["ownerId"] as? String, !ownerId.isEmpty,
+                      let finishedAt = deadline["finishedAt"] as? Double, finishedAt.isFinite, finishedAt > 0,
+                      let endsAt = deadline["endsAt"] as? Double, endsAt.isFinite, endsAt > finishedAt,
+                      let elapsedMs = deadline["elapsedMs"] as? Double, elapsedMs.isFinite, elapsedMs >= 0,
+                      let motion = self.bridge?.plugin(withName: "JourneyMotion") as? JourneyMotionPlugin else {
+                    call.reject("Scheduling an automatic journey stop requires valid timing, the journey owner, and the motion monitor.")
+                    return
+                }
+                // Keep the existing background location session active until the deadline.
+                // The recorder already rejects samples throughout the automatic pause.
+                UserDefaults.standard.set(true, forKey: "hecate.journey.gps-paused." + walkId)
+                NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil,
+                                                userInfo: ["walkId": walkId, "paused": true, "keepMonitoring": true])
+                self.scheduleAutomaticStop(
+                    request: JourneyStopRequest(walkId: walkId, ownerId: ownerId, finishedAt: finishedAt, automatic: true),
+                    deadline: Date(timeIntervalSince1970: endsAt / 1000),
+                    elapsedMs: elapsedMs,
+                    motion: motion
+                )
+            } else {
+                self.cancelAutomaticStop(walkId: walkId)
+                JourneyPauseStore.remove(walkId: walkId)
+                UserDefaults.standard.set(true, forKey: "hecate.journey.gps-paused." + walkId)
+                NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil, userInfo: ["walkId": walkId, "paused": true])
+            }
+            call.resolve()
+        }
+    }
+
+    @MainActor
+    private func scheduleAutomaticStop(request: JourneyStopRequest, deadline: Date, elapsedMs: Double, motion: JourneyMotionPlugin) {
+        cancelAutomaticStop(walkId: nil)
+        deadlineFailure = nil
+        let task = Task { @MainActor [weak self] in
+            let finish = Date(timeIntervalSince1970: request.finishedAt / 1000)
+            // Core Motion can take several minutes to report recent activity.
+            let historyCutoff = deadline.addingTimeInterval(180)
+            do {
+                while true {
+                    let remaining = deadline.timeIntervalSinceNow
+                    if remaining <= 0 { break }
+                    try await Task.sleep(nanoseconds: UInt64(min(3600, remaining) * 1_000_000_000))
+                }
+                while !Task.isCancelled {
+                    guard let self else { return }
+                    do {
+                        let now = Date()
+                        let observation = try await motion.motionAtDeadline(from: finish, until: deadline, through: now)
+                        if observation == .movement {
+                            if !Task.isCancelled { self.automaticStop = nil }
+                            return
+                        }
+                        if observation == .awaitingHistory && now < historyCutoff {
+                            try await Task.sleep(nanoseconds: 5_000_000_000)
+                            continue
+                        }
+                        try Task.checkCancellation()
+                        if try JourneyStopStore.read(walkId: request.walkId) != nil {
+                            self.automaticStop = nil
+                            return
+                        }
+                        try JourneyStopStore.save(request)
+                        self.automaticStop = nil
+                        var backgroundTask = UIBackgroundTaskIdentifier.invalid
+                        let endBackgroundTask: @MainActor () -> Void = {
+                            guard backgroundTask != .invalid else { return }
+                            UIApplication.shared.endBackgroundTask(backgroundTask)
+                            backgroundTask = .invalid
+                        }
+                        backgroundTask = UIApplication.shared.beginBackgroundTask(
+                            withName: "Finish automatic journey", expirationHandler: { endBackgroundTask() }
+                        )
+                        self.enqueueActivityOperation {
+                            defer { endBackgroundTask() }
+                            if #available(iOS 16.2, *) {
+                                for activity in Activity<JourneyActivityAttributes>.activities
+                                    where activity.attributes.walkId == request.walkId && activity.attributes.ownerId == request.ownerId {
+                                    var state = activity.content.state.ending(at: finish)
+                                    state.paused = false
+                                    state.activeStartedAt = finish.addingTimeInterval(-elapsedMs / 1000)
+                                    await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate)
+                                }
+                            }
+                        }
+                        NotificationCenter.default.post(name: JourneyStopStore.notification, object: request,
+                                                        userInfo: ["walkId": request.walkId])
+                        return
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        try Task.checkCancellation()
+                        self.logger.error("Journey deadline check failed for \(request.walkId, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                        if Date() >= historyCutoff {
+                            self.automaticStop = nil
+                            self.deadlineFailure = (request.walkId, request.ownerId, error.localizedDescription)
+                            NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil,
+                                                            userInfo: ["walkId": request.walkId, "paused": true])
+                            self.notifyListeners("automaticStopError", data: ["walkId": request.walkId, "ownerId": request.ownerId,
+                                                                            "detail": error.localizedDescription], retainUntilConsumed: true)
+                            return
+                        }
+                        try await Task.sleep(nanoseconds: 5_000_000_000)
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                self?.logger.error("Journey deadline timer failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        automaticStop = (walkId: request.walkId, task: task)
+    }
+
+    @objc func resumeLocation(_ call: CAPPluginCall) {
+        guard let walkId = call.getString("walkId"), !walkId.isEmpty else { call.reject("Resuming GPS requires a journey ID."); return }
+        DispatchQueue.main.async {
+            self.cancelAutomaticStop(walkId: walkId)
+            if self.deadlineFailure?.walkId == walkId { self.deadlineFailure = nil }
+            JourneyPauseStore.remove(walkId: walkId)
+            UserDefaults.standard.set(false, forKey: "hecate.journey.gps-paused." + walkId)
+            NotificationCenter.default.post(name: JourneyPauseStore.notification, object: nil, userInfo: ["walkId": walkId, "paused": false])
+            call.resolve()
+        }
+    }
+
+    @available(iOS 16.2, *)
+    private func applyingPauseRequest(_ state: JourneyActivityAttributes.ContentState, walkId: String) throws -> JourneyActivityAttributes.ContentState {
+        guard let request = try JourneyPauseStore.read(walkId: walkId) else {
+            if state.paused, let previous = Activity<JourneyActivityAttributes>.activities.first(where: { $0.attributes.walkId == walkId })?.content.state, previous.paused {
+                var updated = state
+                updated.activeStartedAt = previous.activeStartedAt
+                updated.updatedAt = previous.updatedAt
+                return updated
+            }
+            return state
+        }
+        var updated = state
+        updated.paused = request.paused
+        updated.activeStartedAt = Date(timeIntervalSince1970: request.activeStartedAt / 1000)
+        updated.updatedAt = request.paused ? Date(timeIntervalSince1970: request.requestedAt / 1000) : Date()
+        return updated
     }
 
     @objc func acknowledgeStop(_ call: CAPPluginCall) {
@@ -165,7 +384,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            call.resolve()
+            call.reject("Live Activities are disabled for Hecate. Enable them in Settings to see your journey on the Lock Screen.", "LIVE_ACTIVITIES_DISABLED")
             return
         }
         guard let walkId = call.getString("walkId"),
@@ -181,6 +400,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             state.colorTheme = self.colorTheme
             do {
                 if try JourneyStopStore.read(walkId: walkId) != nil { call.resolve(); return }
+                state = try self.applyingPauseRequest(state, walkId: walkId)
                 for activity in Activity<JourneyActivityAttributes>.activities {
                     if activity.attributes.walkId == walkId && activity.content.state.finishedAt != nil {
                         call.resolve()
@@ -209,7 +429,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 )
                 call.resolve()
             } catch {
-                call.reject("Could not start the journey Live Activity.", nil, error)
+                call.reject("Could not start the journey Live Activity: " + error.localizedDescription, "LIVE_ACTIVITY_START_FAILED", error)
             }
         }
     }
@@ -222,15 +442,17 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         enqueueActivityOperation {
-            var state = state
-            state.appearance = self.appearance
-            state.colorTheme = self.colorTheme
-            for activity in Activity<JourneyActivityAttributes>.activities
-                where activity.attributes.walkId == walkId &&
-                    (activity.activityState == .active || activity.activityState == .stale) {
-                await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(300)))
-            }
-            call.resolve()
+            do {
+                var state = try self.applyingPauseRequest(state, walkId: walkId)
+                state.appearance = self.appearance
+                state.colorTheme = self.colorTheme
+                for activity in Activity<JourneyActivityAttributes>.activities
+                    where activity.attributes.walkId == walkId &&
+                        (activity.activityState == .active || activity.activityState == .stale) {
+                    await activity.update(ActivityContent(state: state, staleDate: Date().addingTimeInterval(300)))
+                }
+                call.resolve()
+            } catch { call.reject("Could not update the journey pause state.", nil, error) }
         }
     }
 
@@ -243,6 +465,8 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         enqueueActivityOperation {
+            self.cancelAutomaticStop(walkId: walkId)
+            UserDefaults.standard.removeObject(forKey: "hecate.journey.gps-paused." + walkId)
             var state = state
             state.appearance = self.appearance
             state.colorTheme = self.colorTheme
@@ -260,6 +484,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func clear(_ call: CAPPluginCall) {
         guard #available(iOS 16.2, *) else { call.resolve(); return }
         enqueueActivityOperation {
+            self.cancelAutomaticStop(walkId: nil)
             for activity in Activity<JourneyActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
@@ -275,6 +500,7 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let walkId = call.getString("walkId")
         enqueueActivityOperation {
+            if self.automaticStop?.walkId != walkId { self.cancelAutomaticStop(walkId: nil) }
             for activity in Activity<JourneyActivityAttributes>.activities {
                 if activity.attributes.ownerId == ownerId &&
                     (activity.attributes.walkId == walkId || activity.content.state.finishedAt != nil) {
@@ -291,6 +517,9 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let distance = call.getDouble("distanceKm"), distance.isFinite, distance >= 0 else {
             return nil
         }
+        let paused = call.getBool("paused") ?? false
+        let elapsedMs = call.getDouble("elapsedMs") ?? 0
+        guard elapsedMs.isFinite, elapsedMs >= 0 else { return nil }
         let meters = call.getDouble("newGroundMeters")
         if let meters, !meters.isFinite || meters < 0 { return nil }
         var navigation: JourneyNavigation?
@@ -312,6 +541,8 @@ class JourneyActivityPlugin: CAPPlugin, CAPBridgedPlugin {
         return JourneyActivityAttributes.ContentState(
             distanceKm: distance,
             newGroundMeters: meters,
+            paused: paused,
+            activeStartedAt: (finishedAt ?? Date()).addingTimeInterval(-(elapsedMs / 1000)),
             updatedAt: Date(),
             finishedAt: finishedAt,
             navigation: finishedAt == nil ? navigation : nil,

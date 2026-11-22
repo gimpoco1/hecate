@@ -380,6 +380,15 @@ if (!source.includes("manager.activityType = journeyId")) {
             manager.activityType = journeyId == nil ? .other : .fitness
             manager.allowsBackgroundLocationUpdates = background`);
 }
+// Walking candidates need the same GPS accuracy as a confirmed journey.
+if (!source.includes('let journeyCandidate = call.getBool("journeyCandidate")')) {
+  const original = `            if journeyId == nil { manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters }
+            manager.activityType = journeyId == nil ? .other : .fitness`;
+  if (!source.includes(original)) throw new Error("Background geolocation plugin changed; review candidate GPS accuracy configuration.");
+  source = source.replace(original, `            let journeyCandidate = call.getBool("journeyCandidate") == true
+            if journeyId == nil && !journeyCandidate { manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters }
+            manager.activityType = journeyId != nil || journeyCandidate ? .fitness : .other`);
+}
 if (!source.includes("@objc func requestMotionPermission")) {
   source = source.replace("    private var watchers = [Watcher]()", "    private var watchers = [Watcher]()\n    private let motionPermissionManager = CMMotionActivityManager()");
   source = source.replace('CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)', 'CAPPluginMethod(name: "requestMotionPermission", returnType: CAPPluginReturnPromise),\n        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise)');
@@ -458,3 +467,76 @@ if (!registration.includes("CAP_PLUGIN_METHOD(getMotionAuthorizationStatus,")) {
 }
 
 await import("./patch-android-reminder-motion.mjs");
+
+// Keep journey watchers alive while native Live Activity actions suspend their GPS updates.
+source = readFileSync(pluginPath, "utf8");
+if (!source.includes("private var journeyPauseObserver")) {
+  source = source.replace("private var journeyStopObserver: NSObjectProtocol?", "private var journeyStopObserver: NSObjectProtocol?\n    private var journeyPauseObserver: NSObjectProtocol?");
+  source = source.replace("    deinit {", "    deinit {\n        if let journeyPauseObserver { NotificationCenter.default.removeObserver(journeyPauseObserver) }");
+  source = source.replace("    func start() {", `    func start() {
+        if let journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }`);
+  source = source.replace("        UIDevice.current.isBatteryMonitoringEnabled = true", `        UIDevice.current.isBatteryMonitoringEnabled = true
+        journeyPauseObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("HecateJourneyPauseRequested"), object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let self, let walkId = notification.userInfo?["walkId"] as? String,
+                  let paused = notification.userInfo?["paused"] as? Bool else { return }
+            for watcher in self.watchers where watcher.journeyId == walkId {
+                if paused { watcher.stop() }
+                else if UserDefaults.standard.data(forKey: "hecate.journey.stop." + walkId) == nil { watcher.start() }
+            }
+        }`);
+  writeFileSync(pluginPath, source);
+}
+
+// Timed pauses keep the iOS location session active, but discard paused fixes before they reach the WebView.
+source = readFileSync(pluginPath, "utf8");
+const timedPauseAccuracy = "var timedPauseAccuracy: CLLocationAccuracy?";
+if (!source.includes(timedPauseAccuracy)) {
+  const watcher = "    private let created = Date()";
+  const initial = '                if paused { watcher.stop() }\n                else if UserDefaults.standard.data(forKey: "hecate.journey.stop." + walkId) == nil { watcher.start() }';
+  if (!source.includes(watcher) || !source.includes(initial))
+    throw new Error("Background geolocation plugin changed; review timed pause monitoring.");
+  source = source.replace(watcher, `    ${timedPauseAccuracy}\n${watcher}`).replace(initial, `                if paused && notification.userInfo?["keepMonitoring"] as? Bool == true {
+                    if watcher.timedPauseAccuracy == nil { watcher.timedPauseAccuracy = watcher.locationManager.desiredAccuracy }
+                    watcher.locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+                    continue
+                }
+                if let accuracy = watcher.timedPauseAccuracy {
+                    watcher.locationManager.desiredAccuracy = accuracy
+                    watcher.timedPauseAccuracy = nil
+                }
+${initial}`);
+  writeFileSync(pluginPath, source);
+}
+const discardPausedFix = 'if let walkId = watcher.journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + walkId) { return }';
+if (!source.includes(discardPausedFix)) {
+  const anchor = "                if watcher.isLocationValid(location) {";
+  if (!source.includes(anchor)) throw new Error("Background geolocation plugin changed; review paused fix filtering.");
+  source = source.replace(anchor, `                ${discardPausedFix}\n${anchor}`);
+  writeFileSync(pluginPath, source);
+}
+// A replacement watcher starts paused after a WebView reload. Re-arm its low-power location session.
+const startTimedPause = 'if let journeyId, timedPauseAccuracy == nil, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }';
+if (!source.includes(startTimedPause)) {
+  const pausedStart = 'if let journeyId, UserDefaults.standard.bool(forKey: "hecate.journey.gps-paused." + journeyId) { return }';
+  const reducedAccuracy = "                    watcher.locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers";
+  if (!source.includes(pausedStart) || !source.includes(reducedAccuracy))
+    throw new Error("Background geolocation plugin changed; review timed pause restoration.");
+  source = source.replace(pausedStart, startTimedPause)
+    .replace(reducedAccuracy, `${reducedAccuracy}\n                    watcher.start()`);
+  writeFileSync(pluginPath, source);
+}
+
+// Use the instance authorization API supported by every deployment target in this app.
+source = readFileSync(pluginPath, "utf8");
+for (const [original, replacement] of [
+  ["let status = CLLocationManager.authorizationStatus()", "let status = manager.authorizationStatus"],
+  ["switch CLLocationManager.authorizationStatus()", "switch CLLocationManager().authorizationStatus"],
+]) {
+  if (!source.includes(original) && !source.includes(replacement)) {
+    throw new Error("Background geolocation plugin changed; review the iOS authorization API patch before building.");
+  }
+  source = source.replaceAll(original, replacement);
+}
+writeFileSync(pluginPath, source);

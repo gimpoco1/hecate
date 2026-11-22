@@ -2,7 +2,8 @@ import { persistentStorage } from "./persistentStorage";
 import { t } from "./i18n";
 import type { Coordinate, PendingWalk } from "./types";
 
-export type WalkJournal = { active: PendingWalk | null; pending: PendingWalk[] };
+export type ActiveWalkCheckpoint = PendingWalk & { nativeProcessId?: string };
+export type WalkJournal = { active: ActiveWalkCheckpoint | null; pending: PendingWalk[] };
 
 const keyForUser = (userId: string) => `hecate:walk-journal:v1:${userId}`;
 
@@ -17,12 +18,14 @@ function validPoint(point: unknown): point is Coordinate {
     && Number.isFinite(candidate.recordedAt);
 }
 
-function validWalkShape(walk: unknown): walk is PendingWalk {
+function validWalkShape(walk: unknown): walk is ActiveWalkCheckpoint {
   if (!walk || typeof walk !== "object") return false;
-  const candidate = walk as Partial<PendingWalk>;
+  const candidate = walk as Partial<ActiveWalkCheckpoint>;
   return typeof candidate.id === "string" && Number.isFinite(candidate.startedAt)
     && Number.isFinite(candidate.finishedAt) && Array.isArray(candidate.points)
-    && candidate.points.every(validPoint);
+    && candidate.points.every(validPoint)
+    && (candidate.nativeProcessId === undefined ||
+      (typeof candidate.nativeProcessId === "string" && candidate.nativeProcessId.length > 0));
 }
 
 function validCompletedWalk(walk: unknown): walk is PendingWalk {
@@ -37,7 +40,7 @@ export async function loadWalkJournalState(userId: string): Promise<WalkJournal>
       || (parsed.active !== null && !validWalkShape(parsed.active))) {
     throw new Error("The saved journey journal is invalid.");
   }
-  const restoreWalkId = (walk: PendingWalk): PendingWalk => ({
+  const restoreWalkId = <T extends PendingWalk>(walk: T): T => ({
     ...walk,
     points: walk.points.map(point => ({ ...point, walkId: walk.id })),
   });
@@ -47,7 +50,7 @@ export async function loadWalkJournalState(userId: string): Promise<WalkJournal>
   };
 }
 
-export async function saveWalkJournal(userId: string, pending: PendingWalk[], active: PendingWalk | null): Promise<void> {
+export async function saveWalkJournal(userId: string, pending: PendingWalk[], active: ActiveWalkCheckpoint | null): Promise<void> {
   const key = keyForUser(userId);
   if (!pending.length && !active) await persistentStorage.removeItem(key);
   else await persistentStorage.setItem(key, JSON.stringify({ pending, active }));
@@ -56,7 +59,8 @@ export async function saveWalkJournal(userId: string, pending: PendingWalk[], ac
 /** Persist completion before releasing the active journey or acknowledging its native stop. */
 export async function completeWalkJournal(userId: string, pending: PendingWalk[], completed: PendingWalk): Promise<PendingWalk[]> {
   const nextPending = completed.points.length >= 2 && !pending.some(walk => walk.id === completed.id)
-    ? [...pending, completed]
+    ? [...pending, { id: completed.id, startedAt: completed.startedAt, finishedAt: completed.finishedAt,
+      points: completed.points, achievementEligible: completed.achievementEligible }]
     : pending;
   try {
     await saveWalkJournal(userId, nextPending, null);
@@ -72,4 +76,9 @@ export async function recoverWalkJournal(userId: string, { active, pending }: Wa
     ...active,
     finishedAt: Math.max(active.startedAt, active.points.at(-1)?.recordedAt ?? active.startedAt, stoppedAt ?? active.startedAt),
   });
+}
+
+/** Only the original native process can continue an existing recorder. */
+export function canResumeWalk(active: ActiveWalkCheckpoint, nativeProcessId: string | null): boolean {
+  return nativeProcessId === null || active.nativeProcessId === nativeProcessId;
 }

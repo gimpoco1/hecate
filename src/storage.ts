@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 import { Capacitor } from "@capacitor/core";
 import { persistentStorage } from "./persistentStorage";
-import { loadStoredWalkPoints, loadStoredCells, loadStoredCities } from "./discoveryStorage";
+import { loadStoredWalkPoints, loadStoredCells, loadStoredCities, loadVisibleDiscoveryArea, type VisibleDiscoveryArea } from "./discoveryStorage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { discoveryCellsFromPoints, mergeDiscoveryCells } from "./geo";
 import type { CityBoundary } from "./city";
@@ -119,21 +119,39 @@ export async function saveCompletedWalk(walk: PendingWalk, expectedUserId: strin
     p_started_at: new Date(walk.startedAt).toISOString(),
     p_finished_at: new Date(walk.finishedAt).toISOString(),
     p_coordinates: walk.points.map(point => [point.lng, point.lat]),
+    p_point_metadata: walk.points.map(point => point.resumedAfterPause
+      ? [Math.trunc(point.recordedAt), true, true]
+      : [Math.trunc(point.recordedAt), point.segmentBreakBefore === true]),
     p_point_count: walk.points.length,
     p_achievement_eligible: walk.achievementEligible !== false,
   });
   if (error) throw error;
 }
 
-export async function loadSyncedDiscovery(expectedUserId: string): Promise<SyncedDiscovery> {
+async function requireDiscoverySession(expectedUserId: string, signal: AbortSignal): Promise<SupabaseClient> {
+  if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (!supabase) throw new Error("Cannot load discovery history: Supabase is not configured.");
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error) throw error;
+  if (signal.aborted) throw new DOMException("Discovery history load was cancelled.", "AbortError");
   if (session?.user.id !== expectedUserId)
     throw new Error("Cannot load discovery history: the signed-in session does not match the requested account.");
+  return supabase;
+}
+
+export async function loadSyncedVisibleDiscoveryArea(
+  expectedUserId: string,
+  signal: AbortSignal,
+): Promise<VisibleDiscoveryArea> {
+  const client = await requireDiscoverySession(expectedUserId, signal);
+  return loadVisibleDiscoveryArea(client, signal);
+}
+
+export async function loadSyncedDiscovery(expectedUserId: string, signal: AbortSignal): Promise<SyncedDiscovery> {
+  const client = await requireDiscoverySession(expectedUserId, signal);
   const [walkPoints, cells] = await Promise.all([
-    loadStoredWalkPoints(supabase),
-    loadStoredCells(supabase),
+    loadStoredWalkPoints(client, signal),
+    loadStoredCells(client, signal),
   ]);
   rememberSyncedCells(expectedUserId, cells);
   return {

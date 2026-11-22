@@ -3,6 +3,7 @@ import {
   compactImportedRoute,
   importedRouteProgress,
   importedRouteHighlights,
+  journeyToGpx,
   persistImportedDiscovery,
   storedWalkRoutes,
   walkIsAlreadyStored,
@@ -174,4 +175,15 @@ describe("imported route map highlights", () => {
     const repeated = first.map(point => ({ ...point, recordedAt: point.recordedAt + 240000, walkId: "repeat" }));
     expect(importedRouteHighlights([...history, ...repeated], repeated)).toEqual([]);
   });
+});
+
+it("exports a one-fix run in a separate GPX segment from the route after a pause", () => {
+  const points = [
+    importedPoints[0],
+    { ...importedPoints[1], segmentBreakBefore: true },
+    { ...importedPoints[1], lng: 2.3, recordedAt: 3 },
+  ];
+  const gpx = journeyToGpx(points);
+  const segments = [...gpx.matchAll(/<trkseg>(.*?)<\/trkseg>/g)].map(match => match[1]);
+  expect(segments.map(segment => [...segment.matchAll(/<trkpt /g)].length)).toEqual([1, 2]);
 });

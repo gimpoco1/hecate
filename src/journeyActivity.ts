@@ -11,28 +11,46 @@ export type JourneyActivitySnapshot = {
   startedAt: number;
   distanceKm: number;
   newGroundMeters: number;
+  paused: boolean;
+  elapsedMs: number;
   navigation?: NavigationCue | null;
   navigationRemaining?: NavigationRemaining | null;
 };
 
-export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number };
+export type JourneyStopRequest = { walkId: string; ownerId: string; finishedAt: number; automatic?: boolean };
+export type JourneyDeadlineFailure = { walkId: string; ownerId: string; detail: string };
+
+export type JourneyPauseRequest = { id: string; walkId: string; ownerId: string; paused: boolean; requestedAt: number; activeStartedAt: number };
 
 interface JourneyActivityPlugin {
+  getProcessId(): Promise<{ id: string }>;
+  getPauseRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyPauseRequest | null }>;
+  acknowledgePause(options: { ownerId: string; walkId: string; id: string }): Promise<void>;
+  pauseLocation(options: { walkId: string; deadline?: { ownerId: string; finishedAt: number; endsAt: number; elapsedMs: number } }): Promise<void>;
+  resumeLocation(options: { walkId: string }): Promise<void>;
+  addListener(event: "pauseRequested", listener: (request: JourneyPauseRequest) => void): Promise<PluginListenerHandle>;
   setAppearance(options: { preference: AppearancePreference; theme: ColorTheme; language: LanguagePreference }): Promise<void>;
   start(snapshot: JourneyActivitySnapshot & { ownerId: string }): Promise<void>;
   update(snapshot: JourneyActivitySnapshot): Promise<void>;
   end(snapshot: JourneyActivitySnapshot & { finishedAt: number }): Promise<void>;
   clear(): Promise<void>;
   reconcile(options: { ownerId: string; walkId: string | null }): Promise<void>;
-  getStopRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyStopRequest | null }>;
+  getStopRequest(options: { ownerId: string; walkId: string }): Promise<{ request: JourneyStopRequest | null; deadlineFailure?: JourneyDeadlineFailure }>;
   acknowledgeStop(options: { ownerId: string; walkId: string }): Promise<void>;
   getControlRequest(): Promise<{ request: JourneyControlRequest | null }>;
   acknowledgeControlRequest(options: { id: string }): Promise<void>;
   addListener(event: "stopRequested", listener: (request: JourneyStopRequest) => void): Promise<PluginListenerHandle>;
+  addListener(event: "automaticStopError", listener: (error: JourneyDeadlineFailure) => void): Promise<PluginListenerHandle>;
   addListener(event: "controlRequested", listener: () => void): Promise<PluginListenerHandle>;
 }
 
 export const JourneyActivity = registerPlugin<JourneyActivityPlugin>("JourneyActivity");
+
+export async function nativeJourneyProcessId(): Promise<string> {
+  const { id } = await JourneyActivity.getProcessId();
+  if (typeof id !== "string" || id.length === 0) throw new TypeError("The native journey recorder returned an invalid process ID.");
+  return id;
+}
 
 /** Uses the same new-ground distance calculation as the completed journey recap. */
 export function journeyNewGroundMeters(points: Coordinate[], startingDistanceKm: number): number {
@@ -49,10 +67,12 @@ export function journeyActivitySnapshot(
     startedAt: walk.startedAt,
     distanceKm: routeDistanceKm(walk.points),
     newGroundMeters: journeyNewGroundMeters(points, startingDistanceKm),
+    paused: false,
+    elapsedMs: 0,
   };
 }
 
-export function journeyActionFromUrl(value: string): { action: "open" | "stop"; walkId: string } | null {
+export function journeyActionFromUrl(value: string): { action: "open" | "stop" | "pause" | "resume"; walkId: string } | null {
   let url: URL;
   try {
     url = new URL(value);
@@ -61,6 +81,7 @@ export function journeyActionFromUrl(value: string): { action: "open" | "stop"; 
   }
   if (url.protocol !== "hecate:" || url.host !== "journey") return null;
   const walkId = url.searchParams.get("walkId");
-  if (!walkId || (url.pathname !== "/open" && url.pathname !== "/stop")) return null;
-  return { action: url.pathname === "/stop" ? "stop" : "open", walkId };
+  if (!walkId || !["/open", "/stop", "/pause", "/resume"].includes(url.pathname)) return null;
+  const action = url.pathname.slice(1) as "open" | "stop" | "pause" | "resume";
+  return { action, walkId };
 }

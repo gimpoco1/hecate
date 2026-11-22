@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MercatorCoordinate } from "maplibre-gl";
 import { DISCOVERY_RADIUS_M } from "./geo";
 import {
+  DiscoveryFogLayer,
   appendedFogRouteCoordinates,
   fogRevealCoordinates,
   fogTileCoordinates,
@@ -84,5 +85,28 @@ describe("appendedFogRouteCoordinates", () => {
     expect(
       appendedFogRouteCoordinates([[start]], [[replacement]]),
     ).toBeNull();
+  });
+});
+
+describe("live fog after a pause", () => {
+  it("reveals only the resumed location without filling the skipped route", () => {
+    const previous = { lng: 2.17, lat: 41.38, recordedAt: 1000 };
+    const resumed = { lng: 2.18, lat: 41.38, recordedAt: 601000, segmentBreakBefore: true };
+    const layer = new DiscoveryFogLayer({ routeSegments: [[previous]], cellCenters: [] }, "discover");
+    layer.appendRoutePoint(previous, resumed);
+    const centers = Reflect.get(layer, "revealCoordinateKeys") as Set<string>;
+    expect(centers.size).toBe(2);
+  });
+});
+
+describe("large discovery histories", () => {
+  it("appends large route histories without spreading them into function arguments", () => {
+    const segment = Array.from({ length: 150000 }, (_, index) => ({
+      lng: 2 + index * 0.0000001, lat: 41, recordedAt: index,
+    }));
+    const appended = appendedFogRouteCoordinates([], [segment]);
+    expect(appended).toHaveLength(segment.length);
+    expect(appended?.[0]).toEqual([segment[0].lng, segment[0].lat]);
+    expect(appended?.at(-1)).toEqual([segment.at(-1)!.lng, segment.at(-1)!.lat]);
   });
 });

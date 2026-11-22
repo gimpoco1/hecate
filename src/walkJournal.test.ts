@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { completeWalkJournal, recoverWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
+import { canResumeWalk, completeWalkJournal, recoverWalkJournal, loadWalkJournalState, saveWalkJournal } from "./walkJournal";
 import type { PendingWalk } from "./types";
 
 const walk: PendingWalk = {
@@ -22,6 +22,17 @@ beforeEach(() => {
 });
 
 describe("walk recovery journal", () => {
+  it("continues a WebView reload in the same process and saves at the last fix after a cold launch", async () => {
+    await saveWalkJournal("user-a", [], { ...walk, nativeProcessId: "before", finishedAt: 90_000 });
+    const journal = await loadWalkJournalState("user-a");
+    if (!journal.active) throw new Error("Active journey checkpoint is missing.");
+    expect(canResumeWalk(journal.active, "before")).toBe(true);
+    expect(canResumeWalk(journal.active, "after")).toBe(false);
+    expect(canResumeWalk(walk, "after")).toBe(false);
+    expect(canResumeWalk(walk, null)).toBe(true);
+    expect(await recoverWalkJournal("user-a", journal, null)).toEqual([walk]);
+  });
+
   it("restores an interrupted active walk and keeps accounts separate", async () => {
     await saveWalkJournal("user-a", [], { ...walk, finishedAt: 90_000 });
     expect(await recoverWalkJournal("user-b", await loadWalkJournalState("user-b"), null)).toEqual([]);

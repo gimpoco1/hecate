@@ -1,4 +1,4 @@
-import { discoveryCellsFromPoints, discoveryJourneyMetrics, mergeRoutePoints } from "./geo";
+import { discoveryCellsFromPoints, discoveryJourneyMetrics, mergeRoutePoints, splitRoute } from "./geo";
 import type { Coordinate, DiscoveryCell, PendingWalk } from "./types";
 
 export type JourneyRecapRoute = {
@@ -7,6 +7,18 @@ export type JourneyRecapRoute = {
   cells: DiscoveryCell[];
   bounds: { west: number; east: number; south: number; north: number };
 };
+
+/** Older recordings only identify the segment break, so its cause is unspecified. */
+export function journeyBreakBoundaries(points: Coordinate[]): { before: Coordinate; after: Coordinate; pause: boolean }[] {
+  const segments = splitRoute(points);
+  return segments.slice(1).flatMap((segment, index) => {
+    const previous = segments[index];
+    const before = previous[previous.length - 1];
+    const after = segment[0];
+    if (after.segmentBreakBefore !== true || before.walkId !== after.walkId || after.achievementEligible === false) return [];
+    return [{ before, after, pause: after.resumedAfterPause === true }];
+  });
+}
 
 /** Prepare and validate recap geometry before publishing it to React state. */
 export function createJourneyRecapRoute(history: Coordinate[], completed: PendingWalk): JourneyRecapRoute {

@@ -294,7 +294,7 @@ export function GlobalMilestonesSheet({
   if (!open) return null;
 
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
+    <div className="sheet-backdrop" onClick={onBack}>
       <section
         className="sheet global-milestones-sheet"
         onClick={(event) => event.stopPropagation()}

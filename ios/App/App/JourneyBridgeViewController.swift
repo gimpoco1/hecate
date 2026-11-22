@@ -9,6 +9,7 @@ class JourneyBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PersistentStoragePlugin())
         bridge?.registerPluginInstance(AppIconPlugin())
         bridge?.registerPluginInstance(NavigationScreenPlugin())
+        bridge?.registerPluginInstance(JourneyMotionPlugin())
         bridge?.registerPluginInstance(AppleSignInPlugin())
         bridge?.registerPluginInstance(GoogleSignInPlugin())
     }

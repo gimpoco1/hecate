@@ -96,11 +96,34 @@ function pointInPolygon(
   return !polygon.slice(1).some((hole) => pointInRing(lng, lat, hole));
 }
 
+/** Index ring edges by latitude so repeated containment checks inspect only nearby edges. */
+function ringPointPredicate(ring: GeoJSON.Position[]): (lng: number, lat: number) => boolean {
+  const south = ring.reduce((minimum, point) => Math.min(minimum, point[1]), Infinity);
+  const north = ring.reduce((maximum, point) => Math.max(maximum, point[1]), -Infinity);
+  const bucketCount = Math.max(1, Math.min(256, Math.ceil(Math.sqrt(ring.length))));
+  const edges = ring.map((point, index) => ({ point, previous: ring[(index + ring.length - 1) % ring.length] }));
+  const buckets = Array.from({ length: bucketCount }, (_, index) => {
+    const bottom = south + (north - south) * index / bucketCount;
+    const top = south + (north - south) * (index + 1) / bucketCount;
+    return edges.filter(({ point, previous }) => Math.min(point[1], previous[1]) <= top && Math.max(point[1], previous[1]) >= bottom);
+  });
+  return (lng, lat) => {
+    if (lat < south || lat > north || north === south) return false;
+    const bucket = Math.min(bucketCount - 1, Math.floor((lat - south) / (north - south) * bucketCount));
+    let inside = false;
+    for (const { point: [lngA, latA], previous: [lngB, latB] } of buckets[bucket]) {
+      if (latA > lat !== latB > lat && lng < ((lngB - lngA) * (lat - latA)) / (latB - latA) + lngA) inside = !inside;
+    }
+    return inside;
+  };
+}
+
 export function isPointInCity(
   point: Pick<Coordinate, "lng" | "lat">,
   city: CityBoundary,
 ) {
-  return cityPointPredicate(city)(point);
+  const polygons = city.geometry.type === "Polygon" ? [city.geometry.coordinates] : city.geometry.coordinates;
+  return polygons.some(polygon => pointInPolygon(point.lng, point.lat, polygon));
 }
 
 export function cityPointPredicate(
@@ -117,13 +140,17 @@ function cityPointPredicateForGeometry(
     city.geometry.type === "Polygon"
       ? [city.geometry.coordinates]
       : city.geometry.coordinates;
+  const predicates = polygons.map(polygon => ({
+    outer: polygon[0] ? ringPointPredicate(polygon[0]) : null,
+    holes: polygon.slice(1).map(ringPointPredicate),
+  }));
   return (point) =>
     point.lng >= bounds.west &&
     point.lng <= bounds.east &&
     point.lat >= bounds.south &&
     point.lat <= bounds.north &&
-    polygons.some((polygon) =>
-      pointInPolygon(point.lng, point.lat, polygon),
+    predicates.some(({ outer, holes }) =>
+      outer !== null && outer(point.lng, point.lat) && !holes.some(contains => contains(point.lng, point.lat)),
     );
 }
 
@@ -260,10 +287,11 @@ function discoveredCityAreaForGeometry(
       continue;
     for (const candidate of discoveryFootprintCells(cell)) {
       const [lng, lat] = discoveryCellCenter(candidate);
+      const key = discoveryCellKey(candidate);
+      if (revealed.has(key)) continue;
       // Coverage is the overlap with this municipality, not the whole
       // circular reveal around a route point near its boundary.
       if (!containsPoint({ lng, lat })) continue;
-      const key = discoveryCellKey(candidate);
       revealed.set(key, discoveryCellAreaKm2(candidate));
     }
   }

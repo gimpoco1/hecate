@@ -2,6 +2,8 @@ import { mapRewardTheme, journeyHighlightColor, discoveryHighlightColor, navigat
 import type { MapReward } from "../goalRewards";
 import { t, useAppTranslation } from "../i18n";
 import { errorDiagnostic } from "../diagnostics";
+import { journeyBreakBoundaries } from "../journeyRecap";
+import { mdiPause, mdiPlay } from "@mdi/js";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import * as maplibregl from "maplibre-gl";
@@ -523,16 +525,29 @@ export const DiscoveryMap = memo(function DiscoveryMap({
     const finish = highlightedPoints.at(-1);
     if (!map || !start || !finish) return;
     const nearStart = distanceKm(start, finish) < 0.02;
-    const endpoints = [
-      { point: start, label: t("Journey start"), className: "journey-endpoint--start", offset: nearStart ? -15 : 0 },
-      { point: finish, label: t("Journey finish"), className: "journey-endpoint--finish", offset: nearStart ? 15 : 0 },
+    type Endpoint = { point: Coordinate; label: string; className: string; offset: number; icon: string | null };
+    const endpoints: Endpoint[] = [
+      { point: start, label: t("Journey start"), className: "journey-endpoint--start", offset: nearStart ? -15 : 0, icon: null },
+      { point: finish, label: t("Journey finish"), className: "journey-endpoint--finish", offset: nearStart ? 15 : 0, icon: null },
+      ...journeyBreakBoundaries(highlightedPoints).flatMap<Endpoint>(({ before, after, pause }) => {
+        const nearby = distanceKm(before, after) < 0.02;
+        if (!pause) return (nearby ? [after] : [before, after]).map(point => ({
+          point, label: t("Route break"), className: "journey-endpoint--break", offset: 0, icon: null,
+        }));
+        return [
+          { point: before, label: t("Journey paused"), className: "journey-endpoint--pause", offset: nearby ? -15 : 0, icon: mdiPause },
+          { point: after, label: t("Journey resumed"), className: "journey-endpoint--resume", offset: nearby ? 15 : 0, icon: mdiPlay },
+        ];
+      }),
     ];
     const markers = endpoints.map(endpoint => {
       const element = document.createElement("div");
       element.className = `journey-endpoint ${endpoint.className}`;
       element.setAttribute("role", "img");
       element.setAttribute("aria-label", endpoint.label);
+      element.dataset.testid = endpoint.className;
       element.title = endpoint.label;
+      if (endpoint.icon) element.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${endpoint.icon}" /></svg>`;
       return new maplibregl.Marker({ element, anchor: "center", offset: [endpoint.offset, 0] })
         .setLngLat([endpoint.point.lng, endpoint.point.lat]).addTo(map);
     });
